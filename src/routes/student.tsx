@@ -155,9 +155,14 @@ function Page() {
         </div>
 
         <Card className="border-2 border-primary/20">
-          <CardContent className="p-4 flex flex-col sm:flex-row gap-2">
-            <Input value={reg} onChange={(e) => setReg(e.target.value.toUpperCase())} placeholder="Ingiza Reg Namba yako" className="flex-1" />
-            <Button onClick={() => lookup(reg)}>Thibitisha</Button>
+          <CardContent className="p-4 space-y-2">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Input value={reg} onChange={(e) => setReg(e.target.value.toUpperCase())} placeholder="Ingiza Reg Namba au jina (mfano: jina la mwisho)" className="flex-1" onKeyDown={(e) => { if (e.key === "Enter") lookup(reg); }} />
+              <Button onClick={() => lookup(reg)}>Thibitisha</Button>
+            </div>
+            {matches.length > 0 && (
+              <StudentMatchesPicker matches={matches} onConfirm={confirmStudent} onCancel={() => setMatches([])} />
+            )}
           </CardContent>
         </Card>
 
