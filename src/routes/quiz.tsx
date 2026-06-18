@@ -143,6 +143,9 @@ function IndividualCard({ q, student, onStart }: { q: any; student: any; onStart
 
 function GroupCard({ q, student, onStart }: { q: any; student: any; onStart: () => void }) {
   const [members, setMembers] = useState<any[]>([]);
+  const [allStudents, setAllStudents] = useState<any[]>([]);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [showAll, setShowAll] = useState(false);
   const [participants, setParticipants] = useState<any[]>([]);
   const [joining, setJoining] = useState(false);
   const [groupQuestions, setGroupQuestions] = useState<any[]>([]);
@@ -158,6 +161,15 @@ function GroupCard({ q, student, onStart }: { q: any; student: any; onStart: () 
       .order("full_name");
     setMembers(data || []);
   };
+
+  const loadAllStudents = async () => {
+    const data = await fetchAllStudents<any>(
+      "id, reg_no, full_name, student_group, semina, phone",
+      { orderBy: "full_name" }
+    ).catch(() => []);
+    setAllStudents(data);
+  };
+
 
   const loadParticipants = async () => {
     const { data } = await supabase.from("quiz_participants" as any)
