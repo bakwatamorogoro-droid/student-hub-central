@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Upload, FileText, CheckCircle2, Clock, Sparkles, AlertCircle, ArrowLeft, Pencil } from "lucide-react";
+import { findStudentsByQuery } from "@/lib/studentSearch";
+import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 
 type Search = { a?: string };
 
@@ -28,6 +30,7 @@ function Page() {
   const { a: aParam } = Route.useSearch();
   const [reg, setReg] = useState("");
   const [student, setStudent] = useState<any | null>(null);
+  const [matches, setMatches] = useState<any[]>([]);
   const [checking, setChecking] = useState(false);
   const [assignments, setAssignments] = useState<any[]>([]);
   const [active, setActive] = useState<any | null>(null);
@@ -49,17 +52,26 @@ function Page() {
     if (saved) setReg(saved);
   }, [aParam]);
 
-  const lookupStudent = async () => {
-    if (!reg.trim()) return;
-    setChecking(true);
-    const { data } = await supabase.from("students").select("*").ilike("reg_no", reg.trim()).maybeSingle();
-    setChecking(false);
-    if (!data) { toast.error("Reg No haijapatikana. Jisajili kwanza."); return; }
+  const confirmStudent = async (data: any) => {
     setStudent(data);
+    setMatches([]);
+    setReg(data.reg_no);
     localStorage.setItem("student_reg", data.reg_no);
     const { data: subs } = await supabase.from("pdf_submissions" as any).select("*").eq("reg_no", data.reg_no).order("created_at", { ascending: false });
     setMySubs((subs as any[]) || []);
     toast.success(`Karibu, ${data.full_name}`);
+  };
+
+  const lookupStudent = async () => {
+    if (!reg.trim()) return;
+    setChecking(true);
+    const results = await findStudentsByQuery(reg);
+    setChecking(false);
+    if (results.length === 0) { toast.error("Hakuna mwanafunzi anayelingana. Jisajili kwanza."); setStudent(null); setMatches([]); return; }
+    if (results.length === 1) { confirmStudent(results[0]); return; }
+    setStudent(null);
+    setMatches(results);
+    toast.info(`Tumepata ${results.length} wanafunzi — chagua wewe ni nani.`);
   };
 
   const upload = async () => {
@@ -142,12 +154,15 @@ function Page() {
             <CardHeader><CardTitle>Anza — Weka Reg Namba yako</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div>
-                <Label>Reg Namba</Label>
-                <Input value={reg} onChange={(e) => setReg(e.target.value)} placeholder="MFN.001" onKeyDown={(e) => { if (e.key === "Enter") lookupStudent(); }} />
+                <Label>Reg Namba au Jina</Label>
+                <Input value={reg} onChange={(e) => setReg(e.target.value)} placeholder="MFN.001 au jina la mwisho" onKeyDown={(e) => { if (e.key === "Enter") lookupStudent(); }} />
               </div>
               <Button className="w-full" onClick={lookupStudent} disabled={checking}>
                 {checking ? "Inatafuta..." : "Endelea"}
               </Button>
+              {matches.length > 0 && (
+                <StudentMatchesPicker matches={matches} onConfirm={confirmStudent} onCancel={() => setMatches([])} />
+              )}
               <p className="text-xs text-muted-foreground text-center">
                 Hujajisajili? <Link to="/register" className="text-primary underline">Jisajili hapa</Link>
               </p>

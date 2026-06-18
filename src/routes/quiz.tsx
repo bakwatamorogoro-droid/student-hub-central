@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllStudents } from "@/lib/fetchAllStudents";
+import { findStudentsByQuery } from "@/lib/studentSearch";
+import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 import { toast } from "sonner";
 import { Users, User, Search, CheckCircle2, Loader2, Sparkles, ArrowRight, Clock } from "lucide-react";
 
@@ -25,6 +27,7 @@ function QuizPage() {
   const nav = useNavigate();
   const [reg, setReg] = useState("");
   const [student, setStudent] = useState<any>(null);
+  const [matches, setMatches] = useState<any[]>([]);
   const [quizzes, setQuizzes] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -43,14 +46,23 @@ function QuizPage() {
     setQuizzes(data || []);
   };
 
+  const confirmStudent = (s: any) => {
+    setStudent(s);
+    setMatches([]);
+    setReg(s.reg_no);
+    localStorage.setItem("student_reg", s.reg_no);
+  };
+
   const lookup = async (r: string) => {
     if (!r) return;
     setLoading(true);
-    const { data } = await supabase.from("students").select("*").ilike("reg_no", r.trim()).maybeSingle();
+    const results = await findStudentsByQuery(r);
     setLoading(false);
-    if (!data) { toast.error("Reg Namba haipo"); setStudent(null); return; }
-    setStudent(data);
-    localStorage.setItem("student_reg", data.reg_no);
+    if (results.length === 0) { toast.error("Hakuna mwanafunzi anayelingana. Hakikisha umeandika sahihi au jisajili."); setStudent(null); setMatches([]); return; }
+    if (results.length === 1) { confirmStudent(results[0]); return; }
+    setStudent(null);
+    setMatches(results);
+    toast.info(`Tumepata ${results.length} wanafunzi — chagua wewe ni nani.`);
   };
 
   const individualQuizzes = quizzes.filter((q) => q.quiz_mode === "individual");
@@ -75,7 +87,7 @@ function QuizPage() {
               <Input
                 value={reg}
                 onChange={(e) => setReg(e.target.value.toUpperCase())}
-                placeholder="Andika Reg Namba yako"
+                placeholder="Andika Reg Namba au jina (mfano: jina la mwisho)"
                 className="font-mono"
                 onKeyDown={(e) => { if (e.key === "Enter") lookup(reg); }}
               />
@@ -90,6 +102,9 @@ function QuizPage() {
                 <span className="text-muted-foreground">• {student.reg_no}</span>
                 <span className="ml-auto text-xs bg-primary/10 px-2 py-0.5 rounded">{student.semina} • {student.student_group}</span>
               </div>
+            )}
+            {matches.length > 0 && (
+              <StudentMatchesPicker matches={matches} onConfirm={confirmStudent} onCancel={() => setMatches([])} />
             )}
           </CardContent>
         </Card>
