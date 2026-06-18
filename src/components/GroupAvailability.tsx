@@ -24,10 +24,7 @@ export function GroupAvailability() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from("students")
-        .select("semina, student_group, gender")
-        .order("semina");
+      const data = await fetchAllStudents<any>("semina, student_group, gender", { orderBy: "semina" }).catch(() => []);
       const counts = new Map<string, GroupRow>();
       (data || []).forEach((s: any) => {
         if (!s.semina || !s.student_group) return;
