@@ -109,7 +109,7 @@ function ExamsPage() {
               <Input
                 value={regInput}
                 onChange={(e) => setRegInput(e.target.value.toUpperCase())}
-                placeholder="Ingiza Reg Namba yako"
+                placeholder="Ingiza Reg Namba au jina (mfano: jina la mwisho)"
                 className="flex-1"
                 onKeyDown={(e) => { if (e.key === "Enter") lookup(regInput); }}
               />
@@ -131,6 +131,9 @@ function ExamsPage() {
                 <div><span className="text-muted-foreground">Semina:</span> {student.semina}</div>
                 <div><span className="text-muted-foreground">Group:</span> {student.student_group}</div>
               </div>
+            )}
+            {matches.length > 0 && (
+              <StudentMatchesPicker matches={matches} onConfirm={confirmStudent} onCancel={() => setMatches([])} />
             )}
           </CardContent>
         </Card>
