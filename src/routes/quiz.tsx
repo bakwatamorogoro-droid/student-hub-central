@@ -87,7 +87,7 @@ function QuizPage() {
               <Input
                 value={reg}
                 onChange={(e) => setReg(e.target.value.toUpperCase())}
-                placeholder="Andika Reg Namba yako"
+                placeholder="Andika Reg Namba au jina (mfano: jina la mwisho)"
                 className="font-mono"
                 onKeyDown={(e) => { if (e.key === "Enter") lookup(reg); }}
               />
