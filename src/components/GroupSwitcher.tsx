@@ -37,9 +37,7 @@ export function GroupSwitcher({ student, onChanged }: Props) {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from("students")
-        .select("semina, student_group, gender");
+      const data = await fetchAllStudents<any>("semina, student_group, gender").catch(() => []);
       const m = new Map<string, Row>();
       (data || []).forEach((s: any) => {
         if (!s.semina || !s.student_group) return;
