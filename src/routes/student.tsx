@@ -12,6 +12,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { UserCog, AlertTriangle, CheckCircle2, Mail, Clock } from "lucide-react";
 import { GroupSwitcher } from "@/components/GroupSwitcher";
+import { findStudentsByQuery } from "@/lib/studentSearch";
+import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 
 export const Route = createFileRoute("/student")({
   component: Page,
@@ -30,6 +32,7 @@ function Page() {
   const [groupList, setGroupList] = useState<string[]>([]);
   const [reg, setReg] = useState("");
   const [student, setStudent] = useState<any>(null);
+  const [matches, setMatches] = useState<any[]>([]);
   // edit form
   const [edit, setEdit] = useState({ new_reg_no: "", new_full_name: "", new_semina: "", new_student_group: "", reason: "" });
   const [wrongReg, setWrongReg] = useState(false);
@@ -49,17 +52,26 @@ function Page() {
     if (saved) { setReg(saved); lookup(saved); }
   }, []);
 
-  const lookup = async (r: string) => {
-    const { data } = await supabase.from("students").select("*").ilike("reg_no", r.trim()).maybeSingle();
-    if (!data) { toast.error("Reg Namba haipo. Jisajili kwanza."); setStudent(null); return; }
+  const confirmStudent = async (data: any) => {
     setStudent(data);
+    setMatches([]);
+    setReg(data.reg_no);
     setEdit({ new_reg_no: data.reg_no, new_full_name: data.full_name, new_semina: data.semina, new_student_group: data.student_group, reason: "" });
     localStorage.setItem("student_reg", data.reg_no);
-    // load my requests
     const { data: reqs } = await (supabase as any).from("profile_update_requests").select("*").eq("student_id", data.id).order("created_at", { ascending: false });
     setEditStatus(reqs || []);
     const { data: iss } = await (supabase as any).from("issue_reports").select("*").eq("reg_no", data.reg_no).order("created_at", { ascending: false });
     setMyIssues(iss || []);
+  };
+
+  const lookup = async (r: string) => {
+    if (!r) return;
+    const results = await findStudentsByQuery(r);
+    if (results.length === 0) { toast.error("Hakuna mwanafunzi anayelingana. Hakikisha umeandika sahihi au jisajili."); setStudent(null); setMatches([]); return; }
+    if (results.length === 1) { confirmStudent(results[0]); return; }
+    setStudent(null);
+    setMatches(results);
+    toast.info(`Tumepata ${results.length} wanafunzi — chagua wewe ni nani.`);
   };
 
   const submitEdit = async () => {
