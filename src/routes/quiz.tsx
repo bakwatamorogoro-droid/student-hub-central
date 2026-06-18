@@ -326,8 +326,10 @@ function GroupCard({ q, student, onStart }: { q: any; student: any; onStart: () 
               })()}
             </div>
 
+            <div className="flex gap-2">
               {!iJoined ? (
                 <Button size="sm" variant="outline" onClick={join} disabled={joining || !q.quiz_active} className="flex-1">
+
                   {joining ? <Loader2 className="h-3 w-3 animate-spin" /> : "Ungana na Group"}
                 </Button>
               ) : (
