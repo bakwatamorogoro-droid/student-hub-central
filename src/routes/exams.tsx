@@ -1,0 +1,172 @@
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { SiteHeader } from "@/components/SiteHeader";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { supabase } from "@/integrations/supabase/client";
+import { getDeviceId } from "@/lib/device-id";
+import { formatEat } from "@/lib/time";
+import { Clock, User, GraduationCap, Phone, CheckCircle2, Calendar } from "lucide-react";
+import { toast } from "sonner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ExamHeroCarousel } from "@/components/ExamHeroCarousel";
+
+export const Route = createFileRoute("/exams")({
+  component: ExamsPage,
+  head: () => ({
+    meta: [
+      { title: "Mitihani Iliyopangwa — Islamic Studies Test" },
+      { name: "description", content: "Orodha ya mitihani iliyopangwa ya Islamic Studies." },
+      { property: "og:title", content: "Mitihani Iliyopangwa — Islamic Studies Test" },
+    ],
+  }),
+});
+
+function ExamsPage() {
+  const nav = useNavigate();
+  const [exams, setExams] = useState<any[]>([]);
+  const [regInput, setRegInput] = useState("");
+  const [student, setStudent] = useState<any>(null);
+  const [checking, setChecking] = useState(false);
+  const [category, setCategory] = useState<string>("all");
+
+  useEffect(() => {
+    const r = localStorage.getItem("student_reg");
+    if (r) {
+      setRegInput(r);
+      lookup(r);
+    }
+    supabase.from("exams").select("*").eq("published", true).order("created_at", { ascending: false })
+      .then(({ data }: { data: any }) => setExams(data || []));
+  }, []);
+
+  const categorize = (title: string): string => {
+    const t = (title || "").toLowerCase();
+    if (/\btest\s*0*1\b/.test(t) || /\bmtihani\s*0*1\b/.test(t)) return "test1";
+    if (/\btest\s*0*2\b/.test(t) || /\bmtihani\s*0*2\b/.test(t)) return "test2";
+    if (/\btest\s*0*3\b/.test(t) || /\bmtihani\s*0*3\b/.test(t)) return "test3";
+    return "others";
+  };
+
+  const filteredExams = exams.filter((e) => category === "all" ? true : categorize(e.title) === category);
+  const counts = {
+    all: exams.length,
+    test1: exams.filter((e) => categorize(e.title) === "test1").length,
+    test2: exams.filter((e) => categorize(e.title) === "test2").length,
+    test3: exams.filter((e) => categorize(e.title) === "test3").length,
+    others: exams.filter((e) => categorize(e.title) === "others").length,
+  };
+
+  const lookup = async (reg: string) => {
+    if (!reg) return;
+    setChecking(true);
+    const { data } = await supabase.from("students").select("*").ilike("reg_no", reg.trim()).maybeSingle();
+    setChecking(false);
+    if (!data) {
+      toast.error("Reg Namba haipo. Jisajili kwanza.");
+      setStudent(null);
+      return;
+    }
+    // Kifaa chochote kinaruhusiwa
+    setStudent(data);
+    localStorage.setItem("student_reg", data.reg_no);
+  };
+
+  const now = Date.now();
+  const status = (e: any) => {
+    const s = e.start_time ? new Date(e.start_time).getTime() : 0;
+    const en = e.end_time ? new Date(e.end_time).getTime() : Infinity;
+    if (now < s) return { label: "Bado haijaanza", can: false };
+    if (now > en) return { label: "Muda umeisha", can: false };
+    return { label: "Inapatikana sasa", can: true };
+  };
+
+  return (
+    <div className="min-h-screen bg-background">
+      <SiteHeader />
+      <main className="container mx-auto px-4 py-8 max-w-3xl">
+        <ExamHeroCarousel />
+        <Card className="mb-6 border-2 border-primary/30">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><User className="h-5 w-5" /> Thibitisha Mwanafunzi</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Input
+                value={regInput}
+                onChange={(e) => setRegInput(e.target.value.toUpperCase())}
+                placeholder="Ingiza Reg Namba yako"
+                className="flex-1"
+                onKeyDown={(e) => { if (e.key === "Enter") lookup(regInput); }}
+              />
+              <Button onClick={() => lookup(regInput)} disabled={checking || !regInput}>
+                {checking ? "Inathibitisha..." : "Thibitisha"}
+              </Button>
+            </div>
+            {!student && (
+              <p className="text-sm text-muted-foreground mt-2">
+                Hujajisajili? <Link to="/register" className="text-primary underline">Jisajili hapa</Link>
+              </p>
+            )}
+            {student && (
+              <div className="mt-4 p-3 rounded-lg bg-primary/5 border border-primary/20 grid sm:grid-cols-2 gap-2 text-sm">
+                <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-primary" /><span className="font-bold">{student.full_name}</span></div>
+                <div className="flex items-center gap-2"><Phone className="h-4 w-4" /> {student.phone || "-"}</div>
+                <div><span className="text-muted-foreground">Reg:</span> {student.reg_no}</div>
+                <div className="flex items-center gap-2"><GraduationCap className="h-4 w-4" /> {student.course || student.student_group}</div>
+                <div><span className="text-muted-foreground">Semina:</span> {student.semina}</div>
+                <div><span className="text-muted-foreground">Group:</span> {student.student_group}</div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+          <h2 className="text-xl font-bold">Mitihani Iliyopangwa</h2>
+          <Select value={category} onValueChange={setCategory}>
+            <SelectTrigger className="w-44"><SelectValue placeholder="Aina ya mtihani" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Zote ({counts.all})</SelectItem>
+              <SelectItem value="test1">Test 1 ({counts.test1})</SelectItem>
+              <SelectItem value="test2">Test 2 ({counts.test2})</SelectItem>
+              <SelectItem value="test3">Test 3 ({counts.test3})</SelectItem>
+              <SelectItem value="others">Others ({counts.others})</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-4">
+          {filteredExams.length === 0 && <p className="text-muted-foreground">Hakuna mtihani katika aina hii.</p>}
+          {filteredExams.map((e) => {
+            const st = status(e);
+            return (
+              <Card key={e.id} className="hover:shadow-lg transition-shadow">
+                <CardHeader>
+                  <CardTitle className="flex justify-between items-start gap-2">
+                    <span>{e.title}</span>
+                    <span className={`text-xs font-normal px-2 py-1 rounded ${st.can ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{st.label}</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {e.description && <p className="text-sm text-muted-foreground mb-2">{e.description}</p>}
+                  <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground mb-3">
+                    <span className="flex items-center gap-1"><Clock className="h-4 w-4" /> {e.duration_minutes} dakika</span>
+                    {e.start_time && <span className="flex items-center gap-1"><Calendar className="h-4 w-4" /> Huanza: {formatEat(e.start_time)}</span>}
+                    {e.end_time && <span className="flex items-center gap-1"><Calendar className="h-4 w-4" /> Humalizika: {formatEat(e.end_time)}</span>}
+                  </div>
+                  <Button
+                    disabled={!student || !st.can}
+                    onClick={() => nav({ to: "/exam/$examId", params: { examId: e.id }, search: {} as any })}
+                  >
+                    {student ? "Anza Mtihani" : "Thibitisha Reg Namba kwanza"}
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </main>
+    </div>
+  );
+}

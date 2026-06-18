@@ -9,38 +9,326 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as StudentRouteImport } from './routes/student'
+import { Route as ResultsRouteImport } from './routes/results'
+import { Route as RegisterRouteImport } from './routes/register'
+import { Route as QuizRouteImport } from './routes/quiz'
+import { Route as PdfQuizRouteImport } from './routes/pdf-quiz'
+import { Route as ExamsRouteImport } from './routes/exams'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as RSlugRouteImport } from './routes/r.$slug'
+import { Route as ExamExamIdRouteImport } from './routes/exam.$examId'
+import { Route as AdminSubmissionsRouteImport } from './routes/admin.submissions'
+import { Route as AdminStudentsRouteImport } from './routes/admin.students'
+import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
+import { Route as AdminRequestsRouteImport } from './routes/admin.requests'
+import { Route as AdminPdfRouteImport } from './routes/admin.pdf'
+import { Route as AdminIssuesRouteImport } from './routes/admin.issues'
+import { Route as AdminGalleryRouteImport } from './routes/admin.gallery'
+import { Route as AdminExamsRouteImport } from './routes/admin.exams'
+import { Route as AdminAttendanceRouteImport } from './routes/admin.attendance'
 
+const StudentRoute = StudentRouteImport.update({
+  id: '/student',
+  path: '/student',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResultsRoute = ResultsRouteImport.update({
+  id: '/results',
+  path: '/results',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegisterRoute = RegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QuizRoute = QuizRouteImport.update({
+  id: '/quiz',
+  path: '/quiz',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PdfQuizRoute = PdfQuizRouteImport.update({
+  id: '/pdf-quiz',
+  path: '/pdf-quiz',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExamsRoute = ExamsRouteImport.update({
+  id: '/exams',
+  path: '/exams',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const RSlugRoute = RSlugRouteImport.update({
+  id: '/r/$slug',
+  path: '/r/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExamExamIdRoute = ExamExamIdRouteImport.update({
+  id: '/exam/$examId',
+  path: '/exam/$examId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminSubmissionsRoute = AdminSubmissionsRouteImport.update({
+  id: '/submissions',
+  path: '/submissions',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminStudentsRoute = AdminStudentsRouteImport.update({
+  id: '/students',
+  path: '/students',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSettingsRoute = AdminSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminRequestsRoute = AdminRequestsRouteImport.update({
+  id: '/requests',
+  path: '/requests',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPdfRoute = AdminPdfRouteImport.update({
+  id: '/pdf',
+  path: '/pdf',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminIssuesRoute = AdminIssuesRouteImport.update({
+  id: '/issues',
+  path: '/issues',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminGalleryRoute = AdminGalleryRouteImport.update({
+  id: '/gallery',
+  path: '/gallery',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminExamsRoute = AdminExamsRouteImport.update({
+  id: '/exams',
+  path: '/exams',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAttendanceRoute = AdminAttendanceRouteImport.update({
+  id: '/attendance',
+  path: '/attendance',
+  getParentRoute: () => AdminRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/exams': typeof ExamsRoute
+  '/pdf-quiz': typeof PdfQuizRoute
+  '/quiz': typeof QuizRoute
+  '/register': typeof RegisterRoute
+  '/results': typeof ResultsRoute
+  '/student': typeof StudentRoute
+  '/admin/attendance': typeof AdminAttendanceRoute
+  '/admin/exams': typeof AdminExamsRoute
+  '/admin/gallery': typeof AdminGalleryRoute
+  '/admin/issues': typeof AdminIssuesRoute
+  '/admin/pdf': typeof AdminPdfRoute
+  '/admin/requests': typeof AdminRequestsRoute
+  '/admin/settings': typeof AdminSettingsRoute
+  '/admin/students': typeof AdminStudentsRoute
+  '/admin/submissions': typeof AdminSubmissionsRoute
+  '/exam/$examId': typeof ExamExamIdRoute
+  '/r/$slug': typeof RSlugRoute
+  '/admin/': typeof AdminIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/exams': typeof ExamsRoute
+  '/pdf-quiz': typeof PdfQuizRoute
+  '/quiz': typeof QuizRoute
+  '/register': typeof RegisterRoute
+  '/results': typeof ResultsRoute
+  '/student': typeof StudentRoute
+  '/admin/attendance': typeof AdminAttendanceRoute
+  '/admin/exams': typeof AdminExamsRoute
+  '/admin/gallery': typeof AdminGalleryRoute
+  '/admin/issues': typeof AdminIssuesRoute
+  '/admin/pdf': typeof AdminPdfRoute
+  '/admin/requests': typeof AdminRequestsRoute
+  '/admin/settings': typeof AdminSettingsRoute
+  '/admin/students': typeof AdminStudentsRoute
+  '/admin/submissions': typeof AdminSubmissionsRoute
+  '/exam/$examId': typeof ExamExamIdRoute
+  '/r/$slug': typeof RSlugRoute
+  '/admin': typeof AdminIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/exams': typeof ExamsRoute
+  '/pdf-quiz': typeof PdfQuizRoute
+  '/quiz': typeof QuizRoute
+  '/register': typeof RegisterRoute
+  '/results': typeof ResultsRoute
+  '/student': typeof StudentRoute
+  '/admin/attendance': typeof AdminAttendanceRoute
+  '/admin/exams': typeof AdminExamsRoute
+  '/admin/gallery': typeof AdminGalleryRoute
+  '/admin/issues': typeof AdminIssuesRoute
+  '/admin/pdf': typeof AdminPdfRoute
+  '/admin/requests': typeof AdminRequestsRoute
+  '/admin/settings': typeof AdminSettingsRoute
+  '/admin/students': typeof AdminStudentsRoute
+  '/admin/submissions': typeof AdminSubmissionsRoute
+  '/exam/$examId': typeof ExamExamIdRoute
+  '/r/$slug': typeof RSlugRoute
+  '/admin/': typeof AdminIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/admin'
+    | '/exams'
+    | '/pdf-quiz'
+    | '/quiz'
+    | '/register'
+    | '/results'
+    | '/student'
+    | '/admin/attendance'
+    | '/admin/exams'
+    | '/admin/gallery'
+    | '/admin/issues'
+    | '/admin/pdf'
+    | '/admin/requests'
+    | '/admin/settings'
+    | '/admin/students'
+    | '/admin/submissions'
+    | '/exam/$examId'
+    | '/r/$slug'
+    | '/admin/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/exams'
+    | '/pdf-quiz'
+    | '/quiz'
+    | '/register'
+    | '/results'
+    | '/student'
+    | '/admin/attendance'
+    | '/admin/exams'
+    | '/admin/gallery'
+    | '/admin/issues'
+    | '/admin/pdf'
+    | '/admin/requests'
+    | '/admin/settings'
+    | '/admin/students'
+    | '/admin/submissions'
+    | '/exam/$examId'
+    | '/r/$slug'
+    | '/admin'
+  id:
+    | '__root__'
+    | '/'
+    | '/admin'
+    | '/exams'
+    | '/pdf-quiz'
+    | '/quiz'
+    | '/register'
+    | '/results'
+    | '/student'
+    | '/admin/attendance'
+    | '/admin/exams'
+    | '/admin/gallery'
+    | '/admin/issues'
+    | '/admin/pdf'
+    | '/admin/requests'
+    | '/admin/settings'
+    | '/admin/students'
+    | '/admin/submissions'
+    | '/exam/$examId'
+    | '/r/$slug'
+    | '/admin/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRouteWithChildren
+  ExamsRoute: typeof ExamsRoute
+  PdfQuizRoute: typeof PdfQuizRoute
+  QuizRoute: typeof QuizRoute
+  RegisterRoute: typeof RegisterRoute
+  ResultsRoute: typeof ResultsRoute
+  StudentRoute: typeof StudentRoute
+  ExamExamIdRoute: typeof ExamExamIdRoute
+  RSlugRoute: typeof RSlugRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/student': {
+      id: '/student'
+      path: '/student'
+      fullPath: '/student'
+      preLoaderRoute: typeof StudentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/results': {
+      id: '/results'
+      path: '/results'
+      fullPath: '/results'
+      preLoaderRoute: typeof ResultsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/register': {
+      id: '/register'
+      path: '/register'
+      fullPath: '/register'
+      preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/quiz': {
+      id: '/quiz'
+      path: '/quiz'
+      fullPath: '/quiz'
+      preLoaderRoute: typeof QuizRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pdf-quiz': {
+      id: '/pdf-quiz'
+      path: '/pdf-quiz'
+      fullPath: '/pdf-quiz'
+      preLoaderRoute: typeof PdfQuizRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/exams': {
+      id: '/exams'
+      path: '/exams'
+      fullPath: '/exams'
+      preLoaderRoute: typeof ExamsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,22 +336,133 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/r/$slug': {
+      id: '/r/$slug'
+      path: '/r/$slug'
+      fullPath: '/r/$slug'
+      preLoaderRoute: typeof RSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/exam/$examId': {
+      id: '/exam/$examId'
+      path: '/exam/$examId'
+      fullPath: '/exam/$examId'
+      preLoaderRoute: typeof ExamExamIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/submissions': {
+      id: '/admin/submissions'
+      path: '/submissions'
+      fullPath: '/admin/submissions'
+      preLoaderRoute: typeof AdminSubmissionsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/students': {
+      id: '/admin/students'
+      path: '/students'
+      fullPath: '/admin/students'
+      preLoaderRoute: typeof AdminStudentsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/settings': {
+      id: '/admin/settings'
+      path: '/settings'
+      fullPath: '/admin/settings'
+      preLoaderRoute: typeof AdminSettingsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/requests': {
+      id: '/admin/requests'
+      path: '/requests'
+      fullPath: '/admin/requests'
+      preLoaderRoute: typeof AdminRequestsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/pdf': {
+      id: '/admin/pdf'
+      path: '/pdf'
+      fullPath: '/admin/pdf'
+      preLoaderRoute: typeof AdminPdfRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/issues': {
+      id: '/admin/issues'
+      path: '/issues'
+      fullPath: '/admin/issues'
+      preLoaderRoute: typeof AdminIssuesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/gallery': {
+      id: '/admin/gallery'
+      path: '/gallery'
+      fullPath: '/admin/gallery'
+      preLoaderRoute: typeof AdminGalleryRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/exams': {
+      id: '/admin/exams'
+      path: '/exams'
+      fullPath: '/admin/exams'
+      preLoaderRoute: typeof AdminExamsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/attendance': {
+      id: '/admin/attendance'
+      path: '/attendance'
+      fullPath: '/admin/attendance'
+      preLoaderRoute: typeof AdminAttendanceRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
 
+interface AdminRouteChildren {
+  AdminAttendanceRoute: typeof AdminAttendanceRoute
+  AdminExamsRoute: typeof AdminExamsRoute
+  AdminGalleryRoute: typeof AdminGalleryRoute
+  AdminIssuesRoute: typeof AdminIssuesRoute
+  AdminPdfRoute: typeof AdminPdfRoute
+  AdminRequestsRoute: typeof AdminRequestsRoute
+  AdminSettingsRoute: typeof AdminSettingsRoute
+  AdminStudentsRoute: typeof AdminStudentsRoute
+  AdminSubmissionsRoute: typeof AdminSubmissionsRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminAttendanceRoute: AdminAttendanceRoute,
+  AdminExamsRoute: AdminExamsRoute,
+  AdminGalleryRoute: AdminGalleryRoute,
+  AdminIssuesRoute: AdminIssuesRoute,
+  AdminPdfRoute: AdminPdfRoute,
+  AdminRequestsRoute: AdminRequestsRoute,
+  AdminSettingsRoute: AdminSettingsRoute,
+  AdminStudentsRoute: AdminStudentsRoute,
+  AdminSubmissionsRoute: AdminSubmissionsRoute,
+  AdminIndexRoute: AdminIndexRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRouteWithChildren,
+  ExamsRoute: ExamsRoute,
+  PdfQuizRoute: PdfQuizRoute,
+  QuizRoute: QuizRoute,
+  RegisterRoute: RegisterRoute,
+  ResultsRoute: ResultsRoute,
+  StudentRoute: StudentRoute,
+  ExamExamIdRoute: ExamExamIdRoute,
+  RSlugRoute: RSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

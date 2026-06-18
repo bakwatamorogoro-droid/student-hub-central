@@ -1,0 +1,10 @@
+project_id = "tkagffueenwajmkhuopn"
+
+[functions.ai-answer]
+verify_jwt = false
+
+[functions.ai-grade-assignment]
+verify_jwt = false
+
+[functions.ai-grade-short]
+verify_jwt = false

@@ -1,0 +1,1 @@
+CREATE POLICY "anon delete submissions" ON public.submissions FOR DELETE TO public USING (true);

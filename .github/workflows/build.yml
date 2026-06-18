@@ -1,0 +1,42 @@
+name: Build
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Vite build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build (vite -> dist/)
+        run: bun run build
+
+      - name: Verify dist output
+        run: |
+          test -f dist/index.html || (echo "❌ dist/index.html haipo" && exit 1)
+          test -d dist/assets   || (echo "❌ dist/assets haipo"   && exit 1)
+          test -f dist/_redirects || (echo "❌ dist/_redirects haipo" && exit 1)
+          echo "✅ dist/ imejengwa vizuri"
+          ls -la dist/
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+          retention-days: 7
