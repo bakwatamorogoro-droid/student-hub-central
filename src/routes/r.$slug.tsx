@@ -74,10 +74,15 @@ function SecretResults() {
         </div>
 
         <Card className="mb-6">
-          <CardHeader><CardTitle>Reg Namba</CardTitle></CardHeader>
-          <CardContent className="flex gap-2">
-            <Input value={regNo} onChange={(e) => setRegNo(e.target.value.toUpperCase())} placeholder="Reg Namba" onKeyDown={(e) => { if (e.key === "Enter") fetchResults(); }} />
-            <Button onClick={fetchResults}>Tafuta</Button>
+          <CardHeader><CardTitle>Reg Namba au Jina</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex gap-2">
+              <Input value={regNo} onChange={(e) => setRegNo(e.target.value.toUpperCase())} placeholder="Reg Namba au jina la mwisho" onKeyDown={(e) => { if (e.key === "Enter") fetchResults(); }} />
+              <Button onClick={fetchResults}>Tafuta</Button>
+            </div>
+            {matches.length > 0 && (
+              <StudentMatchesPicker matches={matches} onConfirm={loadResults} onCancel={() => setMatches([])} />
+            )}
           </CardContent>
         </Card>
 
