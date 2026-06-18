@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllStudents } from "@/lib/fetchAllStudents";
 import { toast } from "sonner";
 import { Users, User, Search, CheckCircle2, Loader2, Sparkles, ArrowRight, Clock } from "lucide-react";
 
