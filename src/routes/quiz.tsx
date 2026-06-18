@@ -103,6 +103,9 @@ function QuizPage() {
                 <span className="ml-auto text-xs bg-primary/10 px-2 py-0.5 rounded">{student.semina} • {student.student_group}</span>
               </div>
             )}
+            {matches.length > 0 && (
+              <StudentMatchesPicker matches={matches} onConfirm={confirmStudent} onCancel={() => setMatches([])} />
+            )}
           </CardContent>
         </Card>
 
