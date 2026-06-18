@@ -192,9 +192,14 @@ function ResultsPage() {
       <main className="container mx-auto px-4 py-8 max-w-3xl">
         <Card className="mb-6">
           <CardHeader><CardTitle className="flex items-center gap-2">Angalia Matokeo Yako {retrying && <RefreshCw className="h-4 w-4 animate-spin text-primary" />}</CardTitle></CardHeader>
-          <CardContent className="flex gap-2">
-            <Input value={regNo} onChange={(e) => setRegNo(e.target.value.toUpperCase())} placeholder="Reg Namba" onKeyDown={(e) => { if (e.key === "Enter") fetchResults(regNo); }} />
-            <Button onClick={() => fetchResults(regNo)}>Tafuta</Button>
+          <CardContent className="space-y-2">
+            <div className="flex gap-2">
+              <Input value={regNo} onChange={(e) => setRegNo(e.target.value.toUpperCase())} placeholder="Reg Namba au jina (mfano: jina la mwisho)" onKeyDown={(e) => { if (e.key === "Enter") fetchResults(regNo); }} />
+              <Button onClick={() => fetchResults(regNo)}>Tafuta</Button>
+            </div>
+            {matches.length > 0 && (
+              <StudentMatchesPicker matches={matches} onConfirm={(s) => fetchResults(s.reg_no)} onCancel={() => setMatches([])} />
+            )}
           </CardContent>
         </Card>
 
