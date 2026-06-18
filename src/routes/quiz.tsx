@@ -180,6 +180,7 @@ function GroupCard({ q, student, onStart }: { q: any; student: any; onStart: () 
   };
 
   useEffect(() => { loadMembers(); }, [student?.id]);
+  useEffect(() => { loadAllStudents(); }, []);
 
   useEffect(() => {
     const loadQ = async () => {
