@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { fetchAllStudents } from "@/lib/fetchAllStudents";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Users, AlertCircle, Search, Mars, Venus } from "lucide-react";
