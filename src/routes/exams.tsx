@@ -12,6 +12,8 @@ import { Clock, User, GraduationCap, Phone, CheckCircle2, Calendar } from "lucid
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ExamHeroCarousel } from "@/components/ExamHeroCarousel";
+import { findStudentsByQuery } from "@/lib/studentSearch";
+import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 
 export const Route = createFileRoute("/exams")({
   component: ExamsPage,
@@ -29,6 +31,7 @@ function ExamsPage() {
   const [exams, setExams] = useState<any[]>([]);
   const [regInput, setRegInput] = useState("");
   const [student, setStudent] = useState<any>(null);
+  const [matches, setMatches] = useState<any[]>([]);
   const [checking, setChecking] = useState(false);
   const [category, setCategory] = useState<string>("all");
 
@@ -59,19 +62,28 @@ function ExamsPage() {
     others: exams.filter((e) => categorize(e.title) === "others").length,
   };
 
+  const confirmStudent = (s: any) => {
+    setStudent(s);
+    setMatches([]);
+    setRegInput(s.reg_no);
+    localStorage.setItem("student_reg", s.reg_no);
+  };
+
   const lookup = async (reg: string) => {
     if (!reg) return;
     setChecking(true);
-    const { data } = await supabase.from("students").select("*").ilike("reg_no", reg.trim()).maybeSingle();
+    const results = await findStudentsByQuery(reg);
     setChecking(false);
-    if (!data) {
-      toast.error("Reg Namba haipo. Jisajili kwanza.");
+    if (results.length === 0) {
+      toast.error("Hakuna mwanafunzi anayelingana. Hakikisha umeandika sahihi au jisajili.");
       setStudent(null);
+      setMatches([]);
       return;
     }
-    // Kifaa chochote kinaruhusiwa
-    setStudent(data);
-    localStorage.setItem("student_reg", data.reg_no);
+    if (results.length === 1) { confirmStudent(results[0]); return; }
+    setStudent(null);
+    setMatches(results);
+    toast.info(`Tumepata ${results.length} wanafunzi — chagua wewe ni nani.`);
   };
 
   const now = Date.now();
