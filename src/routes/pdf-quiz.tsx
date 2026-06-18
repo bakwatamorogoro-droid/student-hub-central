@@ -154,12 +154,15 @@ function Page() {
             <CardHeader><CardTitle>Anza — Weka Reg Namba yako</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div>
-                <Label>Reg Namba</Label>
-                <Input value={reg} onChange={(e) => setReg(e.target.value)} placeholder="MFN.001" onKeyDown={(e) => { if (e.key === "Enter") lookupStudent(); }} />
+                <Label>Reg Namba au Jina</Label>
+                <Input value={reg} onChange={(e) => setReg(e.target.value)} placeholder="MFN.001 au jina la mwisho" onKeyDown={(e) => { if (e.key === "Enter") lookupStudent(); }} />
               </div>
               <Button className="w-full" onClick={lookupStudent} disabled={checking}>
                 {checking ? "Inatafuta..." : "Endelea"}
               </Button>
+              {matches.length > 0 && (
+                <StudentMatchesPicker matches={matches} onConfirm={confirmStudent} onCancel={() => setMatches([])} />
+              )}
               <p className="text-xs text-muted-foreground text-center">
                 Hujajisajili? <Link to="/register" className="text-primary underline">Jisajili hapa</Link>
               </p>
