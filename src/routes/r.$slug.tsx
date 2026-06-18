@@ -5,6 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Trophy, User, GraduationCap, Lock } from "lucide-react";
+import { findStudentsByQuery } from "@/lib/studentSearch";
+import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/r/$slug")({ component: SecretResults });
 
@@ -13,6 +16,7 @@ function SecretResults() {
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [regNo, setRegNo] = useState("");
   const [student, setStudent] = useState<any>(null);
+  const [matches, setMatches] = useState<any[]>([]);
   const [rows, setRows] = useState<any[]>([]);
   const [searched, setSearched] = useState(false);
 
@@ -25,10 +29,11 @@ function SecretResults() {
     if (r) setRegNo(r);
   }, [slug]);
 
-  const fetchResults = async () => {
-    const r = regNo.toUpperCase();
-    const { data: s } = await supabase.from("students").select("*").ilike("reg_no", r.trim()).maybeSingle();
+  const loadResults = async (s: any) => {
     setStudent(s);
+    setRegNo(s.reg_no);
+    localStorage.setItem("student_reg", s.reg_no);
+    const r = s.reg_no.toUpperCase();
     const { data } = await supabase
       .from("submissions")
       .select("*, exams!inner(title, results_published)")
@@ -36,6 +41,15 @@ function SecretResults() {
       .order("submitted_at", { ascending: false });
     setRows((data || []).filter((x: any) => x.exams.results_published && x.ai_confirmed));
     setSearched(true);
+  };
+
+  const fetchResults = async () => {
+    if (!regNo.trim()) return;
+    const results = await findStudentsByQuery(regNo);
+    if (results.length === 0) { toast.error("Hakuna mwanafunzi anayelingana."); setStudent(null); setMatches([]); setRows([]); setSearched(true); return; }
+    if (results.length === 1) { setMatches([]); loadResults(results[0]); return; }
+    setStudent(null);
+    setMatches(results);
   };
 
   if (allowed === null) return null;
