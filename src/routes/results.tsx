@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { Trophy, User, GraduationCap, RefreshCw, Users, CheckCircle2, XCircle, ChevronDown, ChevronUp, Sparkles, BookOpen } from "lucide-react";
 import { gradeShortAnswer } from "@/lib/grading.functions";
+import { findStudentsByQuery } from "@/lib/studentSearch";
+import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
+import { toast } from "sonner";
 
 type QA = { q: any; given: any; correct: boolean; partial?: number };
 
@@ -25,6 +28,7 @@ function ResultsPage() {
   const [regNo, setRegNo] = useState("");
   const [student, setStudent] = useState<any>(null);
   const [rows, setRows] = useState<any[]>([]);
+  const [matches, setMatches] = useState<any[]>([]);
   const [groupTotals, setGroupTotals] = useState<Record<string, { sum: number; max: number; count: number; title: string }>>({});
   const [searched, setSearched] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -91,9 +95,16 @@ function ResultsPage() {
   }, []);
 
   const fetchResults = async (reg: string) => {
-    const r = reg.toUpperCase();
-    const { data: s } = await supabase.from("students").select("*").ilike("reg_no", r.trim()).maybeSingle();
+    if (!reg) return;
+    const results = await findStudentsByQuery(reg);
+    if (results.length === 0) { toast.error("Hakuna mwanafunzi anayelingana."); setStudent(null); setMatches([]); setRows([]); setSearched(true); return; }
+    if (results.length > 1) { setStudent(null); setMatches(results); toast.info(`Tumepata ${results.length} wanafunzi — chagua wewe ni nani.`); return; }
+    const s = results[0];
+    setMatches([]);
     setStudent(s);
+    setRegNo(s.reg_no);
+    localStorage.setItem("student_reg", s.reg_no);
+    const r = s.reg_no.toUpperCase();
     const { data } = await supabase
       .from("submissions")
       .select("*, exams!inner(title, results_published, quiz_mode)")
