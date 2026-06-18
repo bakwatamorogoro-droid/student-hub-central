@@ -255,7 +255,77 @@ function GroupCard({ q, student, onStart }: { q: any; student: any; onStart: () 
               </div>
               <div className="mt-2 text-[11px] text-muted-foreground">Walioungana (watagawana alama): <b>{myGroupParticipants.length}/{members.length}</b></div>
             </div>
-            <div className="flex gap-2">
+
+            {/* Tafuta mtu yeyote aliyesajiliwa kwenye mfumo */}
+            <div className="rounded-lg border-2 border-primary/20 bg-background/60 p-3">
+              <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                <div className="text-xs font-bold flex items-center gap-1.5">
+                  <Search className="h-3.5 w-3.5 text-primary" />
+                  Tafuta mwanafunzi yeyote ({allStudents.length.toLocaleString()})
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAll((v) => !v)}
+                  className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 hover:bg-primary/20 text-primary font-semibold"
+                >
+                  {showAll ? "Ficha" : "Onyesha wote"}
+                </button>
+              </div>
+              <Input
+                value={memberSearch}
+                onChange={(e) => setMemberSearch(e.target.value)}
+                placeholder="Andika jina, Reg Namba, semina au group..."
+                className="h-9 text-xs"
+              />
+              {(memberSearch.trim() || showAll) && (() => {
+                const term = memberSearch.trim().toLowerCase();
+                const list = term
+                  ? allStudents.filter((s) =>
+                      [s.full_name, s.reg_no, s.semina, s.student_group, s.phone]
+                        .filter(Boolean)
+                        .some((v: string) => String(v).toLowerCase().includes(term)),
+                    )
+                  : allStudents;
+                const shown = list.slice(0, 300);
+                return (
+                  <>
+                    <div className="mt-2 text-[10px] text-muted-foreground">
+                      {list.length.toLocaleString()} matokeo{list.length > shown.length ? ` • inaonyesha ${shown.length}` : ""}
+                    </div>
+                    <div className="mt-1 max-h-72 overflow-auto flex flex-col gap-1">
+                      {shown.map((s) => {
+                        const joined = participants.find((p) => p.student_id === s.id);
+                        const mine = s.semina === student.semina && s.student_group === student.student_group;
+                        return (
+                          <div
+                            key={s.id}
+                            className={`text-[11px] px-2 py-1 rounded-md border flex items-center justify-between gap-2 ${
+                              joined
+                                ? "bg-emerald-500/15 border-emerald-500/40"
+                                : mine
+                                ? "bg-primary/10 border-primary/30"
+                                : "bg-muted/30 border-muted-foreground/10"
+                            }`}
+                          >
+                            <span className="truncate font-medium">
+                              {joined && "✓ "}{s.full_name}
+                              <span className="text-muted-foreground font-mono ml-1">• {s.reg_no}</span>
+                            </span>
+                            <span className="text-[10px] text-muted-foreground shrink-0">
+                              {s.semina} • {s.student_group}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {list.length === 0 && (
+                        <div className="text-[11px] text-muted-foreground text-center py-3">Hakuna mwanafunzi anayelingana.</div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
               {!iJoined ? (
                 <Button size="sm" variant="outline" onClick={join} disabled={joining || !q.quiz_active} className="flex-1">
                   {joining ? <Loader2 className="h-3 w-3 animate-spin" /> : "Ungana na Group"}
