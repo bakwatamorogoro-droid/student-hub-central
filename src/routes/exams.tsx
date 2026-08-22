@@ -12,6 +12,8 @@ import { Clock, User, GraduationCap, Phone, CheckCircle2, Calendar } from "lucid
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ExamHeroCarousel } from "@/components/ExamHeroCarousel";
+import { ExamVideoHero, BigSystemTitle } from "@/components/ExamVideoHero";
+
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 
@@ -98,9 +100,10 @@ function ExamsPage() {
   return (
     <div className="min-h-screen bg-background">
       <SiteHeader />
-      <main className="container mx-auto px-4 py-8 max-w-3xl">
-        <ExamHeroCarousel />
+      <main className="container mx-auto px-4 py-8 max-w-5xl">
+        <ExamVideoHero subtitle="Jisajili, thibitisha taarifa zako, kisha anza mtihani wako mtandaoni kwa usalama na adabu ya Kiislamu." />
         <Card className="mb-6 border-2 border-primary/30">
+
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><User className="h-5 w-5" /> Thibitisha Mwanafunzi</CardTitle>
           </CardHeader>
