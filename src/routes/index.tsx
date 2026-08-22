@@ -10,6 +10,8 @@ import { getDeviceId } from "@/lib/device-id";
 import { AttendanceCheckIn } from "@/components/AttendanceCheckIn";
 import { HomeAssignments } from "@/components/HomeAssignments";
 import { GroupAvailability } from "@/components/GroupAvailability";
+import { BigSystemTitle } from "@/components/ExamVideoHero";
+
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -240,7 +242,9 @@ function Index() {
         <StudyGallery />
         <GroupAvailability />
         <HomeAssignments />
+        <BigSystemTitle sub="Islamic Studies · Mtandaoni" />
       </main>
+
     </div>
   );
 }
