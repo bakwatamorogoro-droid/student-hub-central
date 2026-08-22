@@ -154,26 +154,31 @@ function ExamsPage() {
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           {filteredExams.length === 0 && <p className="text-muted-foreground">Hakuna mtihani katika aina hii.</p>}
           {filteredExams.map((e) => {
             const st = status(e);
             return (
-              <Card key={e.id} className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <CardTitle className="flex justify-between items-start gap-2">
-                    <span>{e.title}</span>
-                    <span className={`text-xs font-normal px-2 py-1 rounded ${st.can ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{st.label}</span>
+              <Card
+                key={e.id}
+                className="group relative overflow-hidden rounded-2xl border border-primary/15 bg-gradient-to-br from-card via-card to-primary/5 hover:border-primary/50 hover:shadow-2xl hover:-translate-y-1 transition-all"
+              >
+                <div className="absolute -right-10 -top-10 w-32 h-32 rounded-full bg-primary/10 blur-2xl" />
+                <CardHeader className="relative pb-2">
+                  <CardTitle className="flex justify-between items-start gap-2 text-base md:text-lg">
+                    <span className="font-extrabold tracking-tight">{e.title}</span>
+                    <span className={`text-[10px] uppercase tracking-wide font-bold px-2 py-1 rounded-full whitespace-nowrap ${st.can ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>{st.label}</span>
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  {e.description && <p className="text-sm text-muted-foreground mb-2">{e.description}</p>}
-                  <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground mb-3">
-                    <span className="flex items-center gap-1"><Clock className="h-4 w-4" /> {e.duration_minutes} dakika</span>
-                    {e.start_time && <span className="flex items-center gap-1"><Calendar className="h-4 w-4" /> Huanza: {formatEat(e.start_time)}</span>}
-                    {e.end_time && <span className="flex items-center gap-1"><Calendar className="h-4 w-4" /> Humalizika: {formatEat(e.end_time)}</span>}
+                <CardContent className="relative">
+                  {e.description && <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{e.description}</p>}
+                  <div className="grid gap-1.5 text-xs text-muted-foreground mb-4">
+                    <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5 text-primary" /> {e.duration_minutes} dakika</span>
+                    {e.start_time && <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5 text-primary" /> Huanza: {formatEat(e.start_time)}</span>}
+                    {e.end_time && <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5 text-primary" /> Humalizika: {formatEat(e.end_time)}</span>}
                   </div>
                   <Button
+                    className="w-full rounded-xl font-bold"
                     disabled={!student || !st.can}
                     onClick={() => nav({ to: "/exam/$examId", params: { examId: e.id }, search: {} as any })}
                   >
@@ -184,7 +189,12 @@ function ExamsPage() {
             );
           })}
         </div>
+
+        <ExamHeroCarousel />
+
+        <BigSystemTitle sub="Islamic Studies · Mtandaoni" />
       </main>
+
     </div>
   );
 }
