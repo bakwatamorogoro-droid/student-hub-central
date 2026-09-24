@@ -11,7 +11,6 @@ import { formatEat } from "@/lib/time";
 import { Clock, User, GraduationCap, Phone, CheckCircle2, Calendar } from "lucide-react";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ExamHeroCarousel } from "@/components/ExamHeroCarousel";
 import { ExamVideoHero, BigSystemTitle } from "@/components/ExamVideoHero";
 
 import { findStudentsByQuery } from "@/lib/studentSearch";
@@ -189,8 +188,6 @@ function ExamsPage() {
             );
           })}
         </div>
-
-        <ExamHeroCarousel />
 
         <BigSystemTitle sub="Islamic Studies · Mtandaoni" />
       </main>
