@@ -29,6 +29,8 @@ function QuizPage() {
   const [student, setStudent] = useState<any>(null);
   const [matches, setMatches] = useState<any[]>([]);
   const [quizzes, setQuizzes] = useState<any[]>([]);
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [assignMode, setAssignMode] = useState<string>("individual");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -44,6 +46,15 @@ function QuizPage() {
       .in("quiz_mode", ["individual", "group"])
       .order("created_at", { ascending: false });
     setQuizzes(data || []);
+  };
+
+  const loadAssignments = async () => {
+    const { data } = await supabase.from("exams")
+      .select("*")
+      .eq("published", true)
+      .eq("quiz_mode", "assignment")
+      .order("created_at", { ascending: false });
+    setAssignments(data || []);
   };
 
   const confirmStudent = (s: any) => {
