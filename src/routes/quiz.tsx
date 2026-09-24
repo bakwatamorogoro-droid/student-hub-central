@@ -37,6 +37,7 @@ function QuizPage() {
     const r = localStorage.getItem("student_reg");
     if (r) { setReg(r); lookup(r); }
     loadQuizzes();
+    loadAssignments();
   }, []);
 
   const loadQuizzes = async () => {
@@ -78,6 +79,7 @@ function QuizPage() {
 
   const individualQuizzes = quizzes.filter((q) => q.quiz_mode === "individual");
   const groupQuizzes = quizzes.filter((q) => q.quiz_mode === "group");
+  const filteredAssignments = assignments.filter((a) => !a.assignment_mode || a.assignment_mode === assignMode);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-emerald-500/5">
