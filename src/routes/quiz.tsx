@@ -29,12 +29,15 @@ function QuizPage() {
   const [student, setStudent] = useState<any>(null);
   const [matches, setMatches] = useState<any[]>([]);
   const [quizzes, setQuizzes] = useState<any[]>([]);
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [assignMode, setAssignMode] = useState<string>("individual");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const r = localStorage.getItem("student_reg");
     if (r) { setReg(r); lookup(r); }
     loadQuizzes();
+    loadAssignments();
   }, []);
 
   const loadQuizzes = async () => {
@@ -44,6 +47,15 @@ function QuizPage() {
       .in("quiz_mode", ["individual", "group"])
       .order("created_at", { ascending: false });
     setQuizzes(data || []);
+  };
+
+  const loadAssignments = async () => {
+    const { data } = await supabase.from("exams")
+      .select("*")
+      .eq("published", true)
+      .eq("quiz_mode", "assignment")
+      .order("created_at", { ascending: false });
+    setAssignments(data || []);
   };
 
   const confirmStudent = (s: any) => {
@@ -67,6 +79,7 @@ function QuizPage() {
 
   const individualQuizzes = quizzes.filter((q) => q.quiz_mode === "individual");
   const groupQuizzes = quizzes.filter((q) => q.quiz_mode === "group");
+  const filteredAssignments = assignments.filter((a) => !a.assignment_mode || a.assignment_mode === assignMode);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-emerald-500/5">
@@ -108,6 +121,26 @@ function QuizPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Assignment — dropdown ya Individual au Group */}
+        <section className="mb-8">
+          <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+            <h2 className="text-lg font-bold flex items-center gap-2"><Sparkles className="h-5 w-5 text-secondary" /> Assignment</h2>
+            <Select value={assignMode} onValueChange={setAssignMode}>
+              <SelectTrigger className="w-44"><SelectValue placeholder="Chagua aina" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="individual">Individual</SelectItem>
+                <SelectItem value="group">Group</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {filteredAssignments.length === 0 && <p className="text-sm text-muted-foreground">Hakuna assignment ya {assignMode === "individual" ? "mtu binafsi" : "group"} sasa hivi.</p>}
+          <div className="grid sm:grid-cols-2 gap-3">
+            {filteredAssignments.map((a) => (
+              <IndividualCard key={a.id} q={a} student={student} onStart={() => nav({ to: "/exam/$examId", params: { examId: a.id }, search: { mode: "assignment" } as any })} />
+            ))}
+          </div>
+        </section>
 
         {/* Individual quizzes */}
         <section className="mb-8">
