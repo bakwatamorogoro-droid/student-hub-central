@@ -19,6 +19,8 @@
  */
 
 @theme inline {
+  --font-sans: "Figtree", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -59,6 +61,8 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --shadow-soft: 0 12px 40px -20px color-mix(in oklch, var(--foreground) 28%, transparent);
+  --shadow-float: 0 22px 60px -28px color-mix(in oklch, var(--primary) 55%, transparent);
 }
 
 :root {
@@ -142,5 +146,89 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: var(--font-sans);
+    min-width: 320px;
+    background-image:
+      radial-gradient(circle at 12% 5%, color-mix(in oklch, var(--primary) 12%, transparent), transparent 28rem),
+      radial-gradient(circle at 88% 18%, color-mix(in oklch, var(--secondary) 12%, transparent), transparent 28rem);
+    background-attachment: fixed;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    letter-spacing: 0;
+  }
+
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 28%, transparent);
+  }
+}
+
+@layer components {
+  .page-shell {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .page-shell::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image: linear-gradient(to right, color-mix(in oklch, var(--border) 22%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklch, var(--border) 22%, transparent) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: linear-gradient(to bottom, black, transparent 60%);
+  }
+
+  .glass-panel {
+    border: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+    background: color-mix(in oklch, var(--card) 78%, transparent);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(18px);
+  }
+
+  .interactive-lift {
+    transition: transform 300ms cubic-bezier(.2,.8,.2,1), box-shadow 300ms ease, border-color 300ms ease;
+  }
+
+  .interactive-lift:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-float);
+  }
+
+  .stagger-grid > * {
+    animation: modern-rise 600ms cubic-bezier(.2,.8,.2,1) both;
+  }
+
+  .stagger-grid > *:nth-child(2) { animation-delay: 80ms; }
+  .stagger-grid > *:nth-child(3) { animation-delay: 160ms; }
+  .stagger-grid > *:nth-child(4) { animation-delay: 240ms; }
+  .stagger-grid > *:nth-child(5) { animation-delay: 320ms; }
+  .stagger-grid > *:nth-child(6) { animation-delay: 400ms; }
+}
+
+@keyframes modern-rise {
+  from { opacity: 0; transform: translateY(18px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes sheen {
+  from { transform: translateX(-120%) skewX(-18deg); }
+  to { transform: translateX(260%) skewX(-18deg); }
+}
+
+@keyframes scroll-cue {
+  0%, 100% { transform: translateY(0); opacity: .45; }
+  50% { transform: translateY(7px); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

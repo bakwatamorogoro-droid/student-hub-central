@@ -89,8 +89,8 @@ function RootComponent() {
 
 function SiteFooter() {
   return (
-    <footer className="mt-12 border-t bg-gradient-to-r from-primary/5 via-background to-primary/5">
-      <div className="container mx-auto px-4 py-4 text-center text-xs text-muted-foreground">
+    <footer className="mt-12 border-t border-primary/10 bg-card/60 backdrop-blur-xl">
+      <div className="container mx-auto px-4 py-6 text-center text-xs text-muted-foreground">
         Kifaa chochote • Hakuna Copy/Paste • Muda wa EAT • Imeundwa na viwango stationary
       </div>
     </footer>
