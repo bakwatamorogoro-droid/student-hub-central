@@ -38,8 +38,8 @@ function AdminSidebar({ onLogout }: { onLogout: () => void }) {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   return (
-    <Sidebar collapsible="icon" className="border-r-2 border-primary/20">
-      <SidebarContent className="bg-gradient-to-b from-primary/10 via-card to-secondary/10">
+    <Sidebar collapsible="icon" className="border-r border-primary/15">
+      <SidebarContent className="bg-card/85 backdrop-blur-2xl">
         <SidebarGroup>
           <SidebarGroupLabel className="text-primary font-bold">
             {!collapsed && "⚡ Admin Panel"}
@@ -52,8 +52,8 @@ function AdminSidebar({ onLogout }: { onLogout: () => void }) {
                     <Link
                       to={item.to}
                       activeOptions={{ exact: !!item.exact }}
-                      className="flex items-center gap-3 rounded-md hover:bg-primary/15 transition-all"
-                      activeProps={{ className: "flex items-center gap-3 rounded-md bg-gradient-to-r from-primary to-primary/80 text-primary-foreground font-bold shadow-md" }}
+                       className="flex items-center gap-3 rounded-lg transition-all hover:bg-primary/15"
+                       activeProps={{ className: "flex items-center gap-3 rounded-lg bg-primary text-primary-foreground font-bold shadow-md" }}
                     >
                       <item.icon className="h-4 w-4 shrink-0" />
                       {!collapsed && <span>{item.label}</span>}
@@ -84,15 +84,15 @@ function AdminLayout() {
   if (!authed) return <AdminLogin onLogin={() => setAuthed(true)} />;
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-gradient-to-br from-background via-primary/5 to-secondary/10">
+      <div className="page-shell flex min-h-screen w-full bg-background/80">
         <AdminSidebar onLogout={() => { adminLogout(); nav({ to: "/" }); }} />
         <div className="flex-1 flex flex-col min-w-0">
           <AnnouncementBanner />
-          <header className="h-12 flex items-center border-b-2 border-primary/20 bg-gradient-to-r from-primary/10 via-card to-secondary/10 backdrop-blur sticky top-0 z-30 shadow-sm px-2">
+          <header className="sticky top-0 z-30 flex h-14 items-center border-b border-primary/15 bg-card/75 px-2 shadow-soft backdrop-blur-2xl">
             <SidebarTrigger className="hover:bg-primary/15 rounded-lg" />
-            <span className="ml-3 font-bold bg-gradient-to-r from-primary to-secondary-foreground bg-clip-text text-transparent">⚡ Admin Panel</span>
+            <span className="ml-3 font-display font-bold text-foreground">Admin Panel</span>
           </header>
-          <main className="flex-1 container mx-auto px-4 py-6"><Outlet /></main>
+          <main className="container mx-auto flex-1 px-4 py-6 md:py-8"><Outlet /></main>
         </div>
       </div>
     </SidebarProvider>
