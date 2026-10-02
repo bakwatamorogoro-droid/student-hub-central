@@ -10,3 +10,4 @@
 <!-- LOVABLE:END -->
 
 - Use shared semantic glass surfaces, Outfit headings, and Figtree body text across public and admin UI so visual updates remain consistent and theme-safe.
+- Keep academic targeting centralized through the shared year helpers so student, exam, quiz, and assignment visibility stays consistent.
