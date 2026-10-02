@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Megaphone, FileText } from "lucide-react";
 
-type Item = { message: string; pdf_url: string | null; image_url: string | null; title: string | null };
+type Item = { message: string; pdf_url: string | null; title: string | null };
 
 export function AnnouncementBanner() {
   const [items, setItems] = useState<Item[]>([]);
@@ -10,12 +10,12 @@ export function AnnouncementBanner() {
     const load = async () => {
       const { data } = await supabase
         .from("announcements")
-        .select("message, expires_at, active, pdf_url, image_url, title")
+        .select("message, expires_at, active, pdf_url, title")
         .eq("active", true)
         .order("created_at", { ascending: false });
       const now = Date.now();
       const valid = (data || []).filter((a: any) => !a.expires_at || new Date(a.expires_at).getTime() > now);
-      setItems(valid.map((a: any) => ({ message: a.message, pdf_url: a.pdf_url, image_url: a.image_url, title: a.title })));
+      setItems(valid.map((a: any) => ({ message: a.message, pdf_url: a.pdf_url, title: a.title })));
     };
     load();
     const t = setInterval(load, 30000);
@@ -30,13 +30,6 @@ export function AnnouncementBanner() {
           <span className="text-primary">★</span>
           {it.title ? <strong className="text-primary">{it.title}:</strong> : null}
           <span>{it.message}</span>
-          {it.image_url && (
-            <img
-              src={it.image_url}
-              alt={it.title || "picha"}
-              className="inline-block h-10 w-auto rounded-md border border-primary/30 shadow-sm align-middle"
-            />
-          )}
           {it.pdf_url && (
             <a href={it.pdf_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline hover:text-primary">
               <FileText className="h-3 w-3" /> PDF

@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { isAdmin, adminLogout } from "@/lib/admin-session";
 import { AdminLogin } from "@/components/AdminLogin";
 import { Button } from "@/components/ui/button";
-import { AnnouncementBanner } from "@/components/AnnouncementBanner";
 import { LogOut, LayoutDashboard, FileText, Users, ClipboardCheck, BarChart3, Inbox, AlertTriangle, Image as ImageIcon, Settings, FileUp } from "lucide-react";
 import {
   Sidebar,
@@ -87,7 +86,6 @@ function AdminLayout() {
       <div className="page-shell flex min-h-screen w-full bg-background/80">
         <AdminSidebar onLogout={() => { adminLogout(); nav({ to: "/" }); }} />
         <div className="flex-1 flex flex-col min-w-0">
-          <AnnouncementBanner />
           <header className="sticky top-0 z-30 flex h-14 items-center border-b border-primary/15 bg-card/75 px-2 shadow-soft backdrop-blur-2xl">
             <SidebarTrigger className="hover:bg-primary/15 rounded-lg" />
             <span className="ml-3 font-display font-bold text-foreground">Admin Panel</span>

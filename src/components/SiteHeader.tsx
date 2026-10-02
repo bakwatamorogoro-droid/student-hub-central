@@ -1,6 +1,5 @@
 import { Link, useRouter } from "@tanstack/react-router";
 import { BookOpenCheck, Home, ArrowLeft, ArrowRight, Languages } from "lucide-react";
-import { AnnouncementBanner } from "./AnnouncementBanner";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
 
@@ -9,7 +8,6 @@ export function SiteHeader() {
   const router = useRouter();
   return (
     <>
-      <AnnouncementBanner />
       <header className="sticky top-0 z-40 border-b border-primary/15 bg-card/75 shadow-soft backdrop-blur-2xl">
         <div className="container mx-auto flex items-center justify-between gap-3 px-3 py-2.5 md:px-4">
           <div className="flex items-center gap-2">
