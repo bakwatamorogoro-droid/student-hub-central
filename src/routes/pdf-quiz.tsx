@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { Upload, FileText, CheckCircle2, Clock, Sparkles, AlertCircle, ArrowLeft, Pencil } from "lucide-react";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
+import { matchesAcademicTarget } from "@/lib/academicTargeting";
 
 type Search = { a?: string };
 
@@ -38,6 +39,8 @@ function Page() {
   const [uploading, setUploading] = useState(false);
   const [mySubs, setMySubs] = useState<any[]>([]);
 
+  const visibleAssignments = student ? assignments.filter((assignment) => matchesAcademicTarget(assignment, student)) : [];
+
   useEffect(() => {
     supabase.from("exam_pdfs" as any).select("*").eq("is_assignment", true).eq("active", true).order("created_at", { ascending: false })
       .then(({ data }: { data: any }) => {
@@ -59,6 +62,7 @@ function Page() {
     localStorage.setItem("student_reg", data.reg_no);
     const { data: subs } = await supabase.from("pdf_submissions" as any).select("*").eq("reg_no", data.reg_no).order("created_at", { ascending: false });
     setMySubs((subs as any[]) || []);
+    if (active && !matchesAcademicTarget(active, data)) setActive(null);
     toast.success(`Karibu, ${data.full_name}`);
   };
 
@@ -222,16 +226,16 @@ function Page() {
             <Card className="border-primary/30">
               <CardContent className="p-4 flex items-center gap-2">
                 <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                <div className="text-sm"><b>{student.full_name}</b> • {student.reg_no} • {student.semina} • {student.student_group}</div>
+                <div className="text-sm"><b>{student.full_name}</b> • {student.reg_no} • {student.semina} • {student.student_group} • Mwaka {student.study_year || "—"} • {student.academic_year || "—"}</div>
               </CardContent>
             </Card>
 
-            <h2 className="text-lg font-bold">Kazi zilizopo ({assignments.length})</h2>
-            {assignments.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">Hakuna kazi kwa sasa. Subiri mwalimu apandishe.</p>
+            <h2 className="text-lg font-bold">Kazi za mwaka wako ({visibleAssignments.length})</h2>
+            {visibleAssignments.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">Hakuna kazi ya mwaka wako kwa sasa. Subiri mwalimu apandishe.</p>
             ) : (
               <div className="grid gap-3">
-                {assignments.map((a) => {
+                {visibleAssignments.map((a) => {
                   const done = mySubs.find((s) => s.assignment_id === a.id);
                   const overdue = a.due_at && Date.now() > new Date(a.due_at).getTime();
                   const canEdit = done && !done.teacher_confirmed;

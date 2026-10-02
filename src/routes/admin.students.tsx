@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { Pencil, Trash2, Download, CheckCircle2, XCircle } from "lucide-react";
+import { ACADEMIC_YEARS, STUDY_YEARS } from "@/lib/academicTargeting";
 
 export const Route = createFileRoute("/admin/students")({ component: Page });
 
@@ -25,6 +26,8 @@ type Student = {
   student_group: string;
   device_id: string;
   created_at: string;
+  study_year: number | null;
+  academic_year: string | null;
 };
 
 function Page() {
@@ -104,7 +107,9 @@ function Page() {
         gender: editing.gender,
         semina: editing.semina,
         student_group: editing.student_group,
-      })
+        study_year: editing.study_year,
+        academic_year: editing.academic_year,
+      } as any)
       .eq("id", editing.id);
     if (error) return toast.error(error.message);
     toast.success("Imehifadhiwa");
@@ -149,13 +154,15 @@ function Page() {
                 <th className="text-left p-2">Kozi</th>
                 <th className="text-left p-2">Semina</th>
                 <th className="text-left p-2">Group</th>
+                <th className="text-left p-2">Mwaka</th>
+                <th className="text-left p-2">Kitaaluma</th>
                 <th className="text-left p-2">Tarehe</th>
                 <th className="text-left p-2">Vitendo</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={10} className="text-center p-6 text-muted-foreground">Hakuna mwanafunzi bado.</td></tr>
+                <tr><td colSpan={12} className="text-center p-6 text-muted-foreground">Hakuna mwanafunzi bado.</td></tr>
               )}
               {filtered.map((r, i) => {
                 const submitted = submittedSet.has(r.id);
@@ -179,6 +186,8 @@ function Page() {
                   <td className="p-2">{r.course || "-"}</td>
                   <td className="p-2">{r.semina}</td>
                   <td className="p-2">{r.student_group}</td>
+                  <td className="p-2">{r.study_year ? `Mwaka ${r.study_year}` : "-"}</td>
+                  <td className="p-2">{r.academic_year || "-"}</td>
                   <td className="p-2 text-xs">{new Date(r.created_at).toLocaleDateString()}</td>
                   <td className="p-2">
                     <div className="flex gap-1">
@@ -238,6 +247,28 @@ function Page() {
                       {!groupList.includes(editing.student_group) && <SelectItem value={editing.student_group}>{editing.student_group}</SelectItem>}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Mwaka wa Masomo</Label>
+                    <Select value={editing.study_year ? String(editing.study_year) : "none"} onValueChange={(v) => setEditing({ ...editing, study_year: v === "none" ? null : Number(v) })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Haujawekwa</SelectItem>
+                        {STUDY_YEARS.map((year) => <SelectItem key={year} value={String(year)}>Mwaka wa {year}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Mwaka wa Kitaaluma</Label>
+                    <Select value={editing.academic_year || "none"} onValueChange={(v) => setEditing({ ...editing, academic_year: v === "none" ? null : v })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Haujawekwa</SelectItem>
+                        {ACADEMIC_YEARS.map((year) => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
             )}

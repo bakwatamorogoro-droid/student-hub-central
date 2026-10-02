@@ -11,6 +11,7 @@ import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 import { toast } from "sonner";
 import { Users, User, Search, CheckCircle2, Loader2, Sparkles, ArrowRight, Clock } from "lucide-react";
+import { matchesAcademicTarget } from "@/lib/academicTargeting";
 
 export const Route = createFileRoute("/quiz")({
   component: QuizPage,
@@ -77,9 +78,11 @@ function QuizPage() {
     toast.info(`Tumepata ${results.length} wanafunzi — chagua wewe ni nani.`);
   };
 
-  const individualQuizzes = quizzes.filter((q) => q.quiz_mode === "individual");
-  const groupQuizzes = quizzes.filter((q) => q.quiz_mode === "group");
-  const filteredAssignments = assignments.filter((a) => !a.assignment_mode || a.assignment_mode === assignMode);
+  const eligibleQuizzes = student ? quizzes.filter((q) => matchesAcademicTarget(q, student)) : [];
+  const eligibleAssignments = student ? assignments.filter((a) => matchesAcademicTarget(a, student)) : [];
+  const individualQuizzes = eligibleQuizzes.filter((q) => q.quiz_mode === "individual");
+  const groupQuizzes = eligibleQuizzes.filter((q) => q.quiz_mode === "group");
+  const filteredAssignments = eligibleAssignments.filter((a) => !a.assignment_mode || a.assignment_mode === assignMode);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-emerald-500/5">
@@ -114,6 +117,7 @@ function QuizPage() {
                 <b>{student.full_name}</b>
                 <span className="text-muted-foreground">• {student.reg_no}</span>
                 <span className="ml-auto text-xs bg-primary/10 px-2 py-0.5 rounded">{student.semina} • {student.student_group}</span>
+                <span className="text-xs bg-secondary/50 px-2 py-0.5 rounded">Mwaka {student.study_year || "—"} • {student.academic_year || "—"}</span>
               </div>
             )}
             {matches.length > 0 && (
@@ -134,7 +138,8 @@ function QuizPage() {
               </SelectContent>
             </Select>
           </div>
-          {filteredAssignments.length === 0 && <p className="text-sm text-muted-foreground">Hakuna assignment ya {assignMode === "individual" ? "mtu binafsi" : "group"} sasa hivi.</p>}
+          {!student && <p className="text-sm text-muted-foreground">Thibitisha taarifa zako kuona assignment za mwaka wako.</p>}
+          {student && filteredAssignments.length === 0 && <p className="text-sm text-muted-foreground">Hakuna assignment ya {assignMode === "individual" ? "mtu binafsi" : "group"} kwa mwaka wako sasa hivi.</p>}
           <div className="grid sm:grid-cols-2 gap-3">
             {filteredAssignments.map((a) => (
               <IndividualCard key={a.id} q={a} student={student} onStart={() => nav({ to: "/exam/$examId", params: { examId: a.id }, search: { mode: "assignment" } as any })} />

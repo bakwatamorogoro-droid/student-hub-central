@@ -15,6 +15,7 @@ import { ExamVideoHero, BigSystemTitle } from "@/components/ExamVideoHero";
 
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
+import { matchesAcademicTarget } from "@/lib/academicTargeting";
 
 export const Route = createFileRoute("/exams")({
   component: ExamsPage,
@@ -54,13 +55,14 @@ function ExamsPage() {
     return "others";
   };
 
-  const filteredExams = exams.filter((e) => category === "all" ? true : categorize(e.title) === category);
+  const eligibleExams = student ? exams.filter((e) => matchesAcademicTarget(e, student)) : [];
+  const filteredExams = eligibleExams.filter((e) => category === "all" ? true : categorize(e.title) === category);
   const counts = {
-    all: exams.length,
-    test1: exams.filter((e) => categorize(e.title) === "test1").length,
-    test2: exams.filter((e) => categorize(e.title) === "test2").length,
-    test3: exams.filter((e) => categorize(e.title) === "test3").length,
-    others: exams.filter((e) => categorize(e.title) === "others").length,
+    all: eligibleExams.length,
+    test1: eligibleExams.filter((e) => categorize(e.title) === "test1").length,
+    test2: eligibleExams.filter((e) => categorize(e.title) === "test2").length,
+    test3: eligibleExams.filter((e) => categorize(e.title) === "test3").length,
+    others: eligibleExams.filter((e) => categorize(e.title) === "others").length,
   };
 
   const confirmStudent = (s: any) => {
@@ -132,6 +134,8 @@ function ExamsPage() {
                 <div className="flex items-center gap-2"><GraduationCap className="h-4 w-4" /> {student.course || student.student_group}</div>
                 <div><span className="text-muted-foreground">Semina:</span> {student.semina}</div>
                 <div><span className="text-muted-foreground">Group:</span> {student.student_group}</div>
+                <div><span className="text-muted-foreground">Mwaka:</span> {student.study_year ? `Mwaka wa ${student.study_year}` : "Haujawekwa"}</div>
+                <div><span className="text-muted-foreground">Kitaaluma:</span> {student.academic_year || "Haujawekwa"}</div>
               </div>
             )}
             {matches.length > 0 && (
@@ -154,7 +158,8 @@ function ExamsPage() {
           </Select>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          {filteredExams.length === 0 && <p className="text-muted-foreground">Hakuna mtihani katika aina hii.</p>}
+          {!student && <p className="text-muted-foreground">Thibitisha taarifa zako ili kuona mitihani ya mwaka wako.</p>}
+          {student && filteredExams.length === 0 && <p className="text-muted-foreground">Hakuna mtihani wa mwaka wako katika aina hii.</p>}
           {filteredExams.map((e) => {
             const st = status(e);
             return (

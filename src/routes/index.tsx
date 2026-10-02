@@ -5,13 +5,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { UserPlus, FileText, Trophy, Shield, Users, ClipboardCheck, Eye, ArrowRight, Brain } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { supabase } from "@/integrations/supabase/client";
-import { StudyGallery } from "@/components/StudyGallery";
 import { getDeviceId } from "@/lib/device-id";
 import { AttendanceCheckIn } from "@/components/AttendanceCheckIn";
-import { HomeAssignments } from "@/components/HomeAssignments";
-import { GroupAvailability } from "@/components/GroupAvailability";
 import { BigSystemTitle } from "@/components/ExamVideoHero";
 import { HomeAnimationHero } from "@/components/HomeAnimationHero";
+import { AnnouncementBanner } from "@/components/AnnouncementBanner";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -89,6 +87,7 @@ function Index() {
         <div className="absolute top-20 -left-20 w-96 h-96 rounded-full bg-primary/20 blur-3xl animate-pulse" />
         <div className="absolute bottom-40 -right-20 w-[28rem] h-[28rem] rounded-full bg-emerald-500/15 blur-3xl animate-pulse" style={{ animationDelay: "1.5s" }} />
       </div>
+      <AnnouncementBanner />
       <SiteHeader />
       <main className="container mx-auto px-4 py-6 max-w-6xl">
         <HomeAnimationHero />
@@ -135,10 +134,6 @@ function Index() {
             </Card>
           </Link>
         </div>
-
-        <StudyGallery />
-        <GroupAvailability />
-        <HomeAssignments />
 
         {/* TAKWIMU — chini kwa mpangilio */}
         <section className="mt-10">

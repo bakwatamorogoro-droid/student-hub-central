@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getDeviceId } from "@/lib/device-id";
 import { toast } from "sonner";
 import { CheckCircle2 } from "lucide-react";
+import { ACADEMIC_YEARS, STUDY_YEARS } from "@/lib/academicTargeting";
 
 export const Route = createFileRoute("/register")({
   component: RegisterPage,
@@ -25,7 +26,7 @@ export const Route = createFileRoute("/register")({
 
 function RegisterPage() {
   const nav = useNavigate();
-  const [form, setForm] = useState({ reg_no: "", full_name: "", phone: "", course: "", age: "", gender: "Mwanaume", semina: "", student_group: "" });
+  const [form, setForm] = useState({ reg_no: "", full_name: "", phone: "", course: "", age: "", gender: "Mwanaume", semina: "", student_group: "", study_year: "", academic_year: "" });
   const [seminaList, setSeminaList] = useState<string[]>([]);
   const [groupList, setGroupList] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -42,7 +43,7 @@ function RegisterPage() {
 
   const handleReview = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.reg_no || !form.full_name || !form.phone || !form.semina || !form.student_group) {
+    if (!form.reg_no || !form.full_name || !form.phone || !form.semina || !form.student_group || !form.study_year || !form.academic_year) {
       toast.error("Jaza taarifa zote zinazohitajika");
       return;
     }
@@ -82,8 +83,10 @@ function RegisterPage() {
       gender: form.gender,
       semina: form.semina,
       student_group: form.student_group,
+      study_year: Number(form.study_year),
+      academic_year: form.academic_year,
       device_id,
-    });
+    } as any);
     setLoading(false);
     setConfirmOpen(false);
     if (error) {
@@ -155,6 +158,26 @@ function RegisterPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Mwaka wa Masomo *</Label>
+                  <Select value={form.study_year} onValueChange={(v) => setForm({ ...form, study_year: v })}>
+                    <SelectTrigger><SelectValue placeholder="Chagua mwaka" /></SelectTrigger>
+                    <SelectContent>
+                      {STUDY_YEARS.map((year) => <SelectItem key={year} value={String(year)}>Mwaka wa {year}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Mwaka wa Kitaaluma *</Label>
+                  <Select value={form.academic_year} onValueChange={(v) => setForm({ ...form, academic_year: v })}>
+                    <SelectTrigger><SelectValue placeholder="Mfano 2026/2027" /></SelectTrigger>
+                    <SelectContent>
+                      {ACADEMIC_YEARS.map((year) => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
               <Button type="submit" className="w-full" disabled={loading}>Endelea — Thibitisha Taarifa</Button>
             </form>
           </CardContent>
@@ -176,6 +199,8 @@ function RegisterPage() {
                 <div className="text-muted-foreground">Jinsia:</div><div>{form.gender}</div>
                 <div className="text-muted-foreground">Semina:</div><div>{form.semina}</div>
                 <div className="text-muted-foreground">Group:</div><div>{form.student_group}</div>
+                <div className="text-muted-foreground">Mwaka:</div><div>Mwaka wa {form.study_year}</div>
+                <div className="text-muted-foreground">Kitaaluma:</div><div>{form.academic_year}</div>
               </div>
             </div>
             <DialogFooter className="gap-2">
