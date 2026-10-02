@@ -9,6 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { FileText, ExternalLink, Trash2, Upload, Sparkles } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ACADEMIC_YEARS, STUDY_YEARS } from "@/lib/academicTargeting";
 
 export const Route = createFileRoute("/admin/pdf")({ component: Page });
 
@@ -26,6 +28,8 @@ function Page() {
   const [correctAnswer, setCorrectAnswer] = useState("");
   const [dueAt, setDueAt] = useState("");
   const [points, setPoints] = useState(100);
+  const [targetStudyYear, setTargetStudyYear] = useState("all");
+  const [targetAcademicYear, setTargetAcademicYear] = useState("all");
 
   const load = async () => {
     const [{ data: s }, { data: e }, { data: ep }] = await Promise.all([
@@ -103,10 +107,12 @@ function Page() {
       due_at: dueAt ? new Date(dueAt).toISOString() : null,
       points: Number(points) || 100,
       active: true,
+      target_study_year: targetStudyYear === "all" ? null : Number(targetStudyYear),
+      target_academic_year: targetAcademicYear === "all" ? null : targetAcademicYear,
     });
     setUploading(false);
     toast.success(isAssignment ? "Kazi imepandishwa" : "PDF imepakiwa");
-    setPdfFile(null); setPdfTitle(""); setAssignmentText(""); setCorrectAnswer(""); setDueAt(""); setPoints(100);
+    setPdfFile(null); setPdfTitle(""); setAssignmentText(""); setCorrectAnswer(""); setDueAt(""); setPoints(100); setTargetStudyYear("all"); setTargetAcademicYear("all");
     load();
   };
 
@@ -147,6 +153,28 @@ function Page() {
               </div>
             </>
           )}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Mwaka wa Masomo</Label>
+              <Select value={targetStudyYear} onValueChange={setTargetStudyYear}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Miaka yote</SelectItem>
+                  {STUDY_YEARS.map((year) => <SelectItem key={year} value={String(year)}>Mwaka wa {year}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Mwaka wa Kitaaluma</Label>
+              <Select value={targetAcademicYear} onValueChange={setTargetAcademicYear}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Miaka yote</SelectItem>
+                  {ACADEMIC_YEARS.map((year) => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           <div>
             <Label>{isAssignment ? "PDF ya Maswali (hiari)" : "PDF ya Maswali"}</Label>
             <Input type="file" accept="application/pdf" onChange={(e) => setPdfFile(e.target.files?.[0] || null)} />
@@ -160,7 +188,7 @@ function Page() {
               <ul className="space-y-1">
                 {examPdfs.map((p) => (
                   <li key={p.id} className="flex items-center justify-between text-sm p-2 bg-muted/40 rounded gap-2">
-                    <span className="truncate">{p.is_assignment ? "📝" : "📄"} {p.title} {p.is_assignment && <span className="text-[10px] text-primary font-bold">[KAZI • {p.points}p]</span>}</span>
+                    <span className="truncate">{p.is_assignment ? "📝" : "📄"} {p.title} {p.is_assignment && <span className="text-[10px] text-primary font-bold">[KAZI • {p.points}p • Mwaka {p.target_study_year || "yote"} • {p.target_academic_year || "yote"}]</span>}</span>
                     <div className="flex items-center gap-1 shrink-0">
                       {p.file_url && <a href={p.file_url} target="_blank" rel="noreferrer" className="text-primary text-xs flex items-center gap-1"><ExternalLink className="h-3 w-3" /></a>}
                       <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => delPdf(p.id)}><Trash2 className="h-3 w-3" /></Button>

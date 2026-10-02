@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { eatLocalInputToUtcIso, utcIsoToEatLocalInput } from "@/lib/time";
+import { ACADEMIC_YEARS, STUDY_YEARS } from "@/lib/academicTargeting";
 
 export const Route = createFileRoute("/admin/exams")({ component: Page });
 
@@ -41,12 +42,15 @@ function Page() {
       autosave_disabled: !!e.autosave_disabled,
       quiz_mode: e.quiz_mode || null,
       quiz_active: !!e.quiz_active,
+      target_study_year: e.target_study_year ? Number(e.target_study_year) : null,
+      target_academic_year: e.target_academic_year || null,
+      assignment_mode: e.quiz_mode === "assignment" ? (e.assignment_mode || "individual") : null,
     };
     (payload as any).test_number = e.test_number ? Number(e.test_number) : null;
     if (e.id) {
-      await supabase.from("exams").update(payload).eq("id", e.id);
+      await supabase.from("exams").update(payload as any).eq("id", e.id);
     } else {
-      await supabase.from("exams").insert(payload);
+      await supabase.from("exams").insert(payload as any);
     }
     toast.success("Imehifadhiwa");
     setEditing(null); load();
@@ -72,6 +76,8 @@ function Page() {
                 <div className="font-bold">{e.title} {e.published && <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded ml-2">Published</span>}</div>
                 <div className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
                   <span>{e.duration_minutes} dakika</span>
+                  {e.target_study_year && <span className="text-xs bg-primary/15 text-primary px-2 py-0.5 rounded">Mwaka {e.target_study_year}</span>}
+                  {e.target_academic_year && <span className="text-xs bg-secondary/50 px-2 py-0.5 rounded">{e.target_academic_year}</span>}
                   {e.test_number && <span className="text-xs bg-blue-500/20 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded font-bold">Test {e.test_number}</span>}
                   {e.quiz_mode && <span className="text-xs bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded">Quiz: {e.quiz_mode}</span>}
                   {e.quiz_mode && (
@@ -137,11 +143,46 @@ function Page() {
                     <SelectItem value="exam">Mtihani wa kawaida (mtu binafsi)</SelectItem>
                     <SelectItem value="individual">Quiz — Mtu Binafsi</SelectItem>
                     <SelectItem value="group">Quiz — Group (alama za group hujumlishwa)</SelectItem>
+                    <SelectItem value="assignment">Assignment</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground mt-1">
                   Group quiz: kila mwanafunzi anajibu peke yake, kisha matokeo ya wanafunzi wote wa <b>semina + group</b> moja huungana kwenye <b>jumla ya group</b>.
                 </p>
+              </div>
+              {editing.quiz_mode === "assignment" && (
+                <div>
+                  <Label>Assignment ni ya nani?</Label>
+                  <Select value={editing.assignment_mode || "individual"} onValueChange={(v) => setEditing({ ...editing, assignment_mode: v })}>
+                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="individual">Individual</SelectItem>
+                      <SelectItem value="group">Group</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2 border-t pt-3">
+                <div>
+                  <Label>Mwaka wa Masomo</Label>
+                  <Select value={editing.target_study_year ? String(editing.target_study_year) : "all"} onValueChange={(v) => setEditing({ ...editing, target_study_year: v === "all" ? null : Number(v) })}>
+                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Miaka yote</SelectItem>
+                      {STUDY_YEARS.map((year) => <SelectItem key={year} value={String(year)}>Mwaka wa {year}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Mwaka wa Kitaaluma</Label>
+                  <Select value={editing.target_academic_year || "all"} onValueChange={(v) => setEditing({ ...editing, target_academic_year: v === "all" ? null : v })}>
+                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Miaka yote</SelectItem>
+                      {ACADEMIC_YEARS.map((year) => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="border-t pt-3">
                 <Label className="text-sm font-bold">Mpangilio wa Maswali (Random / Sawa kwa wote)</Label>
