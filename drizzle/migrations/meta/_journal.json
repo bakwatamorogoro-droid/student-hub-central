@@ -8,6 +8,13 @@
       "when": 1790936719664,
       "tag": "0000_add_academic_targeting_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791154217783,
+      "tag": "0001_restore_full_app_schema",
+      "breakpoints": true
     }
   ]
 }
