@@ -6,4 +6,4 @@
 - [x] Let teachers target exams, quizzes, and assignments by study year and academic year.
 - [x] Show each confirmed student only matching exams, quizzes, and assignments.
 - [x] Add the required database fields and update generated client types.
-- [ ] Verify registration and targeted-work visibility on desktop and mobile.
+- [x] Verify registration and targeted-work visibility on desktop and mobile.

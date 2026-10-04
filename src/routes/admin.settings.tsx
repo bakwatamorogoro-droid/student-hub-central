@@ -63,7 +63,6 @@ function Page() {
       message: newAnn.message || (newAnn.title || "Angalia PDF"),
       title: newAnn.title || null,
       pdf_url: newAnn.pdf_url || null,
-      image_url: newAnn.image_url || null,
       expires_at: newAnn.expires_at || null,
     });
     if (error) return toast.error(error.message);
