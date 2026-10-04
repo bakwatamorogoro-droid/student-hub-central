@@ -1,0 +1,4 @@
+DO $$ BEGIN CREATE POLICY "em_read" ON storage.objects FOR SELECT TO public USING (bucket_id = 'exam-media'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY "em_insert" ON storage.objects FOR INSERT TO public WITH CHECK (bucket_id = 'exam-media'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY "em_update" ON storage.objects FOR UPDATE TO public USING (bucket_id = 'exam-media'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY "em_delete" ON storage.objects FOR DELETE TO public USING (bucket_id = 'exam-media'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
