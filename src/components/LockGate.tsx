@@ -98,31 +98,74 @@ export function LockGate({ children }: { children: React.ReactNode }) {
   if (!isLocked || isAdminRoute || isSecretRoute) return <>{children}</>;
 
   return (
-    <div className="fixed inset-0 z-[100] min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/10 px-4 overflow-hidden">
-      <div className="absolute inset-0 opacity-30 pointer-events-none">
-        <div className="absolute -top-20 -left-20 w-96 h-96 bg-primary/20 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute -bottom-20 -right-20 w-96 h-96 bg-secondary/30 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "1s" }} />
+    <div className="fixed inset-0 z-[100] min-h-screen overflow-y-auto bg-gradient-to-br from-background via-background to-primary/10 px-4 py-10 flex items-center justify-center">
+      {/* Animated background glows */}
+      <div className="absolute inset-0 opacity-40 pointer-events-none">
+        <div className="absolute -top-24 -left-24 w-[28rem] h-[28rem] bg-primary/25 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute -bottom-24 -right-24 w-[28rem] h-[28rem] bg-secondary/30 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "1s" }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[36rem] h-[36rem] bg-primary/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "2s" }} />
       </div>
-      <div className="relative max-w-2xl w-full text-center animate-fade-in">
-        <div className="mx-auto w-20 h-20 rounded-3xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center mb-6 shadow-2xl shadow-primary/30">
-          <Lock className="h-10 w-10 text-primary-foreground" />
+
+      <div className="relative max-w-3xl w-full text-center animate-fade-in">
+        {/* Badge */}
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-destructive/10 border border-destructive/30 text-destructive text-xs font-bold uppercase tracking-[0.25em] mb-6">
+          <ShieldAlert className="h-3.5 w-3.5" /> Mfumo Umefungwa Kwa Muda
         </div>
-        <div className="text-xs uppercase tracking-[0.3em] text-muted-foreground mb-3">Mfumo Umefungwa</div>
-        <h1 className="min-h-[120px] md:min-h-[160px] text-2xl md:text-4xl font-bold text-foreground leading-tight px-2">
+
+        {/* Lock icon */}
+        <div className="relative mx-auto w-24 h-24 mb-6">
+          <div className="absolute inset-0 rounded-[2rem] bg-primary/30 blur-xl animate-pulse" />
+          <div className="relative w-24 h-24 rounded-[2rem] bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shadow-2xl shadow-primary/40 rotate-3 hover:rotate-0 transition-transform duration-500">
+            <Lock className="h-12 w-12 text-primary-foreground" />
+          </div>
+        </div>
+
+        {/* Animated admin message */}
+        <h1 className="min-h-[110px] md:min-h-[150px] text-2xl md:text-4xl font-extrabold text-foreground leading-tight px-2 tracking-tight">
           {animated}
           <span className="inline-block w-1 h-7 md:h-10 bg-primary ml-1 align-middle animate-pulse" />
         </h1>
+
+        {/* Countdown */}
         {settings?.lock_until && remaining !== null && remaining > 0 && (
-          <div className="mt-8 inline-flex items-center gap-3 px-6 py-4 rounded-2xl bg-card/70 backdrop-blur border border-primary/20 shadow-xl">
-            <Clock className="h-6 w-6 text-primary animate-pulse" />
+          <div className="mt-6 inline-flex items-center gap-4 px-7 py-5 rounded-3xl bg-card/80 backdrop-blur border border-primary/25 shadow-2xl shadow-primary/10">
+            <div className="w-12 h-12 rounded-2xl bg-primary/15 flex items-center justify-center">
+              <Clock className="h-6 w-6 text-primary animate-pulse" />
+            </div>
             <div className="text-left">
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Utafunguka baada ya</div>
-              <div className="text-2xl md:text-3xl font-mono font-bold text-primary tabular-nums">{fmt(remaining)}</div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Mfumo utafunguka baada ya</div>
+              <div className="text-3xl md:text-4xl font-mono font-extrabold text-primary tabular-nums">{fmt(remaining)}</div>
             </div>
           </div>
         )}
-        <div className="mt-10 text-xs text-muted-foreground">
-          Una link ya siri ya alama? <Link to="/" className="text-primary underline">Ifungue moja kwa moja</Link>
+
+        {/* Explanations */}
+        <div className="mt-10 grid sm:grid-cols-3 gap-3 text-left">
+          <div className="rounded-2xl border bg-card/70 backdrop-blur p-4 space-y-2 hover:border-primary/40 transition-colors">
+            <CalendarClock className="h-5 w-5 text-primary" />
+            <div className="font-bold text-sm">Kwa nini imefungwa?</div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Msimamizi amefunga mfumo kwa muda — huenda ni matengenezo, maandalizi ya mtihani, au kusasisha taarifa.
+            </p>
+          </div>
+          <div className="rounded-2xl border bg-card/70 backdrop-blur p-4 space-y-2 hover:border-primary/40 transition-colors">
+            <BellRing className="h-5 w-5 text-primary" />
+            <div className="font-bold text-sm">Nifanye nini?</div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Subiri mfumo ufunguke — ukurasa huu utajisasisha mwenyewe mara tu ufunguzi utakapofanyika. Huhitaji kufanya chochote.
+            </p>
+          </div>
+          <div className="rounded-2xl border bg-card/70 backdrop-blur p-4 space-y-2 hover:border-primary/40 transition-colors">
+            <KeyRound className="h-5 w-5 text-primary" />
+            <div className="font-bold text-sm">Una link ya siri?</div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Ikiwa umepewa link maalum ya kuona alama, tumia hiyo — haitathiriwi na ufungo huu.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-8 text-xs text-muted-foreground">
+          Maswali? Wasiliana na msimamizi wa mfumo wako.
         </div>
       </div>
     </div>
