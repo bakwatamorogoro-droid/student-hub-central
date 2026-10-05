@@ -90,10 +90,10 @@ function QuizPage() {
       <main className="container mx-auto px-4 py-8 max-w-4xl">
         <div className="text-center mb-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 mb-3 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-            <Sparkles className="h-3 w-3" /> Quiz — Tofauti na Mtihani
+            <Sparkles className="h-3 w-3" /> Assignment — Tofauti na Mtihani
           </div>
-          <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">Quiz Zinazopatikana</h1>
-          <p className="text-muted-foreground mt-2">Individual: kila mtu peke yake • Group: nenda na wenzako wa semina/group lako</p>
+          <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">Assignment Zinazopatikana</h1>
+          <p className="text-muted-foreground mt-2">Individual: kila mtu peke yake • Group: kusanyika na wenzako kwanza, kisha muanze kazi pamoja</p>
         </div>
 
         {/* Reg lookup */}
