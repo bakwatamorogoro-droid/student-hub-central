@@ -90,10 +90,10 @@ function QuizPage() {
       <main className="container mx-auto px-4 py-8 max-w-4xl">
         <div className="text-center mb-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 mb-3 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-            <Sparkles className="h-3 w-3" /> Quiz — Tofauti na Mtihani
+            <Sparkles className="h-3 w-3" /> Assignment — Tofauti na Mtihani
           </div>
-          <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">Quiz Zinazopatikana</h1>
-          <p className="text-muted-foreground mt-2">Individual: kila mtu peke yake • Group: nenda na wenzako wa semina/group lako</p>
+          <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">Assignment Zinazopatikana</h1>
+          <p className="text-muted-foreground mt-2">Individual: kila mtu peke yake • Group: kusanyika na wenzako kwanza, kisha muanze kazi pamoja</p>
         </div>
 
         {/* Reg lookup */}
@@ -433,13 +433,22 @@ function GroupCard({ q, student, onStart }: { q: any; student: any; onStart: () 
                     );
                   })}
                 </div>
+                {myGroupParticipants.length < 2 && (
+                  <div className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg p-2">
+                    ⚠️ Group haijakusanyika bado — angalau wanachama <b>2</b> wajikute hapa kwa kubonyeza "Ungana na Group" kabla ya kuanza kazi. (Waliopo: {myGroupParticipants.length})
+                  </div>
+                )}
                 <Button
                   size="lg"
                   className="w-full text-base font-bold h-12"
-                  disabled={!pickedQid || !q.quiz_active}
+                  disabled={!pickedQid || !q.quiz_active || myGroupParticipants.length < 2}
                   onClick={() => nav({ to: "/exam/$examId", params: { examId: q.id }, search: { qid: pickedQid, mode: "assignment" } as any })}
                 >
-                  {pickedQid ? <>Anza Kujibu Swali {groupQuestions.findIndex(g => g.id === pickedQid) + 1} <ArrowRight className="h-4 w-4 ml-1" /></> : "Chagua swali kwanza"}
+                  {myGroupParticipants.length < 2
+                    ? "Subiri wanachama wakusanyike..."
+                    : pickedQid
+                    ? <>Anza Kujibu Swali {groupQuestions.findIndex(g => g.id === pickedQid) + 1} <ArrowRight className="h-4 w-4 ml-1" /></>
+                    : "Chagua swali kwanza"}
                 </Button>
               </div>
             )}
