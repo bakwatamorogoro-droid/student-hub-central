@@ -17,9 +17,9 @@ export const Route = createFileRoute("/quiz")({
   component: QuizPage,
   head: () => ({
     meta: [
-      { title: "Quiz — Islamic Studies Test" },
-      { name: "description", content: "Quiz ya mtu binafsi au group ya Islamic Studies." },
-      { property: "og:title", content: "Quiz — Islamic Studies Test" },
+      { title: "Assignment — Islamic Studies Test" },
+      { name: "description", content: "Assignment ya mtu binafsi au group ya Islamic Studies." },
+      { property: "og:title", content: "Assignment — Islamic Studies Test" },
     ],
   }),
 });
@@ -149,8 +149,8 @@ function QuizPage() {
 
         {/* Individual quizzes */}
         <section className="mb-8">
-          <h2 className="text-lg font-bold flex items-center gap-2 mb-3"><User className="h-5 w-5 text-primary" /> Quiz za Mtu Binafsi</h2>
-          {individualQuizzes.length === 0 && <p className="text-sm text-muted-foreground">Hakuna quiz ya mtu binafsi sasa hivi.</p>}
+          <h2 className="text-lg font-bold flex items-center gap-2 mb-3"><User className="h-5 w-5 text-primary" /> Assignment za Mtu Binafsi</h2>
+          {individualQuizzes.length === 0 && <p className="text-sm text-muted-foreground">Hakuna assignment ya mtu binafsi sasa hivi.</p>}
           <div className="grid sm:grid-cols-2 gap-3">
             {individualQuizzes.map((q) => (
               <IndividualCard key={q.id} q={q} student={student} onStart={() => nav({ to: "/exam/$examId", params: { examId: q.id }, search: {} as any })} />
@@ -160,8 +160,8 @@ function QuizPage() {
 
         {/* Group quizzes */}
         <section>
-          <h2 className="text-lg font-bold flex items-center gap-2 mb-3"><Users className="h-5 w-5 text-emerald-600" /> Quiz za Group</h2>
-          {groupQuizzes.length === 0 && <p className="text-sm text-muted-foreground">Hakuna quiz ya group sasa hivi.</p>}
+          <h2 className="text-lg font-bold flex items-center gap-2 mb-3"><Users className="h-5 w-5 text-emerald-600" /> Assignment za Group</h2>
+          {groupQuizzes.length === 0 && <p className="text-sm text-muted-foreground">Hakuna assignment ya group sasa hivi.</p>}
           <div className="space-y-3">
             {groupQuizzes.map((q) => (
               <GroupCard key={q.id} q={q} student={student} onStart={() => nav({ to: "/exam/$examId", params: { examId: q.id }, search: {} as any })} />
@@ -188,7 +188,7 @@ function IndividualCard({ q, student, onStart }: { q: any; student: any; onStart
         {q.description && <p className="text-muted-foreground text-xs">{q.description}</p>}
         <div className="text-xs flex items-center gap-1 text-muted-foreground"><Clock className="h-3 w-3" /> {q.duration_minutes} dakika</div>
         <Button size="sm" disabled={!student || !q.quiz_active} onClick={onStart} className="w-full">
-          {!student ? "Thibitisha Reg" : !q.quiz_active ? "Subiri admin awashe" : <>Anza Quiz <ArrowRight className="h-3 w-3 ml-1" /></>}
+          {!student ? "Thibitisha Reg" : !q.quiz_active ? "Subiri admin awashe" : <>Anza Assignment <ArrowRight className="h-3 w-3 ml-1" /></>}
         </Button>
       </CardContent>
     </Card>
