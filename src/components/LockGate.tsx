@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useRouterState, Link } from "@tanstack/react-router";
+import { useRouterState } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { Lock, Clock, ShieldAlert, CalendarClock, BellRing, KeyRound } from "lucide-react";
 
