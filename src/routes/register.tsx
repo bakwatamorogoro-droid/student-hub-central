@@ -32,21 +32,51 @@ function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
+  const [geo, setGeo] = useState<any>(null);
+  const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
+
   useEffect(() => {
-    supabase.from("app_settings").select("semina_list, group_list").eq("id", 1).single().then(({ data }: { data: any }) => {
+    supabase.from("app_settings").select("semina_list, group_list, attendance_lat, attendance_lng, register_radius_m, register_gps_required").eq("id", 1).single().then(({ data }: { data: any }) => {
       if (data) {
         setSeminaList((data.semina_list as string[]) || []);
         setGroupList((data.group_list as string[]) || []);
+        setGeo(data);
       }
     });
   }, []);
 
-  const handleReview = (e: React.FormEvent) => {
+  const distanceM = (a: number, b: number, c: number, d: number) => {
+    const R = 6371000, toR = (x: number) => (x * Math.PI) / 180;
+    const dLat = toR(c - a), dLng = toR(d - b);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(toR(a)) * Math.cos(toR(c)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  };
+
+  const checkLocation = (): Promise<boolean> => new Promise((resolve) => {
+    const needed = geo?.register_gps_required && geo?.attendance_lat != null && geo?.attendance_lng != null;
+    if (!needed) return resolve(true);
+    if (!navigator.geolocation) { toast.error("Kifaa chako hakina GPS. Usajili unahitaji uwe chuoni."); return resolve(false); }
+    navigator.geolocation.getCurrentPosition((p) => {
+      const lat = p.coords.latitude, lng = p.coords.longitude;
+      setPos({ lat, lng });
+      const d = distanceM(lat, lng, geo.attendance_lat, geo.attendance_lng);
+      const max = geo.register_radius_m || 800;
+      if (d > max) { toast.error(`Uko mita ${Math.round(d)} kutoka chuo. Usajili unaruhusiwa ndani ya mita ${max} tu.`); return resolve(false); }
+      resolve(true);
+    }, () => { toast.error("Washa GPS (location) ili ujisajili — lazima uwe karibu na chuo."); resolve(false); },
+    { enableHighAccuracy: true, timeout: 15000 });
+  });
+
+  const handleReview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.reg_no || !form.full_name || !form.phone || !form.semina || !form.student_group || !form.study_year || !form.academic_year) {
       toast.error("Jaza taarifa zote zinazohitajika");
       return;
     }
+    setLoading(true);
+    const ok = await checkLocation();
+    setLoading(false);
+    if (!ok) return;
     setConfirmOpen(true);
   };
 
