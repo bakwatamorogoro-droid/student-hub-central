@@ -12,6 +12,7 @@ import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 import { toast } from "sonner";
 import { Users, User, Search, CheckCircle2, Loader2, Sparkles, ArrowRight, Clock } from "lucide-react";
 import { matchesAcademicTarget } from "@/lib/academicTargeting";
+import { GroupChat } from "@/components/GroupChat";
 
 export const Route = createFileRoute("/quiz")({
   component: QuizPage,
@@ -389,6 +390,8 @@ function GroupCard({ q, student, onStart }: { q: any; student: any; onStart: () 
                 <Button size="sm" disabled className="flex-1 bg-emerald-500/20 text-emerald-700">✓ Umeungana</Button>
               )}
             </div>
+
+            {iJoined && <GroupChat examId={q.id} student={student} />}
 
             {iJoined && groupQuestions.length > 0 && (
               <div className="rounded-xl border-2 border-secondary/40 bg-secondary/5 p-3 space-y-3">
