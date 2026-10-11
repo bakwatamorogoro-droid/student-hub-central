@@ -38,9 +38,9 @@ function Page() {
 
   const loadSettings = async () => {
     const { data } = await supabase.from("app_settings")
-      .select("attendance_lat,attendance_lng,attendance_radius_m,attendance_gps_required")
+      .select("attendance_lat,attendance_lng,attendance_radius_m,attendance_gps_required,register_radius_m,register_gps_required")
       .eq("id", 1).maybeSingle();
-    setSettings(data || { attendance_radius_m: 200, attendance_gps_required: true });
+    setSettings(data || { attendance_radius_m: 200, attendance_gps_required: true, register_radius_m: 800, register_gps_required: true });
   };
   useEffect(() => { loadSettings(); }, []);
 
@@ -51,7 +51,9 @@ function Page() {
       attendance_lng: settings?.attendance_lng ?? null,
       attendance_radius_m: Number(settings?.attendance_radius_m) || 200,
       attendance_gps_required: !!settings?.attendance_gps_required,
-    }).eq("id", 1);
+      register_radius_m: Number(settings?.register_radius_m) || 800,
+      register_gps_required: !!settings?.register_gps_required,
+    } as any).eq("id", 1);
     setSavingSettings(false);
     if (error) toast.error(error.message); else toast.success("GPS settings zimehifadhiwa");
   };
@@ -136,7 +138,14 @@ function Page() {
           <div className="grid sm:grid-cols-3 gap-2">
             <div><Label className="text-xs">Latitude</Label><Input type="number" step="any" value={settings?.attendance_lat ?? ""} onChange={(e) => setSettings({ ...settings, attendance_lat: e.target.value === "" ? null : Number(e.target.value) })} /></div>
             <div><Label className="text-xs">Longitude</Label><Input type="number" step="any" value={settings?.attendance_lng ?? ""} onChange={(e) => setSettings({ ...settings, attendance_lng: e.target.value === "" ? null : Number(e.target.value) })} /></div>
-            <div><Label className="text-xs">Umbali (mita)</Label><Input type="number" value={settings?.attendance_radius_m ?? 200} onChange={(e) => setSettings({ ...settings, attendance_radius_m: e.target.value })} /></div>
+            <div><Label className="text-xs">Umbali wa mahudhurio (mita)</Label><Input type="number" value={settings?.attendance_radius_m ?? 200} onChange={(e) => setSettings({ ...settings, attendance_radius_m: e.target.value })} /></div>
+          </div>
+          <div className="rounded-lg border p-3 space-y-2 bg-background/50">
+            <label className="flex items-center gap-2">
+              <Switch checked={!!settings?.register_gps_required} onCheckedChange={(v) => setSettings({ ...settings, register_gps_required: v })} />
+              <span className="text-sm font-medium">Usajili: lazima mwanafunzi awe karibu na chuo</span>
+            </label>
+            <div className="max-w-xs"><Label className="text-xs">Umbali wa usajili kutoka chuo (mita)</Label><Input type="number" value={settings?.register_radius_m ?? 800} onChange={(e) => setSettings({ ...settings, register_radius_m: e.target.value })} /></div>
           </div>
           <div className="flex gap-2 flex-wrap">
             <Button variant="outline" size="sm" onClick={useMyLocation}><Crosshair className="h-4 w-4 mr-1" />Tumia eneo langu sasa</Button>
