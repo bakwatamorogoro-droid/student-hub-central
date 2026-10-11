@@ -95,6 +95,33 @@ function Page() {
     XLSX.writeFile(wb, "wanafunzi.xlsx");
   };
 
+  const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+  const backupJson = () => {
+    const blob = new Blob([JSON.stringify({ backup_at: new Date().toISOString(), count: rows.length, students: rows }, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = `backup-wanafunzi-${stamp()}.json`; a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const backupXlsx = () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Wanafunzi");
+    XLSX.writeFile(wb, `backup-wanafunzi-${stamp()}.xlsx`);
+  };
+  const restoreJson = async (file: File) => {
+    try {
+      const parsed = JSON.parse(await file.text());
+      const list: any[] = Array.isArray(parsed) ? parsed : parsed.students;
+      if (!Array.isArray(list) || !list.length) return toast.error("Faili halina wanafunzi");
+      if (!confirm(`Rejesha wanafunzi ${list.length}? Waliopo (reg no ile ile) watasasishwa.`)) return;
+      for (let i = 0; i < list.length; i += 500) {
+        const { error } = await supabase.from("students").upsert(list.slice(i, i + 500) as any, { onConflict: "reg_no" });
+        if (error) return toast.error(error.message);
+      }
+      toast.success(`Wanafunzi ${list.length} wamerejeshwa`);
+      load();
+    } catch { toast.error("Faili si sahihi"); }
+  };
+
   const saveEdit = async () => {
     if (!editing) return;
     const { error } = await supabase
@@ -138,6 +165,16 @@ function Page() {
           <Button onClick={exportXlsx} variant="outline" className="gap-1">
             <Download className="h-4 w-4" /> Export Excel
           </Button>
+          <Button onClick={backupJson} className="gap-1">
+            <Download className="h-4 w-4" /> Backup (wote)
+          </Button>
+          <Button onClick={backupXlsx} variant="outline" className="gap-1">
+            <Download className="h-4 w-4" /> Backup Excel
+          </Button>
+          <label className="inline-flex items-center gap-1 text-sm border rounded-md px-3 cursor-pointer hover:bg-muted">
+            Rejesha Backup
+            <input type="file" accept="application/json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) restoreJson(f); e.target.value = ""; }} />
+          </label>
           <div className="ml-auto text-sm text-muted-foreground self-center">
             Jumla: <b>{filtered.length}</b> {q && `/ ${rows.length}`}
           </div>

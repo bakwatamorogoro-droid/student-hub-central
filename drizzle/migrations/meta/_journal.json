@@ -22,6 +22,13 @@
       "when": 1791154234371,
       "tag": "0002_exam_media_storage_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791704753303,
+      "tag": "0003_migration",
+      "breakpoints": true
     }
   ]
 }

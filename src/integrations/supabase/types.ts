@@ -61,6 +61,8 @@ export type Database = {
           lock_message: string
           lock_until: string | null
           profile_edits_enabled: boolean
+          register_gps_required: boolean
+          register_radius_m: number
           results_secret_slug: string
           semina_list: Json
           system_locked: boolean
@@ -82,6 +84,8 @@ export type Database = {
           lock_message?: string
           lock_until?: string | null
           profile_edits_enabled?: boolean
+          register_gps_required?: boolean
+          register_radius_m?: number
           results_secret_slug?: string
           semina_list?: Json
           system_locked?: boolean
@@ -103,6 +107,8 @@ export type Database = {
           lock_message?: string
           lock_until?: string | null
           profile_edits_enabled?: boolean
+          register_gps_required?: boolean
+          register_radius_m?: number
           results_secret_slug?: string
           semina_list?: Json
           system_locked?: boolean
@@ -325,6 +331,39 @@ export type Database = {
           target_study_year?: number | null
           test_number?: number | null
           title?: string
+        }
+        Relationships: []
+      }
+      group_messages: {
+        Row: {
+          created_at: string
+          exam_id: string
+          full_name: string
+          id: string
+          message: string
+          semina: string | null
+          student_group: string | null
+          student_id: string
+        }
+        Insert: {
+          created_at?: string
+          exam_id: string
+          full_name: string
+          id?: string
+          message: string
+          semina?: string | null
+          student_group?: string | null
+          student_id: string
+        }
+        Update: {
+          created_at?: string
+          exam_id?: string
+          full_name?: string
+          id?: string
+          message?: string
+          semina?: string | null
+          student_group?: string | null
+          student_id?: string
         }
         Relationships: []
       }
@@ -600,6 +639,8 @@ export type Database = {
           gender: string | null
           id: string
           phone: string | null
+          reg_lat: number | null
+          reg_lng: number | null
           reg_no: string
           semina: string
           student_group: string
@@ -615,6 +656,8 @@ export type Database = {
           gender?: string | null
           id?: string
           phone?: string | null
+          reg_lat?: number | null
+          reg_lng?: number | null
           reg_no: string
           semina: string
           student_group: string
@@ -630,6 +673,8 @@ export type Database = {
           gender?: string | null
           id?: string
           phone?: string | null
+          reg_lat?: number | null
+          reg_lng?: number | null
           reg_no?: string
           semina?: string
           student_group?: string
