@@ -26,7 +26,7 @@ const NAV = [
   { to: "/admin/students", label: "Wanafunzi", icon: Users },
   { to: "/admin/attendance", label: "Mahudhurio", icon: ClipboardCheck },
   { to: "/admin/submissions", label: "Matokeo", icon: BarChart3 },
-  { to: "/admin/pdf", label: "PDF Majibu", icon: FileUp },
+  { to: "/admin/pdf", label: "Assignment", icon: FileUp },
   { to: "/admin/requests", label: "Maombi", icon: Inbox },
   { to: "/admin/issues", label: "Changamoto", icon: AlertTriangle },
   { to: "/admin/gallery", label: "Bana", icon: ImageIcon },
