@@ -26,7 +26,7 @@ export function SiteHeader() {
             {[
               { to: "/", label: t("home"), icon: <Home className="h-3.5 w-3.5" /> },
               { to: "/register", label: t("register") },
-              { to: "/exams", label: t("exams") },
+              { to: "/exams", label: "Online Test" },
               { to: "/quiz", label: "Assignment" },
               { to: "/results", label: t("results") },
               { to: "/student", label: "Huduma" },
