@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { getDeviceId } from "@/lib/device-id";
-import { gradeShortAnswer } from "@/lib/grading.functions";
+import { gradeShortAnswer, explainAnswer } from "@/lib/grading.functions";
 import { toast } from "sonner";
 import SignatureCanvas from "react-signature-canvas";
 import { Camera, MapPin, Mic, Clock, Eye, FileDown, Printer } from "lucide-react";
@@ -303,28 +303,30 @@ function ExamPage() {
     let autoScore = 0;
     let aiScore = 0;
     const feedback: Record<string, any> = {};
-    for (const q of questions) {
+    const fmt = (v: any) => (v == null ? "" : typeof v === "object" ? Object.entries(v).map(([k, x]) => `${k} → ${x}`).join("; ") : String(v));
+    await Promise.all(questions.map(async (q: any) => {
       maxScore += Number(q.points);
       const ans = filledAnswers[q.id];
-      if (q.question_type === "true_false") {
-        if (String(ans) === String(q.correct_answer)) autoScore += Number(q.points);
-      } else if (q.question_type === "multiple_choice") {
-        if (String(ans) === String(q.correct_answer)) autoScore += Number(q.points);
-      } else if (q.question_type === "matching") {
-        const correct = q.correct_answer as Record<string, string>;
-        const given = (ans as Record<string, string>) || {};
-        const keys = Object.keys(correct);
-        const right = keys.filter((k) => given[k] === correct[k]).length;
-        autoScore += (right / keys.length) * Number(q.points);
+      if (q.question_type === "true_false" || q.question_type === "multiple_choice" || q.question_type === "matching") {
+        let ratio = 0;
+        if (q.question_type === "matching") {
+          const correct = (q.correct_answer || {}) as Record<string, string>;
+          const given = (ans as Record<string, string>) || {};
+          const keys = Object.keys(correct);
+          ratio = keys.length ? keys.filter((k) => given[k] === correct[k]).length / keys.length : 0;
+        } else {
+          ratio = String(ans) === String(q.correct_answer) ? 1 : 0;
+        }
+        autoScore += ratio * Number(q.points);
+        const isCorrect = ratio === 1;
+        const reason = await explainAnswer({ question: q.body, correctAnswer: fmt(q.correct_answer), studentAnswer: fmt(ans), isCorrect });
+        feedback[q.id] = { score: ratio * Number(q.points), isCorrect, feedback: reason, points: Number(q.points) };
       } else if (q.question_type === "short_answer") {
         try {
-          // If the question has NO correct answer set, ask AI to generate one
           let referenceAnswer = String(q.correct_answer || "").trim();
           if (!referenceAnswer) {
             try {
-              const { data } = await supabase.functions.invoke("ai-answer", {
-                body: { question: q.body, context: exam.title },
-              });
+              const { data } = await supabase.functions.invoke("ai-answer", { body: { question: q.body, context: exam.title } });
               if (data?.answer) referenceAnswer = String(data.answer);
             } catch { /* ignore */ }
           }
@@ -341,7 +343,7 @@ function ExamPage() {
           feedback[q.id] = { score: 0, feedback: "AI imeshindwa", points: Number(q.points) };
         }
       }
-    }
+    }));
     totalScore = autoScore + aiScore;
     let sigData: string | null = null;
     if (sigRef.current && !sigRef.current.isEmpty()) {
