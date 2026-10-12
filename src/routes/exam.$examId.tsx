@@ -276,27 +276,9 @@ function ExamPage() {
       setSubmitting(false);
       return;
     }
-    // Auto-fill blank short answers using Lovable AI (so mtu hapotezi alama bure)
+    // Swali tupu = sifuri (hakuna kujazwa na AI)
     const filledAnswers: Record<string, any> = { ...answers };
     const aiAutoFilled: Record<string, string> = {};
-    for (const q of questions) {
-      if (q.question_type !== "short_answer") continue;
-      const raw = filledAnswers[q.id];
-      const textOnly = typeof raw === "string" ? raw.replace(/<[^>]+>/g, "").trim() : "";
-      if (textOnly) continue;
-      try {
-        const { data, error } = await supabase.functions.invoke("ai-answer", {
-          body: { question: q.body, context: exam.title },
-        });
-        if (!error && data?.answer) {
-          filledAnswers[q.id] = data.answer;
-          aiAutoFilled[q.id] = data.answer;
-        }
-      } catch { /* ignore */ }
-    }
-    if (Object.keys(aiAutoFilled).length > 0) {
-      toast.message(`AI imejaza ${Object.keys(aiAutoFilled).length} swali tupu`);
-    }
 
     let totalScore = 0;
     let maxScore = 0;
@@ -323,6 +305,11 @@ function ExamPage() {
         feedback[q.id] = { score: ratio * Number(q.points), isCorrect, feedback: reason, points: Number(q.points) };
       } else if (q.question_type === "short_answer") {
         try {
+          const rawAns = typeof ans === "string" ? ans.replace(/<[^>]+>/g, "").trim() : "";
+          if (!rawAns) {
+            feedback[q.id] = { score: 0, isCorrect: false, feedback: "❌ Hakuna jibu — alama 0.", points: Number(q.points) };
+            return;
+          }
           let referenceAnswer = String(q.correct_answer || "").trim();
           if (!referenceAnswer) {
             try {
