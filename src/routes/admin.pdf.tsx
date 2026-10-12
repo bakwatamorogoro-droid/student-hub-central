@@ -81,14 +81,14 @@ function Page() {
   };
 
   const uploadExamPdf = async () => {
-    if (!pdfTitle || !uploadFor) { toast.error("Jaza title na chagua mtihani"); return; }
+    if (!pdfTitle) { toast.error("Andika jina la assignment"); return; }
     if (isAssignment && !assignmentText && !pdfFile) { toast.error("Andika swali AU pakia PDF ya maswali"); return; }
     if (pdfFile && pdfFile.type !== "application/pdf") { toast.error("Faili lazima iwe PDF"); return; }
     setUploading(true);
     let fileUrl = "";
     let fileName = "";
     if (pdfFile) {
-      const path = `exam-pdfs/${uploadFor}/${Date.now()}-${pdfFile.name}`;
+      const path = `exam-pdfs/${uploadFor || "assignments"}/${Date.now()}-${pdfFile.name}`;
       const { error: upErr } = await supabase.storage.from("exam-media").upload(path, pdfFile, { contentType: "application/pdf" });
       if (upErr) { setUploading(false); toast.error(upErr.message); return; }
       const { data: pub } = supabase.storage.from("exam-media").getPublicUrl(path);
@@ -96,7 +96,7 @@ function Page() {
       fileName = pdfFile.name;
     }
     await supabase.from("exam_pdfs" as any).insert({
-      exam_id: uploadFor,
+      exam_id: uploadFor || null,
       title: pdfTitle,
       file_url: fileUrl,
       file_name: fileName,
@@ -118,10 +118,10 @@ function Page() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-bold">📝 Kazi & PDF Management</h2>
+      <h2 className="text-xl font-bold">📝 Assignment — Sehemu Tofauti na Mtihani</h2>
 
       <Card>
-        <CardHeader><CardTitle className="text-base flex items-center gap-2"><Upload className="h-4 w-4" /> Tengeneza Kazi / Pakia PDF</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base flex items-center gap-2"><Upload className="h-4 w-4" /> Unda Assignment Mpya</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <label className="flex items-center gap-2 text-sm cursor-pointer">
             <input type="checkbox" checked={isAssignment} onChange={(e) => setIsAssignment(e.target.checked)} />
@@ -129,9 +129,9 @@ function Page() {
           </label>
           <div className="grid md:grid-cols-2 gap-3">
             <div>
-              <Label>Mtihani (mada)</Label>
+              <Label>Unganisha na Mtihani (hiari)</Label>
               <select className="w-full border rounded-md px-3 py-2 bg-background" value={uploadFor} onChange={(e) => setUploadFor(e.target.value)}>
-                <option value="">Chagua...</option>
+                <option value="">Assignment pekee (haihusiani na mtihani)</option>
                 {exams.map((e) => <option key={e.id} value={e.id}>{e.test_number ? `Test ${e.test_number} — ` : ""}{e.title}</option>)}
               </select>
             </div>
