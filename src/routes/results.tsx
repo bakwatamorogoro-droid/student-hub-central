@@ -166,7 +166,8 @@ function ResultsPage() {
       const score = Number(fb?.[q.id]?.score || 0);
       const points = Number(q.points || 1);
       const ratio = points > 0 ? score / points : 0;
-      return { q, given, correct: ratio >= 0.8, partial: ratio };
+      const ic = fb?.[q.id]?.isCorrect;
+      return { q, given, correct: typeof ic === "boolean" ? ic : ratio >= 0.8, partial: ratio };
     });
   };
 
@@ -322,8 +323,8 @@ function ResultsPage() {
                                 {renderCorrect(e.q)}
                               </div>
                             </div>
-                            {isShort && fb?.feedback && (
-                              <div className="mt-2 text-xs italic text-muted-foreground">💬 {fb.feedback}</div>
+                            {fb?.feedback && (
+                              <div className="mt-2 text-xs rounded-md bg-background/60 border p-2 text-foreground/80"><b>Sababu (AI):</b> {fb.feedback}</div>
                             )}
                           </div>
                         );

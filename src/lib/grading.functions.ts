@@ -86,10 +86,24 @@ export async function gradeShortAnswer(input: GradeInput) {
         score: Number(d.score) || 0,
         feedback: String(d.feedback || ""),
         concepts: Array.isArray(d.concepts) ? d.concepts : [],
+        isCorrect: typeof d.isCorrect === "boolean" ? d.isCorrect : undefined,
       };
     }
   } catch {
     /* fall through */
   }
   return fallbackGrade(input.correctAnswer, studentAnswer, input.points, input.concepts);
+}
+
+// Eleza kwa nini jibu la MCQ / Kweli-Si kweli / matching ni sahihi au si sahihi.
+export async function explainAnswer(input: { question: string; correctAnswer: string; studentAnswer: string; isCorrect: boolean }) {
+  const base = input.isCorrect ? "✅ Sahihi" : "❌ Si sahihi";
+  if (!String(input.studentAnswer || "").trim()) return "❌ Hakuna jibu lililotolewa.";
+  try {
+    const { data, error } = await supabase.functions.invoke("ai-grade-short", {
+      body: { ...input, knownCorrect: input.isCorrect, points: 1 },
+    });
+    if (!error && (data as any)?.feedback) return String((data as any).feedback);
+  } catch { /* ignore */ }
+  return base;
 }
