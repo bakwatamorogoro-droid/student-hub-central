@@ -20,6 +20,7 @@ Deno.serve(async (req) => {
   const correctAnswer = String(body?.correctAnswer || '').trim();
   const studentAnswer = String(body?.studentAnswer || '').trim();
   const points = Number(body?.points || 1);
+  const knownCorrect: boolean | null = typeof body?.knownCorrect === 'boolean' ? body.knownCorrect : null;
   const concepts: string[] = Array.isArray(body?.concepts) ? body.concepts.map((c: any) => String(c)) : [];
 
   if (!studentAnswer) {
@@ -31,6 +32,22 @@ Deno.serve(async (req) => {
   const sys = `Wewe ni mwalimu mtaalamu wa Islamic Studies. Kazi yako ni kutathmini jibu la mwanafunzi kwa KUELEWA MAANA ya maneno yake — sio tu kulinganisha maneno. Mwanafunzi anaweza kutumia maneno tofauti lakini akamaanisha kitu kilekile sahihi (mfano: "Mungu" = "Allah" = "Mola"; "Mtume" = "Nabii" = "Rasuli"). Toa alama kwa msingi wa USAHIHI wa MAANA, sio maneno yaliyofanana.
 
 JIBU TU kwa JSON sahihi: { "score": number, "feedback": string, "isCorrect": boolean, "concepts": [{"concept": string, "matched": boolean}] }`;
+
+  if (knownCorrect !== null) {
+    const p2 = `Swali: ${question}\nJibu sahihi: ${correctAnswer}\nJibu la mwanafunzi: ${studentAnswer}\nJibu hili ni ${knownCorrect ? 'SAHIHI' : 'SI SAHIHI'}. Eleza kwa Kiswahili kwa sentensi 1-2 KWA NINI ni ${knownCorrect ? 'sahihi' : 'si sahihi'} (na kama si sahihi, jibu sahihi ni lipi na kwa nini). Toa maelezo tu.`;
+    try {
+      const r = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Lovable-API-Key': key, 'X-Lovable-AIG-SDK': 'fetch' },
+        body: JSON.stringify({ model: 'google/gemini-3-flash-preview', messages: [{ role: 'system', content: 'Wewe ni mwalimu wa Islamic Studies.' }, { role: 'user', content: p2 }] }),
+      });
+      const d = r.ok ? await r.json() : null;
+      const reason = String(d?.choices?.[0]?.message?.content || '').trim().slice(0, 1000);
+      return new Response(JSON.stringify({ score: knownCorrect ? points : 0, isCorrect: knownCorrect, feedback: `${knownCorrect ? '✅ Sahihi' : '❌ Si sahihi'}${reason ? ' — ' + reason : ''}`, concepts: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    } catch (e) {
+      return new Response(JSON.stringify({ score: knownCorrect ? points : 0, isCorrect: knownCorrect, feedback: knownCorrect ? '✅ Sahihi' : '❌ Si sahihi', concepts: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+  }
 
   const conceptsBlock = concepts.length ? `\nDhana muhimu zinazotakiwa: ${JSON.stringify(concepts)} (kagua kila moja kama mwanafunzi ameielezea kwa maana yoyote ile).` : '';
   const usr = `Swali: ${question}
@@ -49,7 +66,7 @@ Toa alama (0 hadi ${points}) kulingana na asilimia ya usahihi wa MAANA. Sema isC
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Lovable-API-Key': key, 'X-Lovable-AIG-SDK': 'fetch' },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'google/gemini-3-flash-preview',
         messages: [
           { role: 'system', content: sys },
           { role: 'user', content: usr },
@@ -70,8 +87,9 @@ Toa alama (0 hadi ${points}) kulingana na asilimia ya usahihi wa MAANA. Sema isC
       if (m) try { parsed = JSON.parse(m[0]); } catch {}
     }
     const score = Math.max(0, Math.min(points, Number(parsed.score) || 0));
-    const feedback = String(parsed.feedback || '').slice(0, 1000);
     const isCorrect = typeof parsed.isCorrect === 'boolean' ? parsed.isCorrect : (score >= points * 0.6);
+    const rawFb = String(parsed.feedback || '').slice(0, 1000);
+    const feedback = `${isCorrect ? '✅ Sahihi' : '❌ Si sahihi'}${rawFb ? ' — ' + rawFb : ''}`;
     const conceptsOut = Array.isArray(parsed.concepts) ? parsed.concepts : concepts.map((c) => ({ concept: c, matched: false }));
     return new Response(JSON.stringify({ score: Number(score.toFixed(2)), feedback, isCorrect, concepts: conceptsOut }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
