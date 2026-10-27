@@ -20,7 +20,9 @@ export function UpdateTaarifaCard() {
             <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
               <Sparkles className="h-2.5 w-2.5" /> {t("taarifa_kicker")}
             </div>
-            <h3 className="mt-1.5 font-display text-lg font-extrabold tracking-tight">{t("taarifa_card_title")}</h3>
+            <h3 className="mt-1.5 font-display text-lg font-extrabold tracking-tight">
+              {t("taarifa_card_title")}
+            </h3>
             <p className="mt-0.5 text-sm text-muted-foreground">{t("taarifa_card_sub")}</p>
             <div className="mt-3 inline-flex items-center gap-2 text-sm font-bold text-primary">
               {t("update_cta")}

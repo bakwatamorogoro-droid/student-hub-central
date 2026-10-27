@@ -104,7 +104,11 @@ export function ExamHallGallery() {
               aria-label={playing ? t("pause") : t("play")}
               className="inline-flex items-center gap-2 rounded-full bg-primary/90 px-3 py-1.5 text-[11px] font-bold text-primary-foreground shadow-lg backdrop-blur transition hover:bg-primary"
             >
-              {playing ? <PauseCircle className="h-3.5 w-3.5" /> : <PlayCircle className="h-3.5 w-3.5" />}
+              {playing ? (
+                <PauseCircle className="h-3.5 w-3.5" />
+              ) : (
+                <PlayCircle className="h-3.5 w-3.5" />
+              )}
               {playing ? t("pause") : t("play")}
             </button>
           )}

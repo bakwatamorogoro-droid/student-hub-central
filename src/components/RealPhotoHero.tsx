@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { GraduationCap, Sparkles, UserCog, Images, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  GraduationCap,
+  Sparkles,
+  UserCog,
+  Images,
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/lib/i18n";
 
@@ -41,7 +49,9 @@ export function RealPhotoHero({ fallback }: { fallback: React.ReactNode }) {
       setPhotos((data as Photo[]) || []);
       setLoaded(true);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -71,7 +81,8 @@ export function RealPhotoHero({ fallback }: { fallback: React.ReactNode }) {
           className="absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ease-out"
           style={{
             opacity: i === idx ? 1 : 0,
-            animation: i === idx && !reducedMotion ? "heroKenBurns 9s ease-out forwards" : undefined,
+            animation:
+              i === idx && !reducedMotion ? "heroKenBurns 9s ease-out forwards" : undefined,
           }}
         />
       ))}
@@ -88,7 +99,9 @@ export function RealPhotoHero({ fallback }: { fallback: React.ReactNode }) {
           {photos.length > 1 && (
             <div className="inline-flex items-center gap-2 rounded-full border border-primary-foreground/25 bg-black/35 px-3 py-1.5 text-[11px] font-bold text-primary-foreground backdrop-blur-md">
               <Images className="h-3.5 w-3.5" />
-              <span className="tabular-nums">{idx + 1} / {photos.length}</span>
+              <span className="tabular-nums">
+                {idx + 1} / {photos.length}
+              </span>
             </div>
           )}
         </div>
@@ -97,7 +110,9 @@ export function RealPhotoHero({ fallback }: { fallback: React.ReactNode }) {
           <h2 className="font-display text-2xl font-black leading-tight tracking-tight text-white drop-shadow-2xl md:text-5xl">
             {t("hero_welcome")}
           </h2>
-          <p className="mt-2 max-w-2xl text-sm font-medium text-white/85 md:text-lg">{t("hero_tagline")}</p>
+          <p className="mt-2 max-w-2xl text-sm font-medium text-white/85 md:text-lg">
+            {t("hero_tagline")}
+          </p>
 
           {(current.title || current.caption) && (
             <p className="mt-3 max-w-2xl text-xs font-semibold text-white/75 md:text-sm">

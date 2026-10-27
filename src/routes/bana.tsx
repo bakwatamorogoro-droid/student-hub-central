@@ -18,9 +18,16 @@ export const Route = createFileRoute("/bana")({
   head: () => ({
     meta: [
       { title: "Bana ya Media — Picha Halisi na Uhuishaji" },
-      { name: "description", content: "Picha halisi za matukio yetu pamoja na video za uhuishaji za wanafunzi wa Kiislamu wakifanya mtihani." },
+      {
+        name: "description",
+        content:
+          "Picha halisi za matukio yetu pamoja na video za uhuishaji za wanafunzi wa Kiislamu wakifanya mtihani.",
+      },
       { property: "og:title", content: "Bana ya Media — Picha Halisi na Uhuishaji" },
-      { property: "og:description", content: "Picha halisi na uhuishaji wa kisasa wa wanafunzi wa Kiislamu." },
+      {
+        property: "og:description",
+        content: "Picha halisi na uhuishaji wa kisasa wa wanafunzi wa Kiislamu.",
+      },
     ],
   }),
 });
@@ -46,7 +53,9 @@ function MediaPage() {
             <h1 className="mt-3 flex items-center gap-2 font-display text-2xl font-black tracking-tight md:text-4xl">
               <Clapperboard className="h-7 w-7 text-primary" /> {t("nav_media")}
             </h1>
-            <p className="mt-2 max-w-3xl text-sm text-muted-foreground md:text-base">{t("media_desc")}</p>
+            <p className="mt-2 max-w-3xl text-sm text-muted-foreground md:text-base">
+              {t("media_desc")}
+            </p>
           </div>
         </div>
 

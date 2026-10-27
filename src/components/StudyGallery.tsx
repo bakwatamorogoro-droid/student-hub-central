@@ -41,7 +41,9 @@ function RealPhotos() {
       </div>
       {items.length === 0 ? (
         <Card className="border-dashed border-2">
-          <CardContent className="p-6 text-center text-sm text-muted-foreground">{t("no_photos")}</CardContent>
+          <CardContent className="p-6 text-center text-sm text-muted-foreground">
+            {t("no_photos")}
+          </CardContent>
         </Card>
       ) : (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
@@ -62,7 +64,9 @@ function RealPhotos() {
               {(it.title || it.caption) && (
                 <CardContent className="p-3">
                   {it.title && <div className="truncate text-sm font-semibold">{it.title}</div>}
-                  {it.caption && <div className="line-clamp-2 text-xs text-muted-foreground">{it.caption}</div>}
+                  {it.caption && (
+                    <div className="line-clamp-2 text-xs text-muted-foreground">{it.caption}</div>
+                  )}
                 </CardContent>
               )}
             </Card>

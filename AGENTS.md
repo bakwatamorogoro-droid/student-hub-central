@@ -42,3 +42,28 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   does, rather than trusting the settings arrays.
 - `study_images` is the table behind the real-photo gallery; rows need `active = true` to show.
   Its rows currently have `title = null`, so they render without a caption and without alt text.
+
+## Deploying without git write access
+
+The GitHub token in this environment cannot create refs (`403 Resource not accessible by
+integration`), so a branch pushed locally never reaches GitHub and a `gitSource` deploy
+would build stale code. Deploy the working tree directly instead:
+
+1. `npx vite build`
+2. Upload every **tracked** file (`git ls-files`), not just `dist/`. The project's
+   `buildCommand` is `vite build`, so Vercel needs `package.json` and the source; uploading
+   `dist/` alone fails with `ENOENT` / `Command "vite build" exited with 127`.
+3. `POST /v13/deployments` with `{"project", "target":"production", "files":[...]}` where each
+   entry is `{file, size, sha}` (sha1). Vercel answers `400 missing_files` until every digest
+   is uploaded via `POST /v2/files` with the `x-vercel-digest` header; then re-POST the
+   deployment.
+4. The production domain is `student-hub-central-theta.vercel.app`; a new deployment does not
+   move it automatically. Point it over with
+   `POST /v2/deployments/<id>/aliases {"alias":"student-hub-central-theta.vercel.app"}`.
+
+## Media assets
+
+`public/media/` holds only the motion clips and their posters (`exam-hero.mp4`,
+`home-animation.mp4`, `study-hall-loop.mp4`, `poster-*.jpg`) plus `mum-logo.png`. The cartoon
+and exam-hall stills were deleted at the owner's request; the event gallery shows only the
+real photographs stored in `study_images`.
