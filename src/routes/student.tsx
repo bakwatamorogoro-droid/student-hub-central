@@ -14,6 +14,8 @@ import { UserCog, AlertTriangle, CheckCircle2, Mail, Clock } from "lucide-react"
 import { GroupSwitcher } from "@/components/GroupSwitcher";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
+import { updateStudentProfile } from "@/lib/studentProfile";
+import { ACADEMIC_YEARS, SEMESTERS, formatAcademicSummary, studyYearsFor } from "@/lib/academicTargeting";
 
 export const Route = createFileRoute("/student")({
   component: Page,
@@ -30,11 +32,24 @@ function Page() {
   const [settings, setSettings] = useState<any>(null);
   const [seminaList, setSeminaList] = useState<string[]>([]);
   const [groupList, setGroupList] = useState<string[]>([]);
+  const [courseList, setCourseList] = useState<string[]>([]);
+  const [studyYears, setStudyYears] = useState<number[]>(studyYearsFor(2));
+  const [academicYears, setAcademicYears] = useState<string[]>([...ACADEMIC_YEARS]);
   const [reg, setReg] = useState("");
   const [student, setStudent] = useState<any>(null);
   const [matches, setMatches] = useState<any[]>([]);
   // edit form
-  const [edit, setEdit] = useState({ new_reg_no: "", new_full_name: "", new_semina: "", new_student_group: "", reason: "" });
+  const [edit, setEdit] = useState({
+    new_reg_no: "",
+    new_full_name: "",
+    new_semina: "",
+    new_student_group: "",
+    new_course: "",
+    new_study_year: "",
+    new_semester: "",
+    new_academic_year: "",
+    reason: "",
+  });
   const [wrongReg, setWrongReg] = useState(false);
   const [editStatus, setEditStatus] = useState<any[]>([]);
   // issue form
@@ -47,6 +62,10 @@ function Page() {
       setSettings(data);
       setSeminaList((data?.semina_list as string[]) || []);
       setGroupList((data?.group_list as string[]) || []);
+      setCourseList((data?.course_list as string[]) || []);
+      setStudyYears(studyYearsFor(data?.program_years ?? 2));
+      const years = (data?.academic_years_list as string[]) || [];
+      if (years.length) setAcademicYears(years);
     });
     const saved = localStorage.getItem("student_reg");
     if (saved) { setReg(saved); lookup(saved); }
@@ -56,7 +75,17 @@ function Page() {
     setStudent(data);
     setMatches([]);
     setReg(data.reg_no);
-    setEdit({ new_reg_no: data.reg_no, new_full_name: data.full_name, new_semina: data.semina, new_student_group: data.student_group, reason: "" });
+    setEdit({
+      new_reg_no: data.reg_no,
+      new_full_name: data.full_name,
+      new_semina: data.semina,
+      new_student_group: data.student_group,
+      new_course: data.course || "",
+      new_study_year: data.study_year ? String(data.study_year) : "",
+      new_semester: data.semester || "",
+      new_academic_year: data.academic_year || "",
+      reason: "",
+    });
     localStorage.setItem("student_reg", data.reg_no);
     const { data: reqs } = await (supabase as any).from("profile_update_requests").select("*").eq("student_id", data.id).order("created_at", { ascending: false });
     setEditStatus(reqs || []);
@@ -109,13 +138,27 @@ function Page() {
         setSubmitting(false);
         return toast.error("Marekebisho yamehifadhiwa kama 'pending' (Admin atathibitisha): " + rpcErr.message);
       }
+      // apply_profile_update only covers reg/name/semina/group, so write the
+      // academic fields separately.
+      const { error: acadErr, semesterUnsupported } = await updateStudentProfile(student.id, {
+        course: edit.new_course,
+        study_year: edit.new_study_year,
+        semester: edit.new_semester,
+        academic_year: edit.new_academic_year,
+      });
       await (supabase as any).from("profile_update_requests").update({ reviewed_at: new Date().toISOString() }).eq("id", (inserted as any).id);
       // Refresh local student to reflect new values
       const newRef = newRegUp || student.reg_no;
       localStorage.setItem("student_reg", newRef);
-      toast.success("✓ Marekebisho yamethibitishwa kiotomatiki na yamehifadhiwa.");
       setSubmitting(false);
       setWrongReg(false);
+      if (acadErr) {
+        toast.warning("Taarifa za msingi zimehifadhiwa, lakini kozi/mwaka haukuhifadhiwa: " + acadErr.message);
+      } else if (semesterUnsupported) {
+        toast.warning("Imehifadhiwa — lakini Semester bado haijawashwa kwenye mfumo (admin aendeshe migration 0004).");
+      } else {
+        toast.success("✓ Marekebisho yamethibitishwa kiotomatiki na yamehifadhiwa.");
+      }
       lookup(newRef);
       return;
     }
@@ -167,9 +210,19 @@ function Page() {
         </Card>
 
         {student && (
-          <div className="rounded-lg p-3 bg-primary/5 border border-primary/20 text-sm">
-            <CheckCircle2 className="h-4 w-4 inline text-primary mr-1" />
-            <b>{student.full_name}</b> — {student.reg_no} • {student.semina} • {student.student_group}
+          <div className="rounded-lg p-3 bg-primary/5 border border-primary/20 text-sm space-y-0.5">
+            <div>
+              <CheckCircle2 className="h-4 w-4 inline text-primary mr-1" />
+              <b>{student.full_name}</b> — {student.reg_no} • {student.semina} • {student.student_group}
+            </div>
+            {(student.course || student.study_year || student.academic_year) && (
+              <div className="text-xs text-muted-foreground pl-5">
+                {student.course && <span>{student.course}</span>}
+                {formatAcademicSummary(student) && (
+                  <span>{student.course ? " • " : ""}{formatAcademicSummary(student)}</span>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -216,6 +269,47 @@ function Page() {
                           <SelectContent>
                             {groupList.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
                             {edit.new_student_group && !groupList.includes(edit.new_student_group) && <SelectItem value={edit.new_student_group}>{edit.new_student_group}</SelectItem>}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <div>
+                        <Label>Kozi</Label>
+                        <Select value={edit.new_course} onValueChange={(v) => setEdit({ ...edit, new_course: v })}>
+                          <SelectTrigger><SelectValue placeholder="Chagua kozi" /></SelectTrigger>
+                          <SelectContent>
+                            {courseList.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                            {edit.new_course && !courseList.includes(edit.new_course) && <SelectItem value={edit.new_course}>{edit.new_course}</SelectItem>}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label>Mwaka wa Masomo</Label>
+                        <Select value={edit.new_study_year} onValueChange={(v) => setEdit({ ...edit, new_study_year: v })}>
+                          <SelectTrigger><SelectValue placeholder="Chagua mwaka" /></SelectTrigger>
+                          <SelectContent>
+                            {studyYears.map((y) => <SelectItem key={y} value={String(y)}>Mwaka wa {y}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <div>
+                        <Label>Semester</Label>
+                        <Select value={edit.new_semester} onValueChange={(v) => setEdit({ ...edit, new_semester: v })}>
+                          <SelectTrigger><SelectValue placeholder="Chagua semester" /></SelectTrigger>
+                          <SelectContent>
+                            {SEMESTERS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label>Mwaka wa Kitaaluma</Label>
+                        <Select value={edit.new_academic_year} onValueChange={(v) => setEdit({ ...edit, new_academic_year: v })}>
+                          <SelectTrigger><SelectValue placeholder="Mfano 2026/2027" /></SelectTrigger>
+                          <SelectContent>
+                            {academicYears.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       </div>

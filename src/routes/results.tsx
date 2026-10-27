@@ -9,6 +9,7 @@ import { Trophy, User, GraduationCap, RefreshCw, Users, CheckCircle2, XCircle, C
 import { gradeShortAnswer } from "@/lib/grading.functions";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
+import { formatAcademicSummary } from "@/lib/academicTargeting";
 import { toast } from "sonner";
 
 type QA = { q: any; given: any; correct: boolean; partial?: number };
@@ -211,6 +212,9 @@ function ResultsPage() {
               <div><div className="text-xs text-muted-foreground">Reg Namba</div><div className="font-mono">{student.reg_no}</div></div>
               <div className="flex items-center gap-2"><GraduationCap className="h-5 w-5 text-primary" /><div><div className="text-xs text-muted-foreground">Kozi</div><div>{student.course || student.student_group}</div></div></div>
               <div><div className="text-xs text-muted-foreground">Semina / Group</div><div>{student.semina} • {student.student_group}</div></div>
+              {formatAcademicSummary(student) && (
+                <div className="sm:col-span-2"><div className="text-xs text-muted-foreground">Mwaka wa Masomo</div><div>{formatAcademicSummary(student)}</div></div>
+              )}
             </CardContent>
           </Card>
         )}

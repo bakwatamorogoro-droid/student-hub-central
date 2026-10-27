@@ -10,6 +10,7 @@ import { AttendanceCheckIn } from "@/components/AttendanceCheckIn";
 import { BigSystemTitle } from "@/components/ExamVideoHero";
 import { HomeAnimationHero } from "@/components/HomeAnimationHero";
 import { AnnouncementBanner } from "@/components/AnnouncementBanner";
+import { ExamHallGallery } from "@/components/ExamHallGallery";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -217,6 +218,8 @@ function Index() {
             </Link>
           </div>
         </section>
+
+        <ExamHallGallery />
 
         <BigSystemTitle sub="Islamic Studies · Mtandaoni" />
       </main>

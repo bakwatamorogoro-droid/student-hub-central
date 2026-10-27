@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { Pencil, Trash2, Download, CheckCircle2, XCircle } from "lucide-react";
-import { ACADEMIC_YEARS, STUDY_YEARS } from "@/lib/academicTargeting";
+import { ACADEMIC_YEARS, SEMESTERS, studyYearsFor } from "@/lib/academicTargeting";
+import { updateStudentProfile, isMissingColumnError } from "@/lib/studentProfile";
 
 export const Route = createFileRoute("/admin/students")({ component: Page });
 
@@ -27,6 +28,7 @@ type Student = {
   device_id: string;
   created_at: string;
   study_year: number | null;
+  semester: string | null;
   academic_year: string | null;
 };
 
@@ -36,6 +38,9 @@ function Page() {
   const [editing, setEditing] = useState<Student | null>(null);
   const [seminaList, setSeminaList] = useState<string[]>([]);
   const [groupList, setGroupList] = useState<string[]>([]);
+  const [courseList, setCourseList] = useState<string[]>([]);
+  const [studyYears, setStudyYears] = useState<number[]>(studyYearsFor(2));
+  const [academicYears, setAcademicYears] = useState<string[]>([...ACADEMIC_YEARS]);
   const [submittedSet, setSubmittedSet] = useState<Set<string>>(new Set());
 
   const load = async () => {
@@ -50,7 +55,7 @@ function Page() {
         .range(from, from + pageSize - 1);
       if (error) { toast.error(error.message); break; }
       if (!data || data.length === 0) break;
-      all.push(...(data as Student[]));
+      all.push(...(data as unknown as Student[]));
       if (data.length < pageSize) break;
       from += pageSize;
     }
@@ -59,11 +64,22 @@ function Page() {
 
   useEffect(() => {
     load();
-    supabase.from("app_settings").select("semina_list, group_list").eq("id", 1).single().then(({ data }: { data: any }) => {
-      if (data) {
-        setSeminaList((data.semina_list as string[]) || []);
-        setGroupList((data.group_list as string[]) || []);
+    const base = "semina_list, group_list";
+    supabase.from("app_settings").select(`${base}, course_list, program_years, academic_years_list`).eq("id", 1).single().then(({ data, error }: { data: any; error: any }) => {
+      const apply = (d: any) => {
+        if (!d) return;
+        setSeminaList((d.semina_list as string[]) || []);
+        setGroupList((d.group_list as string[]) || []);
+        setCourseList((d.course_list as string[]) || []);
+        setStudyYears(studyYearsFor(d.program_years ?? 2));
+        const years = (d.academic_years_list as string[]) || [];
+        if (years.length) setAcademicYears(years);
+      };
+      if (error && isMissingColumnError(error)) {
+        supabase.from("app_settings").select(base).eq("id", 1).single().then(({ data: d2 }: { data: any }) => apply(d2));
+        return;
       }
+      apply(data);
     });
     // Load IDs of students who have at least one submission
     (async () => {
@@ -124,22 +140,25 @@ function Page() {
 
   const saveEdit = async () => {
     if (!editing) return;
-    const { error } = await supabase
-      .from("students")
-      .update({
-        full_name: editing.full_name,
-        phone: editing.phone,
-        course: editing.course,
-        age: editing.age,
-        gender: editing.gender,
-        semina: editing.semina,
-        student_group: editing.student_group,
-        study_year: editing.study_year,
-        academic_year: editing.academic_year,
-      } as any)
-      .eq("id", editing.id);
+    const { error, semesterUnsupported } = await updateStudentProfile(editing.id, {
+      full_name: editing.full_name,
+      phone: editing.phone,
+      course: editing.course,
+      study_year: editing.study_year,
+      semester: editing.semester,
+      academic_year: editing.academic_year,
+    });
     if (error) return toast.error(error.message);
-    toast.success("Imehifadhiwa");
+    const { error: groupErr } = await supabase
+      .from("students")
+      .update({ semina: editing.semina, student_group: editing.student_group, age: editing.age, gender: editing.gender } as any)
+      .eq("id", editing.id);
+    if (groupErr) return toast.error(groupErr.message);
+    if (semesterUnsupported) {
+      toast.warning("Imehifadhiwa — Semester bado haijawashwa (admin aendeshe migration 0004).");
+    } else {
+      toast.success("Imehifadhiwa");
+    }
     setEditing(null);
     load();
   };
@@ -192,6 +211,7 @@ function Page() {
                 <th className="text-left p-2">Semina</th>
                 <th className="text-left p-2">Group</th>
                 <th className="text-left p-2">Mwaka</th>
+                <th className="text-left p-2">Semester</th>
                 <th className="text-left p-2">Kitaaluma</th>
                 <th className="text-left p-2">Tarehe</th>
                 <th className="text-left p-2">Vitendo</th>
@@ -199,7 +219,7 @@ function Page() {
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={12} className="text-center p-6 text-muted-foreground">Hakuna mwanafunzi bado.</td></tr>
+                <tr><td colSpan={13} className="text-center p-6 text-muted-foreground">Hakuna mwanafunzi bado.</td></tr>
               )}
               {filtered.map((r, i) => {
                 const submitted = submittedSet.has(r.id);
@@ -224,6 +244,7 @@ function Page() {
                   <td className="p-2">{r.semina}</td>
                   <td className="p-2">{r.student_group}</td>
                   <td className="p-2">{r.study_year ? `Mwaka ${r.study_year}` : "-"}</td>
+                  <td className="p-2">{r.semester || "-"}</td>
                   <td className="p-2">{r.academic_year || "-"}</td>
                   <td className="p-2 text-xs">{new Date(r.created_at).toLocaleDateString()}</td>
                   <td className="p-2">
@@ -250,7 +271,21 @@ function Page() {
                 <div><Label>Jina Kamili</Label><Input value={editing.full_name} onChange={(e) => setEditing({ ...editing, full_name: e.target.value })} /></div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><Label>Simu</Label><Input value={editing.phone || ""} onChange={(e) => setEditing({ ...editing, phone: e.target.value })} /></div>
-                  <div><Label>Kozi</Label><Input value={editing.course || ""} onChange={(e) => setEditing({ ...editing, course: e.target.value })} /></div>
+                  <div>
+                    <Label>Kozi</Label>
+                    {courseList.length > 0 ? (
+                      <Select value={editing.course || "none"} onValueChange={(v) => setEditing({ ...editing, course: v === "none" ? null : v })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Hakuna</SelectItem>
+                          {courseList.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                          {editing.course && !courseList.includes(editing.course) && <SelectItem value={editing.course}>{editing.course}</SelectItem>}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input value={editing.course || ""} onChange={(e) => setEditing({ ...editing, course: e.target.value })} />
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><Label>Umri</Label><Input type="number" value={editing.age ?? ""} onChange={(e) => setEditing({ ...editing, age: e.target.value ? Number(e.target.value) : null })} /></div>
@@ -292,20 +327,30 @@ function Page() {
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Haujawekwa</SelectItem>
-                        {STUDY_YEARS.map((year) => <SelectItem key={year} value={String(year)}>Mwaka wa {year}</SelectItem>)}
+                        {studyYears.map((year) => <SelectItem key={year} value={String(year)}>Mwaka wa {year}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
-                    <Label>Mwaka wa Kitaaluma</Label>
-                    <Select value={editing.academic_year || "none"} onValueChange={(v) => setEditing({ ...editing, academic_year: v === "none" ? null : v })}>
+                    <Label>Semester</Label>
+                    <Select value={editing.semester || "none"} onValueChange={(v) => setEditing({ ...editing, semester: v === "none" ? null : v })}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Haujawekwa</SelectItem>
-                        {ACADEMIC_YEARS.map((year) => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                        {SEMESTERS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+                <div>
+                  <Label>Mwaka wa Kitaaluma</Label>
+                  <Select value={editing.academic_year || "none"} onValueChange={(v) => setEditing({ ...editing, academic_year: v === "none" ? null : v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Haujawekwa</SelectItem>
+                      {academicYears.map((year) => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             )}

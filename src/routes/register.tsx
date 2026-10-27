@@ -11,7 +11,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { getDeviceId } from "@/lib/device-id";
 import { toast } from "sonner";
 import { CheckCircle2 } from "lucide-react";
-import { ACADEMIC_YEARS, STUDY_YEARS } from "@/lib/academicTargeting";
+import { ACADEMIC_YEARS, SEMESTERS, studyYearsFor } from "@/lib/academicTargeting";
+import { isMissingColumnError } from "@/lib/studentProfile";
 
 export const Route = createFileRoute("/register")({
   component: RegisterPage,
@@ -26,9 +27,12 @@ export const Route = createFileRoute("/register")({
 
 function RegisterPage() {
   const nav = useNavigate();
-  const [form, setForm] = useState({ reg_no: "", full_name: "", phone: "", course: "", age: "", gender: "Mwanaume", semina: "", student_group: "", study_year: "", academic_year: "" });
+  const [form, setForm] = useState({ reg_no: "", full_name: "", phone: "", course: "", age: "", gender: "Mwanaume", semina: "", student_group: "", study_year: "", semester: "", academic_year: "" });
   const [seminaList, setSeminaList] = useState<string[]>([]);
   const [groupList, setGroupList] = useState<string[]>([]);
+  const [courseList, setCourseList] = useState<string[]>([]);
+  const [academicYears, setAcademicYears] = useState<string[]>([...ACADEMIC_YEARS]);
+  const [studyYears, setStudyYears] = useState<number[]>(studyYearsFor(2));
   const [loading, setLoading] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -36,12 +40,31 @@ function RegisterPage() {
   const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
-    supabase.from("app_settings").select("semina_list, group_list, attendance_lat, attendance_lng, register_radius_m, register_gps_required").eq("id", 1).single().then(({ data }: { data: any }) => {
-      if (data) {
-        setSeminaList((data.semina_list as string[]) || []);
-        setGroupList((data.group_list as string[]) || []);
-        setGeo(data);
+    const base = "semina_list, group_list, attendance_lat, attendance_lng, register_radius_m, register_gps_required";
+    const optional = "course_list, program_years, academic_years_list, current_academic_year, current_semester";
+    const apply = (data: any) => {
+      if (!data) return;
+      setSeminaList((data.semina_list as string[]) || []);
+      setGroupList((data.group_list as string[]) || []);
+      setCourseList((data.course_list as string[]) || []);
+      const years = (data.academic_years_list as string[]) || [];
+      setAcademicYears(years.length ? years : [...ACADEMIC_YEARS]);
+      setStudyYears(studyYearsFor(data.program_years ?? 2));
+      setForm((f) => ({
+        ...f,
+        semester: f.semester || data.current_semester || "",
+        academic_year: f.academic_year || data.current_academic_year || "",
+      }));
+      setGeo(data);
+    };
+    // These columns arrive with drizzle/migrations/0004_add_semester.sql; if they
+    // are not there yet, still load everything else.
+    supabase.from("app_settings").select(`${base}, ${optional}`).eq("id", 1).single().then(({ data, error }: { data: any; error: any }) => {
+      if (error && isMissingColumnError(error)) {
+        supabase.from("app_settings").select(base).eq("id", 1).single().then(({ data: d2 }: { data: any }) => apply(d2));
+        return;
       }
+      apply(data);
     });
   }, []);
 
@@ -104,7 +127,7 @@ function RegisterPage() {
       toast.error(`Tayari kuna usajili wa ${existing?.full_name} (${existing?.reg_no}). Nenda Huduma kuomba marekebisho.`);
       return;
     }
-    const { error } = await supabase.from("students").insert({
+    const baseRow = {
       reg_no: form.reg_no,
       full_name: form.full_name,
       phone: form.phone,
@@ -116,7 +139,16 @@ function RegisterPage() {
       study_year: Number(form.study_year),
       academic_year: form.academic_year,
       device_id,
+    };
+    // `semester` is added by drizzle/migrations/0004_add_semester.sql; retry
+    // without it so registration still works before the migration is applied.
+    let { error } = await supabase.from("students").insert({
+      ...baseRow,
+      semester: form.semester || null,
     } as any);
+    if (error && isMissingColumnError(error)) {
+      ({ error } = await supabase.from("students").insert(baseRow as any));
+    }
     setLoading(false);
     setConfirmOpen(false);
     if (error) {
@@ -151,7 +183,17 @@ function RegisterPage() {
                 </div>
                 <div>
                   <Label>Kozi</Label>
-                  <Input value={form.course} onChange={(e) => setForm({ ...form, course: e.target.value })} placeholder="Mfano: Islamic Studies" />
+                  {courseList.length > 0 ? (
+                    <Select value={form.course} onValueChange={(v) => setForm({ ...form, course: v })}>
+                      <SelectTrigger><SelectValue placeholder="Chagua kozi" /></SelectTrigger>
+                      <SelectContent>
+                        {courseList.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                        {form.course && !courseList.includes(form.course) && <SelectItem value={form.course}>{form.course}</SelectItem>}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input value={form.course} onChange={(e) => setForm({ ...form, course: e.target.value })} placeholder="Mfano: BIOGRAPHY OF PROPHET MUHAMMAD [IS234]" />
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -194,19 +236,28 @@ function RegisterPage() {
                   <Select value={form.study_year} onValueChange={(v) => setForm({ ...form, study_year: v })}>
                     <SelectTrigger><SelectValue placeholder="Chagua mwaka" /></SelectTrigger>
                     <SelectContent>
-                      {STUDY_YEARS.map((year) => <SelectItem key={year} value={String(year)}>Mwaka wa {year}</SelectItem>)}
+                      {studyYears.map((year) => <SelectItem key={year} value={String(year)}>Mwaka wa {year}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label>Mwaka wa Kitaaluma *</Label>
-                  <Select value={form.academic_year} onValueChange={(v) => setForm({ ...form, academic_year: v })}>
-                    <SelectTrigger><SelectValue placeholder="Mfano 2026/2027" /></SelectTrigger>
+                  <Label>Semester</Label>
+                  <Select value={form.semester} onValueChange={(v) => setForm({ ...form, semester: v })}>
+                    <SelectTrigger><SelectValue placeholder="Chagua semester" /></SelectTrigger>
                     <SelectContent>
-                      {ACADEMIC_YEARS.map((year) => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                      {SEMESTERS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+              <div>
+                <Label>Mwaka wa Kitaaluma *</Label>
+                <Select value={form.academic_year} onValueChange={(v) => setForm({ ...form, academic_year: v })}>
+                  <SelectTrigger><SelectValue placeholder="Mfano 2026/2027" /></SelectTrigger>
+                  <SelectContent>
+                    {academicYears.map((year) => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
               <Button type="submit" className="w-full" disabled={loading}>Endelea — Thibitisha Taarifa</Button>
             </form>
@@ -230,6 +281,7 @@ function RegisterPage() {
                 <div className="text-muted-foreground">Semina:</div><div>{form.semina}</div>
                 <div className="text-muted-foreground">Group:</div><div>{form.student_group}</div>
                 <div className="text-muted-foreground">Mwaka:</div><div>Mwaka wa {form.study_year}</div>
+                <div className="text-muted-foreground">Semester:</div><div>{form.semester || "-"}</div>
                 <div className="text-muted-foreground">Kitaaluma:</div><div>{form.academic_year}</div>
               </div>
             </div>

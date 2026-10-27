@@ -29,6 +29,7 @@ export function SiteHeader() {
               { to: "/exams", label: "Online Test" },
               { to: "/quiz", label: "Assignment" },
               { to: "/results", label: t("results") },
+              { to: "/bana", label: "Bana ya Media" },
               { to: "/student", label: "Huduma" },
               { to: "/admin", label: t("admin") },
             ].map((l) => (
