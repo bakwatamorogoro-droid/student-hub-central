@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Clapperboard, PlayCircle, PauseCircle, Sparkles, ArrowRight } from "lucide-react";
 import { EXAM_HALL_STILLS, POSTER_STUDY, STUDY_HALL_LOOP } from "@/lib/mediaAssets";
+import { useI18n } from "@/lib/i18n";
 
 /**
  * Media gallery for the exam hall: a looping motion-graphics clip of African
@@ -11,6 +12,7 @@ import { EXAM_HALL_STILLS, POSTER_STUDY, STUDY_HALL_LOOP } from "@/lib/mediaAsse
  * pressed pause, so it costs nothing on the other pages.
  */
 export function ExamHallGallery() {
+  const { t } = useI18n();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [playing, setPlaying] = useState(true);
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -61,20 +63,18 @@ export function ExamHallGallery() {
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-primary">
-            <Sparkles className="h-3 w-3" /> Uhuishaji wa Kisasa
+            <Sparkles className="h-3 w-3" /> {t("media_kicker")}
           </div>
           <h2 className="mt-2 flex items-center gap-2 text-xl font-extrabold tracking-tight md:text-2xl">
-            <Clapperboard className="h-5 w-5 text-primary" /> Ukumbi wa Mtihani — Wanafunzi wa Kiislamu
+            <Clapperboard className="h-5 w-5 text-primary" /> {t("media_title")}
           </h2>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Video ya uhuishaji inayoonyesha wanafunzi wa Kiislamu wakifanya mtihani kwa nidhamu, adabu na utulivu.
-          </p>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{t("media_desc")}</p>
         </div>
         <Link
           to="/bana"
           className="group inline-flex shrink-0 items-center gap-2 rounded-xl border-2 border-primary/30 bg-card px-4 py-2 text-sm font-bold transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-lg"
         >
-          Fungua Bana ya Media
+          {t("open_media")}
           <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
         </Link>
       </div>
@@ -90,7 +90,7 @@ export function ExamHallGallery() {
             loop
             playsInline
             preload="metadata"
-            aria-label="Uhuishaji: wanafunzi wa Kiislamu wakifanya mtihani kwenye ukumbi"
+            aria-label={t("media_title")}
             className="aspect-video w-full object-cover transition-transform duration-[1600ms] ease-out group-hover:scale-[1.04]"
           />
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
@@ -101,17 +101,17 @@ export function ExamHallGallery() {
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
               </span>
-              Uhuishaji hai · bila sauti
+              {t("live_animation")}
             </div>
             {!reducedMotion && (
               <button
                 type="button"
                 onClick={toggle}
-                aria-label={playing ? "Simamisha uhuishaji" : "Endesha uhuishaji"}
+                aria-label={playing ? t("pause") : t("play")}
                 className="inline-flex items-center gap-2 rounded-full bg-primary/90 px-3 py-1.5 text-[11px] font-bold text-primary-foreground shadow-lg backdrop-blur transition hover:bg-primary"
               >
                 {playing ? <PauseCircle className="h-3.5 w-3.5" /> : <PlayCircle className="h-3.5 w-3.5" />}
-                {playing ? "Simamisha" : "Endesha"}
+                {playing ? t("pause") : t("play")}
               </button>
             )}
           </div>
@@ -131,13 +131,13 @@ export function ExamHallGallery() {
             >
               <img
                 src={s.src}
-                alt={s.title}
+                alt={t(s.titleKey)}
                 loading="lazy"
                 className="h-24 w-full object-cover transition-transform duration-700 group-hover:scale-110 lg:h-28"
               />
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
               <div className="absolute inset-x-0 bottom-0 p-2.5">
-                <div className="text-xs font-bold text-white drop-shadow">{s.title}</div>
+                <div className="text-xs font-bold text-white drop-shadow">{t(s.titleKey)}</div>
               </div>
             </button>
           ))}
@@ -145,8 +145,8 @@ export function ExamHallGallery() {
       </div>
 
       <div className="mt-3 rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 to-transparent p-4">
-        <div className="text-sm font-bold text-primary">{EXAM_HALL_STILLS[active]?.title}</div>
-        <p className="mt-0.5 text-xs text-muted-foreground md:text-sm">{EXAM_HALL_STILLS[active]?.caption}</p>
+        <div className="text-sm font-bold text-primary">{t(EXAM_HALL_STILLS[active]?.titleKey)}</div>
+        <p className="mt-0.5 text-xs text-muted-foreground md:text-sm">{t(EXAM_HALL_STILLS[active]?.captionKey)}</p>
       </div>
     </section>
   );

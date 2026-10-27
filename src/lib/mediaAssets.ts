@@ -16,8 +16,22 @@ export const POSTER_STUDY = "/media/poster-study.jpg";
 
 /** Stills pulled from the same animation, used for the exam-hall gallery. */
 export const EXAM_HALL_STILLS = [
-  { src: "/media/exam-hall-1.jpg", title: "Ukumbi wa Mtihani", caption: "Wanafunzi wakianza mtihani kwa utulivu na nidhamu." },
-  { src: "/media/exam-hall-2.jpg", title: "Kuandika Majibu", caption: "Kila mwanafunzi anajibu kwa makini kwenye karatasi yake." },
-  { src: "/media/exam-hall-3.jpg", title: "Muda wa Mtihani", caption: "Saa ya ukutani inafuatilia muda wa mtihani." },
-  { src: "/media/exam-hall-4.jpg", title: "Nidhamu na Adabu", caption: "Mazingira ya Kiislamu yenye heshima na utulivu." },
+  { src: "/media/exam-hall-1.jpg", titleKey: "media_title", captionKey: "media_desc" },
+  { src: "/media/exam-hall-2.jpg", titleKey: "cartoon_title", captionKey: "cartoon_sub" },
+  { src: "/media/exam-hall-3.jpg", titleKey: "stats_title", captionKey: "media_desc" },
+  { src: "/media/exam-hall-4.jpg", titleKey: "badge_security", captionKey: "media_desc" },
 ];
+
+/**
+ * Hand-drawn style illustrations (rendered offline with PIL, not generated
+ * photographs) of Muslim students in class, in the hall, in a group and
+ * studying alone. `titleKey`/`captionKey` are i18n keys so the captions follow
+ * the language toggle.
+ */
+export const CARTOONS = [
+  { src: "/media/cartoon-hall.jpg", titleKey: "media_title", captionKey: "media_desc" },
+  { src: "/media/cartoon-auditorium.jpg", titleKey: "photos_title", captionKey: "cartoon_sub" },
+  { src: "/media/cartoon-group.jpg", titleKey: "quiz", captionKey: "cartoon_sub" },
+  { src: "/media/cartoon-one.jpg", titleKey: "study_year", captionKey: "cartoon_sub" },
+];
+

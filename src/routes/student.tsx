@@ -16,6 +16,8 @@ import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 import { updateStudentProfile } from "@/lib/studentProfile";
 import { ACADEMIC_YEARS, SEMESTERS, formatAcademicSummary, studyYearsFor } from "@/lib/academicTargeting";
+import { useI18n } from "@/lib/i18n";
+import { loadDirectory } from "@/lib/directory";
 
 export const Route = createFileRoute("/student")({
   component: Page,
@@ -29,6 +31,7 @@ export const Route = createFileRoute("/student")({
 });
 
 function Page() {
+  const { t } = useI18n();
   const [settings, setSettings] = useState<any>(null);
   const [seminaList, setSeminaList] = useState<string[]>([]);
   const [groupList, setGroupList] = useState<string[]>([]);
@@ -63,6 +66,11 @@ function Page() {
       setSeminaList((data?.semina_list as string[]) || []);
       setGroupList((data?.group_list as string[]) || []);
       setCourseList((data?.course_list as string[]) || []);
+      loadDirectory(data).then((dir) => {
+        if (dir.semina.length) setSeminaList(dir.semina);
+        if (dir.groups.length) setGroupList(dir.groups);
+        if (dir.courses.length) setCourseList(dir.courses);
+      });
       setStudyYears(studyYearsFor(data?.program_years ?? 2));
       const years = (data?.academic_years_list as string[]) || [];
       if (years.length) setAcademicYears(years);
@@ -96,16 +104,16 @@ function Page() {
   const lookup = async (r: string) => {
     if (!r) return;
     const results = await findStudentsByQuery(r);
-    if (results.length === 0) { toast.error("Hakuna mwanafunzi anayelingana. Hakikisha umeandika sahihi au jisajili."); setStudent(null); setMatches([]); return; }
+    if (results.length === 0) { toast.error(t("not_found")); setStudent(null); setMatches([]); return; }
     if (results.length === 1) { confirmStudent(results[0]); return; }
     setStudent(null);
     setMatches(results);
-    toast.info(`Tumepata ${results.length} wanafunzi — chagua wewe ni nani.`);
+    toast.info(t("your_details"));
   };
 
   const submitEdit = async () => {
     if (!student) return;
-    if (!settings?.profile_edits_enabled) return toast.error("Admin hajawasha huduma ya marekebisho kwa sasa.");
+    if (!settings?.profile_edits_enabled) return toast.error(t("edits_disabled"));
     setSubmitting(true);
     const reasonPrefix = wrongReg ? "[NILIKOSEA REG KABISA] Tafadhali admin athibitishe matokeo yangu ya awali yahamishwe kwa Reg mpya. " : "";
     const newRegUp = edit.new_reg_no?.toUpperCase() || null;
@@ -164,14 +172,14 @@ function Page() {
     }
 
     setSubmitting(false);
-    toast.success("Ombi la kurekebisha Reg lilitumwa. Admin atathibitisha matokeo yako ya awali.");
+    toast.success(t("request_sent"));
     setWrongReg(false);
     lookup(student.reg_no);
   };
 
   const submitIssue = async () => {
-    if (!issue.message.trim()) return toast.error("Andika changamoto yako");
-    if (!student && (!reg || reg.length < 3)) return toast.error("Ingiza Reg Namba yako");
+    if (!issue.message.trim()) return toast.error(t("write_issue"));
+    if (!student && (!reg || reg.length < 3)) return toast.error(t("enter_reg"));
     setSubmitting(true);
     const { error } = await (supabase as any).from("issue_reports").insert({
       reg_no: (student?.reg_no || reg).toUpperCase(),
@@ -183,7 +191,7 @@ function Page() {
     });
     setSubmitting(false);
     if (error) return toast.error(error.message);
-    toast.success("Changamoto imepokelewa! Admin atajibu hivi karibuni.");
+    toast.success(t("issue_received"));
     setIssue({ category: "test1", message: "", phone: "", email: "" });
     if (student) lookup(student.reg_no);
   };
@@ -192,16 +200,31 @@ function Page() {
     <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-secondary/10">
       <SiteHeader />
       <main className="container mx-auto px-4 py-8 max-w-3xl space-y-5">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">Huduma kwa Mwanafunzi</h1>
-          <p className="text-sm text-muted-foreground mt-1">Omba marekebisho ya taarifa zako, au tuma changamoto yoyote.</p>
+        <div className="relative overflow-hidden rounded-3xl border-2 border-primary/25 bg-gradient-to-br from-primary/12 via-card to-secondary/15 p-6 text-center shadow-lg">
+          <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-primary/15 blur-3xl" />
+          <div className="relative">
+            <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-primary">
+              <UserCog className="h-3 w-3" /> {t("update_cta")}
+            </div>
+            <h1 className="mt-3 bg-gradient-to-r from-primary to-secondary bg-clip-text text-3xl font-black tracking-tight text-transparent md:text-4xl">
+              {t("update_title")}
+            </h1>
+            <p className="mx-auto mt-2 max-w-2xl text-sm text-muted-foreground">{t("update_sub")}</p>
+          </div>
         </div>
 
-        <Card className="border-2 border-primary/20">
-          <CardContent className="p-4 space-y-2">
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Input value={reg} onChange={(e) => setReg(e.target.value.toUpperCase())} placeholder="Ingiza Reg Namba au jina (mfano: jina la mwisho)" className="flex-1" onKeyDown={(e) => { if (e.key === "Enter") lookup(reg); }} />
-              <Button onClick={() => lookup(reg)}>Thibitisha</Button>
+        <Card className="border-2 border-primary/25 shadow-lg">
+          <CardContent className="space-y-2 p-4">
+            <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{t("reg_number")}</Label>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                value={reg}
+                onChange={(e) => setReg(e.target.value.toUpperCase())}
+                placeholder={t("reg_placeholder")}
+                className="flex-1 font-mono"
+                onKeyDown={(e) => { if (e.key === "Enter") lookup(reg); }}
+              />
+              <Button onClick={() => lookup(reg)} className="font-bold">{t("look_up")}</Button>
             </div>
             {matches.length > 0 && (
               <StudentMatchesPicker matches={matches} onConfirm={confirmStudent} onCancel={() => setMatches([])} />
@@ -210,50 +233,65 @@ function Page() {
         </Card>
 
         {student && (
-          <div className="rounded-lg p-3 bg-primary/5 border border-primary/20 text-sm space-y-0.5">
-            <div>
-              <CheckCircle2 className="h-4 w-4 inline text-primary mr-1" />
-              <b>{student.full_name}</b> — {student.reg_no} • {student.semina} • {student.student_group}
-            </div>
-            {(student.course || student.study_year || student.academic_year) && (
-              <div className="text-xs text-muted-foreground pl-5">
-                {student.course && <span>{student.course}</span>}
-                {formatAcademicSummary(student) && (
-                  <span>{student.course ? " • " : ""}{formatAcademicSummary(student)}</span>
-                )}
+          <Card className="animate-fade-in border-2 border-primary/25 shadow-lg">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <CheckCircle2 className="h-4 w-4 text-primary" /> {t("your_details")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  { label: t("reg_number"), value: student.reg_no },
+                  { label: t("semina"), value: student.semina },
+                  { label: t("group"), value: student.student_group },
+                  { label: t("course"), value: student.course || "—" },
+                ].map((f) => (
+                  <div key={f.label} className="rounded-xl border border-primary/15 bg-primary/5 p-2.5">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{f.label}</div>
+                    <div className="truncate text-sm font-semibold">{f.value || "—"}</div>
+                  </div>
+                ))}
               </div>
-            )}
-          </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">{student.full_name}</span>
+                {formatAcademicSummary(student) && <span>• {formatAcademicSummary(student)}</span>}
+              </div>
+              <Button asChild variant="outline" size="sm" className="w-full border-primary/30 font-bold sm:w-auto">
+                <a href="#edit-taasrifa">{t("edit_card_title")}</a>
+              </Button>
+            </CardContent>
+          </Card>
         )}
 
         {student && <GroupSwitcher student={student} onChanged={() => lookup(student.reg_no)} />}
 
 
-        <Tabs defaultValue="edit">
+        <Tabs defaultValue="edit" id="edit-taasrifa" className="scroll-mt-20">
           <TabsList className="grid grid-cols-2 w-full">
-            <TabsTrigger value="edit" className="gap-1"><UserCog className="h-4 w-4" /> Marekebisho ya Wasifu</TabsTrigger>
-            <TabsTrigger value="issue" className="gap-1"><AlertTriangle className="h-4 w-4" /> Changamoto</TabsTrigger>
+            <TabsTrigger value="edit" className="gap-1"><UserCog className="h-4 w-4" /> {t("update_title")}</TabsTrigger>
+            <TabsTrigger value="issue" className="gap-1"><AlertTriangle className="h-4 w-4" /> {t("tab_issue")}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="edit">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Omba Marekebisho</CardTitle>
+                <CardTitle className="text-base">{t("edit_card_title")}</CardTitle>
                 {!settings?.profile_edits_enabled && (
-                  <p className="text-xs text-amber-600 flex items-center gap-1"><Clock className="h-3 w-3" /> Huduma hii imezimwa na admin kwa sasa.</p>
+                  <p className="flex items-center gap-1 text-xs text-amber-600"><Clock className="h-3 w-3" /> {t("edits_disabled")}</p>
                 )}
               </CardHeader>
               <CardContent className="space-y-3">
-                {!student && <p className="text-sm text-muted-foreground">Thibitisha Reg Namba kwanza.</p>}
+                {!student && <p className="text-sm text-muted-foreground">{t("confirm_reg_first")}</p>}
                 {student && (
                   <>
                     <div className="grid sm:grid-cols-2 gap-3">
-                      <div><Label>Reg Namba Mpya</Label><Input value={edit.new_reg_no} onChange={(e) => setEdit({ ...edit, new_reg_no: e.target.value.toUpperCase() })} /></div>
-                      <div><Label>Jina Kamili Jipya</Label><Input value={edit.new_full_name} onChange={(e) => setEdit({ ...edit, new_full_name: e.target.value })} /></div>
+                      <div><Label>{t("new_reg")}</Label><Input value={edit.new_reg_no} onChange={(e) => setEdit({ ...edit, new_reg_no: e.target.value.toUpperCase() })} /></div>
+                      <div><Label>{t("new_name")}</Label><Input value={edit.new_full_name} onChange={(e) => setEdit({ ...edit, new_full_name: e.target.value })} /></div>
                     </div>
                     <div className="grid sm:grid-cols-2 gap-3">
                       <div>
-                        <Label>Semina</Label>
+                        <Label>{t("semina")}</Label>
                         <Select value={edit.new_semina} onValueChange={(v) => setEdit({ ...edit, new_semina: v })}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
@@ -263,7 +301,7 @@ function Page() {
                         </Select>
                       </div>
                       <div>
-                        <Label>Group</Label>
+                        <Label>{t("group")}</Label>
                         <Select value={edit.new_student_group} onValueChange={(v) => setEdit({ ...edit, new_student_group: v })}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
@@ -275,9 +313,9 @@ function Page() {
                     </div>
                     <div className="grid sm:grid-cols-2 gap-3">
                       <div>
-                        <Label>Kozi</Label>
+                        <Label>{t("course")}</Label>
                         <Select value={edit.new_course} onValueChange={(v) => setEdit({ ...edit, new_course: v })}>
-                          <SelectTrigger><SelectValue placeholder="Chagua kozi" /></SelectTrigger>
+                          <SelectTrigger><SelectValue placeholder={t("choose_course")} /></SelectTrigger>
                           <SelectContent>
                             {courseList.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                             {edit.new_course && !courseList.includes(edit.new_course) && <SelectItem value={edit.new_course}>{edit.new_course}</SelectItem>}
@@ -285,36 +323,36 @@ function Page() {
                         </Select>
                       </div>
                       <div>
-                        <Label>Mwaka wa Masomo</Label>
+                        <Label>{t("study_year")}</Label>
                         <Select value={edit.new_study_year} onValueChange={(v) => setEdit({ ...edit, new_study_year: v })}>
-                          <SelectTrigger><SelectValue placeholder="Chagua mwaka" /></SelectTrigger>
+                          <SelectTrigger><SelectValue placeholder={t("choose_year")} /></SelectTrigger>
                           <SelectContent>
-                            {studyYears.map((y) => <SelectItem key={y} value={String(y)}>Mwaka wa {y}</SelectItem>)}
+                            {studyYears.map((y) => <SelectItem key={y} value={String(y)}>{t("year_n", { n: y })}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       </div>
                     </div>
                     <div className="grid sm:grid-cols-2 gap-3">
                       <div>
-                        <Label>Semester</Label>
+                        <Label>{t("semester")}</Label>
                         <Select value={edit.new_semester} onValueChange={(v) => setEdit({ ...edit, new_semester: v })}>
-                          <SelectTrigger><SelectValue placeholder="Chagua semester" /></SelectTrigger>
+                          <SelectTrigger><SelectValue placeholder={t("choose_semester")} /></SelectTrigger>
                           <SelectContent>
                             {SEMESTERS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       </div>
                       <div>
-                        <Label>Mwaka wa Kitaaluma</Label>
+                        <Label>{t("academic_year")}</Label>
                         <Select value={edit.new_academic_year} onValueChange={(v) => setEdit({ ...edit, new_academic_year: v })}>
-                          <SelectTrigger><SelectValue placeholder="Mfano 2026/2027" /></SelectTrigger>
+                          <SelectTrigger><SelectValue placeholder={t("academic_placeholder")} /></SelectTrigger>
                           <SelectContent>
                             {academicYears.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       </div>
                     </div>
-                    <div><Label>Sababu (hiari)</Label><Textarea value={edit.reason} onChange={(e) => setEdit({ ...edit, reason: e.target.value })} placeholder="Mfano: jina lilikuwa limechapwa vibaya" /></div>
+                    <div><Label>{t("reason")}</Label><Textarea value={edit.reason} onChange={(e) => setEdit({ ...edit, reason: e.target.value })} placeholder={t("reason_placeholder")} /></div>
                     <label className="flex items-start gap-2 p-3 rounded-lg border-2 border-amber-500/40 bg-amber-500/5 cursor-pointer hover:bg-amber-500/10 transition-colors">
                       <input
                         type="checkbox"
@@ -323,18 +361,16 @@ function Page() {
                         className="mt-1 h-4 w-4 accent-amber-600"
                       />
                       <div className="text-sm">
-                        <div className="font-semibold text-amber-700 dark:text-amber-400">⚠ Nilikosea Reg Namba kabisa</div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          Kagua ikiwa ulijiandikisha kwa Reg isiyo sahihi na unataka matokeo yako ya awali yahamishwe kwa Reg mpya. Admin atathibitisha kabla ya kuhamisha.
-                        </div>
+                        <div className="font-semibold text-amber-700 dark:text-amber-400">{t("wrong_reg")}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">{t("wrong_reg_help")}</div>
                       </div>
                     </label>
-                    <Button onClick={submitEdit} disabled={submitting || !settings?.profile_edits_enabled} className="w-full">Tuma Ombi</Button>
+                    <Button onClick={submitEdit} disabled={submitting || !settings?.profile_edits_enabled} className="w-full font-bold">{submitting ? t("sending") : t("submit_request")}</Button>
                   </>
                 )}
                 {editStatus.length > 0 && (
                   <div className="pt-3 border-t space-y-2">
-                    <div className="text-xs font-semibold text-muted-foreground">Maombi yako:</div>
+                    <div className="text-xs font-semibold text-muted-foreground">{t("my_requests")}:</div>
                     {editStatus.map((r) => (
                       <div key={r.id} className="text-xs p-2 rounded bg-muted flex justify-between gap-2">
                         <span>{r.new_full_name || r.current_full_name} / {r.new_reg_no || r.current_reg_no}</span>
@@ -350,12 +386,12 @@ function Page() {
           <TabsContent value="issue">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2"><Mail className="h-4 w-4" /> Wasilisha Changamoto</CardTitle>
+                <CardTitle className="text-base flex items-center gap-2"><Mail className="h-4 w-4" /> {t("issue_card_title")}</CardTitle>
                 <p className="text-xs text-muted-foreground">Kwa wasiofanya Test 1 / Test 2 au wenye matatizo yoyote — andika hapa, admin atapokea.</p>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div>
-                  <Label>Aina ya Changamoto</Label>
+                  <Label>{t("issue_type")}</Label>
                   <Select value={issue.category} onValueChange={(v) => setIssue({ ...issue, category: v })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -371,12 +407,12 @@ function Page() {
                   <div><Label>Simu</Label><Input value={issue.phone} onChange={(e) => setIssue({ ...issue, phone: e.target.value })} placeholder="07XXXXXXXX" /></div>
                   <div><Label>Barua-pepe (Email)</Label><Input type="email" value={issue.email} onChange={(e) => setIssue({ ...issue, email: e.target.value })} placeholder="jina@email.com" /></div>
                 </div>
-                <div><Label>Eleza Changamoto Yako *</Label><Textarea rows={4} value={issue.message} onChange={(e) => setIssue({ ...issue, message: e.target.value })} placeholder="Andika kwa kina..." /></div>
-                <Button onClick={submitIssue} disabled={submitting} className="w-full">Tuma Changamoto</Button>
+                <div><Label>{t("issue_message")} *</Label><Textarea rows={4} value={issue.message} onChange={(e) => setIssue({ ...issue, message: e.target.value })} placeholder={t("issue_placeholder")} /></div>
+                <Button onClick={submitIssue} disabled={submitting} className="w-full font-bold">{t("submit_issue")}</Button>
 
                 {myIssues.length > 0 && (
                   <div className="pt-3 border-t space-y-2">
-                    <div className="text-xs font-semibold text-muted-foreground">Changamoto zako za awali:</div>
+                    <div className="text-xs font-semibold text-muted-foreground">{t("my_issues")}:</div>
                     {myIssues.map((r) => (
                       <div key={r.id} className="text-xs p-2 rounded bg-muted">
                         <div className="flex justify-between gap-2">

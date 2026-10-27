@@ -12,6 +12,8 @@ import { getDeviceId } from "@/lib/device-id";
 import { toast } from "sonner";
 import { CheckCircle2 } from "lucide-react";
 import { ACADEMIC_YEARS, SEMESTERS, studyYearsFor } from "@/lib/academicTargeting";
+import { useI18n } from "@/lib/i18n";
+import { loadDirectory } from "@/lib/directory";
 import { isMissingColumnError } from "@/lib/studentProfile";
 
 export const Route = createFileRoute("/register")({
@@ -27,6 +29,7 @@ export const Route = createFileRoute("/register")({
 
 function RegisterPage() {
   const nav = useNavigate();
+  const { t } = useI18n();
   const [form, setForm] = useState({ reg_no: "", full_name: "", phone: "", course: "", age: "", gender: "Mwanaume", semina: "", student_group: "", study_year: "", semester: "", academic_year: "" });
   const [seminaList, setSeminaList] = useState<string[]>([]);
   const [groupList, setGroupList] = useState<string[]>([]);
@@ -47,6 +50,12 @@ function RegisterPage() {
       setSeminaList((data.semina_list as string[]) || []);
       setGroupList((data.group_list as string[]) || []);
       setCourseList((data.course_list as string[]) || []);
+      // Settings lists are a seed; merge in whatever the cohort actually uses.
+      loadDirectory(data).then((dir) => {
+        if (dir.semina.length) setSeminaList(dir.semina);
+        if (dir.groups.length) setGroupList(dir.groups);
+        if (dir.courses.length) setCourseList(dir.courses);
+      });
       const years = (data.academic_years_list as string[]) || [];
       setAcademicYears(years.length ? years : [...ACADEMIC_YEARS]);
       setStudyYears(studyYearsFor(data.program_years ?? 2));
@@ -165,27 +174,30 @@ function RegisterPage() {
       <SiteHeader />
       <main className="container mx-auto px-4 py-8 max-w-xl">
         <Card>
-          <CardHeader><CardTitle>Usajili wa Mwanafunzi</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>{t("register_title")}</CardTitle>
+            <p className="text-sm text-muted-foreground">{t("register_sub")}</p>
+          </CardHeader>
           <CardContent>
             <form onSubmit={handleReview} className="space-y-4">
               <div>
-                <Label>Reg Namba *</Label>
+                <Label>{t("reg_number")} *</Label>
                 <Input value={form.reg_no} onChange={(e) => setForm({ ...form, reg_no: e.target.value.toUpperCase() })} placeholder="Mfano: MUM2021-04-08787" required />
               </div>
               <div>
-                <Label>Jina Kamili *</Label>
+                <Label>{t("full_name")} *</Label>
                 <Input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} required />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label>Namba ya Simu *</Label>
+                  <Label>{t("phone")} *</Label>
                   <Input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="07XXXXXXXX" required />
                 </div>
                 <div>
-                  <Label>Kozi</Label>
+                  <Label>{t("course")}</Label>
                   {courseList.length > 0 ? (
                     <Select value={form.course} onValueChange={(v) => setForm({ ...form, course: v })}>
-                      <SelectTrigger><SelectValue placeholder="Chagua kozi" /></SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder={t("choose_course")} /></SelectTrigger>
                       <SelectContent>
                         {courseList.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                         {form.course && !courseList.includes(form.course) && <SelectItem value={form.course}>{form.course}</SelectItem>}
@@ -198,33 +210,33 @@ function RegisterPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label>Umri</Label>
+                  <Label>{t("age")}</Label>
                   <Input type="number" value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} />
                 </div>
                 <div>
-                  <Label>Jinsia</Label>
+                  <Label>{t("gender")}</Label>
                   <Select value={form.gender} onValueChange={(v) => setForm({ ...form, gender: v })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Mwanaume">Mwanaume</SelectItem>
-                      <SelectItem value="Mwanamke">Mwanamke</SelectItem>
+                      <SelectItem value="Mwanaume">{t("male")}</SelectItem>
+                      <SelectItem value="Mwanamke">{t("female")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
               <div>
-                <Label>Semina *</Label>
+                <Label>{t("semina")} *</Label>
                 <Select value={form.semina} onValueChange={(v) => setForm({ ...form, semina: v })}>
-                  <SelectTrigger><SelectValue placeholder="Chagua semina" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t("choose_semina")} /></SelectTrigger>
                   <SelectContent>
                     {seminaList.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Group *</Label>
+                <Label>{t("group")} *</Label>
                 <Select value={form.student_group} onValueChange={(v) => setForm({ ...form, student_group: v })}>
-                  <SelectTrigger><SelectValue placeholder="Chagua group" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t("choose_group")} /></SelectTrigger>
                   <SelectContent>
                     {groupList.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
                   </SelectContent>
@@ -232,18 +244,18 @@ function RegisterPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label>Mwaka wa Masomo *</Label>
+                  <Label>{t("study_year")} *</Label>
                   <Select value={form.study_year} onValueChange={(v) => setForm({ ...form, study_year: v })}>
-                    <SelectTrigger><SelectValue placeholder="Chagua mwaka" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={t("choose_year")} /></SelectTrigger>
                     <SelectContent>
-                      {studyYears.map((year) => <SelectItem key={year} value={String(year)}>Mwaka wa {year}</SelectItem>)}
+                      {studyYears.map((year) => <SelectItem key={year} value={String(year)}>{t("year_n", { n: year })}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label>Semester</Label>
+                  <Label>{t("semester")}</Label>
                   <Select value={form.semester} onValueChange={(v) => setForm({ ...form, semester: v })}>
-                    <SelectTrigger><SelectValue placeholder="Chagua semester" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={t("choose_semester")} /></SelectTrigger>
                     <SelectContent>
                       {SEMESTERS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                     </SelectContent>
@@ -251,15 +263,15 @@ function RegisterPage() {
                 </div>
               </div>
               <div>
-                <Label>Mwaka wa Kitaaluma *</Label>
+                <Label>{t("academic_year")} *</Label>
                 <Select value={form.academic_year} onValueChange={(v) => setForm({ ...form, academic_year: v })}>
-                  <SelectTrigger><SelectValue placeholder="Mfano 2026/2027" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t("academic_placeholder")} /></SelectTrigger>
                   <SelectContent>
                     {academicYears.map((year) => <SelectItem key={year} value={year}>{year}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-              <Button type="submit" className="w-full" disabled={loading}>Endelea — Thibitisha Taarifa</Button>
+              <Button type="submit" className="w-full" disabled={loading}>{t("continue_confirm")}</Button>
             </form>
           </CardContent>
         </Card>

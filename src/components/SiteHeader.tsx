@@ -26,11 +26,11 @@ export function SiteHeader() {
             {[
               { to: "/", label: t("home"), icon: <Home className="h-3.5 w-3.5" /> },
               { to: "/register", label: t("register") },
-              { to: "/exams", label: "Online Test" },
-              { to: "/quiz", label: "Assignment" },
+              { to: "/exams", label: t("nav_exams") },
+              { to: "/quiz", label: t("nav_quiz") },
               { to: "/results", label: t("results") },
-              { to: "/bana", label: "Bana ya Media" },
-              { to: "/student", label: "Huduma" },
+              { to: "/bana", label: t("nav_media") },
+              { to: "/student", label: t("nav_student") },
               { to: "/admin", label: t("admin") },
             ].map((l) => (
               <Link

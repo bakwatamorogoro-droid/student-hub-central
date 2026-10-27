@@ -11,6 +11,7 @@ import { BigSystemTitle } from "@/components/ExamVideoHero";
 import { HomeAnimationHero } from "@/components/HomeAnimationHero";
 import { AnnouncementBanner } from "@/components/AnnouncementBanner";
 import { ExamHallGallery } from "@/components/ExamHallGallery";
+import { StudyGallery } from "@/components/StudyGallery";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -24,7 +25,7 @@ export const Route = createFileRoute("/")({
   }),
 });
 
-type TestStat = { key: string; label: string; count: number };
+type TestStat = { key: string; labelKey: string; count: number };
 
 function categorize(title: string): string {
   const t = (title || "").toLowerCase();
@@ -60,11 +61,13 @@ function Index() {
       setStats({ students: s.count || 0, submissions: sub.count || 0, visitsToday: v.count || 0 });
 
       const exams = (ex.data || []) as { id: string; title: string }[];
-      const groups: { key: string; label: string }[] = [
-        { key: "test1", label: "Test 1" },
-        { key: "test2", label: "Test 2" },
-        { key: "test3", label: "Test 3" },
-        { key: "others", label: "Mitihani Mingine" },
+      // Only keys are stored here: translating inside this one-shot effect would
+      // freeze the label to whichever language was active on first paint.
+      const groups: { key: string; labelKey: string }[] = [
+        { key: "test1", labelKey: "test_1" },
+        { key: "test2", labelKey: "test_2" },
+        { key: "test3", labelKey: "test_3" },
+        { key: "others", labelKey: "test_other" },
       ];
       const results = await Promise.all(
         groups.map(async (g) => {
@@ -104,10 +107,10 @@ function Index() {
                     <FileText className="h-6 w-6" />
                   </div>
                   <h2 className="text-2xl font-extrabold tracking-tight">{t("do_exam")}</h2>
-                  <p className="text-sm opacity-90 mt-1">Fanya mtihani rasmi — mtu mmoja</p>
+                  <p className="text-sm opacity-90 mt-1">{t("do_exam_sub")}</p>
                 </div>
                 <div className="flex items-center gap-2 text-sm font-bold group-hover:translate-x-1 transition-transform">
-                  Anza sasa <ArrowRight className="h-4 w-4" />
+                  {t("start_now")} <ArrowRight className="h-4 w-4" />
                 </div>
               </CardContent>
             </Card>
@@ -125,11 +128,11 @@ function Index() {
                   <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-primary flex items-center justify-center shadow-lg mb-3">
                     <Brain className="h-6 w-6 text-white" />
                   </div>
-                  <div className="font-extrabold text-2xl tracking-tight">Quiz</div>
-                  <p className="text-sm text-muted-foreground mt-1">Group au Individual — utachagua ndani</p>
+                  <div className="font-extrabold text-2xl tracking-tight">{t("quiz")}</div>
+                  <p className="text-sm text-muted-foreground mt-1">{t("quiz_sub")}</p>
                 </div>
                 <div className="flex items-center gap-2 text-sm font-bold text-emerald-600 group-hover:translate-x-1 transition-transform">
-                  Ingia <ArrowRight className="h-4 w-4" />
+                  {t("enter")} <ArrowRight className="h-4 w-4" />
                 </div>
               </CardContent>
             </Card>
@@ -138,20 +141,20 @@ function Index() {
 
         {/* TAKWIMU — chini kwa mpangilio */}
         <section className="mt-10">
-          <h2 className="text-xl md:text-2xl font-extrabold tracking-tight mb-4">Takwimu za Mfumo</h2>
+          <h2 className="text-xl md:text-2xl font-extrabold tracking-tight mb-4">{t("stats_title")}</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             <Card className="bg-gradient-to-br from-primary/15 to-transparent border-primary/20">
               <CardContent className="p-4">
                 <Users className="h-6 w-6 text-primary mb-3" />
                 <div className="text-2xl font-extrabold tabular-nums">{stats.students.toLocaleString()}</div>
-                <div className="text-[10px] uppercase text-muted-foreground">Waliojisajili</div>
+                <div className="text-[10px] uppercase text-muted-foreground">{t("stat_registered")}</div>
               </CardContent>
             </Card>
             <Card className="bg-gradient-to-br from-secondary/40 to-transparent border-secondary/30">
               <CardContent className="p-4">
                 <ClipboardCheck className="h-6 w-6 text-primary mb-3" />
                 <div className="text-2xl font-extrabold tabular-nums">{stats.submissions.toLocaleString()}</div>
-                <div className="text-[10px] uppercase text-muted-foreground">Waliofanya Mtihani</div>
+                <div className="text-[10px] uppercase text-muted-foreground">{t("stat_took_exam")}</div>
               </CardContent>
             </Card>
             <Card className="bg-gradient-to-br from-emerald-500/15 to-transparent border-emerald-500/30">
@@ -162,7 +165,7 @@ function Index() {
                   <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-500" />
                 </div>
                 <div className="text-2xl font-extrabold tabular-nums">{stats.visitsToday.toLocaleString()}</div>
-                <div className="text-[10px] uppercase text-muted-foreground">Wametembelea Leo</div>
+                <div className="text-[10px] uppercase text-muted-foreground">{t("stat_visits_today")}</div>
               </CardContent>
             </Card>
             <Link to="/results" className="group">
@@ -170,20 +173,20 @@ function Index() {
                 <CardContent className="p-4">
                   <Trophy className="h-6 w-6 text-amber-600 mb-3" />
                   <div className="font-bold">{t("view_results")}</div>
-                  <div className="text-[11px] text-muted-foreground">Mtu binafsi / Group</div>
+                  <div className="text-[11px] text-muted-foreground">{t("view_results_sub")}</div>
                 </CardContent>
               </Card>
             </Link>
           </div>
 
-          <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mt-8 mb-3">Waliofanya kila Test</h3>
+          <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mt-8 mb-3">{t("per_test_title")}</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             {testStats.map((ts) => (
               <Card key={ts.key} className="border-primary/20 bg-gradient-to-br from-primary/10 to-transparent">
                 <CardContent className="p-4">
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-primary">{ts.label}</div>
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-primary">{t(ts.labelKey)}</div>
                   <div className="text-3xl font-black tabular-nums mt-1">{ts.count.toLocaleString()}</div>
-                  <div className="text-[10px] uppercase text-muted-foreground">Waliofanya</div>
+                  <div className="text-[10px] uppercase text-muted-foreground">{t("took")}</div>
                 </CardContent>
               </Card>
             ))}
@@ -198,7 +201,7 @@ function Index() {
                   </div>
                   <div>
                     <div className="font-bold">{t("register")}</div>
-                    <div className="text-[11px] text-muted-foreground">Pata Reg Namba</div>
+                    <div className="text-[11px] text-muted-foreground">{t("get_reg")}</div>
                   </div>
                 </CardContent>
               </Card>
@@ -211,7 +214,7 @@ function Index() {
                   </div>
                   <div>
                     <div className="font-bold">{t("admin")}</div>
-                    <div className="text-[11px] text-muted-foreground">Walimu pekee</div>
+                    <div className="text-[11px] text-muted-foreground">{t("teachers_only")}</div>
                   </div>
                 </CardContent>
               </Card>
@@ -221,7 +224,9 @@ function Index() {
 
         <ExamHallGallery />
 
-        <BigSystemTitle sub="Islamic Studies · Mtandaoni" />
+        <StudyGallery />
+
+        <BigSystemTitle sub={t("badge_islamic")} />
       </main>
     </div>
   );
