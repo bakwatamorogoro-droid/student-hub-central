@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
-import { Image as ImageIcon, Sparkles } from "lucide-react";
+import { Image as ImageIcon } from "lucide-react";
 import { WallClock } from "@/components/WallClock";
-import { CARTOONS } from "@/lib/mediaAssets";
 import { useI18n } from "@/lib/i18n";
 
 type Item = {
@@ -74,46 +73,9 @@ function RealPhotos() {
   );
 }
 
-/** Illustrations shipped with the app, so the gallery is never empty. */
-function Cartoons() {
-  const { t } = useI18n();
-  return (
-    <section className="mt-10">
-      <div className="mb-4 flex items-center gap-2">
-        <Sparkles className="h-5 w-5 text-primary" />
-        <div>
-          <h2 className="text-xl font-extrabold tracking-tight md:text-2xl">{t("cartoon_title")}</h2>
-          <p className="text-sm text-muted-foreground">{t("cartoon_sub")}</p>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {CARTOONS.map((c, i) => (
-          <figure
-            key={c.src}
-            className="animate-fade-in group overflow-hidden rounded-2xl border-2 border-primary/20 bg-card transition-all hover:-translate-y-1 hover:border-primary hover:shadow-xl"
-            style={{ animationDelay: `${i * 70}ms` }}
-          >
-            <img
-              src={c.src}
-              alt={t(c.titleKey)}
-              loading="lazy"
-              className="h-36 w-full object-cover transition-transform duration-700 group-hover:scale-110 md:h-44"
-            />
-            <figcaption className="p-3">
-              <div className="text-sm font-bold">{t(c.titleKey)}</div>
-              <div className="line-clamp-2 text-xs text-muted-foreground">{t(c.captionKey)}</div>
-            </figcaption>
-          </figure>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 export function StudyGallery() {
   return (
     <>
-      <Cartoons />
       <RealPhotos />
       <div className="mt-8 flex justify-center">
         <div className="animate-fade-in rounded-2xl border-2 border-primary/30 bg-gradient-to-br from-primary/10 via-background to-secondary/20 p-4 shadow-xl transition-all hover:scale-105 hover:shadow-2xl">

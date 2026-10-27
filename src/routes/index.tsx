@@ -9,9 +9,10 @@ import { getDeviceId } from "@/lib/device-id";
 import { AttendanceCheckIn } from "@/components/AttendanceCheckIn";
 import { BigSystemTitle } from "@/components/ExamVideoHero";
 import { HomeAnimationHero } from "@/components/HomeAnimationHero";
+import { RealPhotoHero } from "@/components/RealPhotoHero";
+import { UpdateTaarifaCard } from "@/components/UpdateTaarifaCard";
 import { AnnouncementBanner } from "@/components/AnnouncementBanner";
 import { ExamHallGallery } from "@/components/ExamHallGallery";
-import { StudyGallery } from "@/components/StudyGallery";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -94,7 +95,12 @@ function Index() {
       <AnnouncementBanner />
       <SiteHeader />
       <main className="container mx-auto px-4 py-6 max-w-6xl">
-        <HomeAnimationHero />
+        <RealPhotoHero fallback={<HomeAnimationHero />} />
+
+        {/* Update Taarifa — the self-service flow, one tap from the dashboard */}
+        <div className="animate-fade-in mb-4">
+          <UpdateTaarifaCard />
+        </div>
 
         {/* VITENDO VIKUU: Fanya Mtihani · Attendance · Quiz */}
         <div className="grid gap-4 md:grid-cols-3">
@@ -223,8 +229,6 @@ function Index() {
         </section>
 
         <ExamHallGallery />
-
-        <StudyGallery />
 
         <BigSystemTitle sub={t("badge_islamic")} />
       </main>

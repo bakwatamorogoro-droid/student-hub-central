@@ -144,22 +144,24 @@ const dict: Record<string, { sw: string; en: string }> = {
   media_kicker: { sw: "Uhuishaji wa Kisasa", en: "Modern animation" },
   media_title: { sw: "Ukumbi wa Mtihani — Wanafunzi wa Kiislamu", en: "Exam hall — Muslim students" },
   media_desc: {
-    sw: "Video ya uhuishaji na michoro inayoonyesha wanafunzi wa Kiislamu wakifanya mtihani kwa nidhamu, adabu na utulivu.",
-    en: "Animation and illustrations of Muslim students sitting exams with discipline, manners and calm.",
+    sw: "Video ya uhuishaji inayoonyesha wanafunzi wa Kiislamu wakifanya mtihani kwa nidhamu, adabu na utulivu, pamoja na picha halisi za matukio yetu.",
+    en: "Animated video of Muslim students sitting exams with discipline, manners and calm, alongside real photos from our events.",
   },
   open_media: { sw: "Fungua Bana ya Media", en: "Open the media gallery" },
   live_animation: { sw: "Uhuishaji hai · bila sauti", en: "Live animation · muted" },
   pause: { sw: "Simamisha", en: "Pause" },
   play: { sw: "Endesha", en: "Play" },
-  cartoon_title: { sw: "Michoro ya Wanafunzi", en: "Student illustrations" },
-  cartoon_sub: {
-    sw: "Michoro inayoonyesha maisha ya mwanafunzi — darasani, ukumbini na kujisomea.",
-    en: "Illustrations of student life — in class, in the hall and studying alone.",
-  },
   photos_title: { sw: "Picha za Matukio", en: "Event photos" },
   photos_sub: { sw: "Picha halisi kutoka kwa shughuli zetu.", en: "Real photos from our activities." },
+  photos_kicker: { sw: "Picha Halisi", en: "Real photos" },
   no_photos: { sw: "Hakuna picha bado.", en: "No photos yet." },
   gallery_title: { sw: "Bana ya Picha za Masomo", en: "Study photo gallery" },
+  taarifa_kicker: { sw: "Huduma ya Mwanafunzi", en: "Student services" },
+  taarifa_card_title: { sw: "Update Taarifa Zako", en: "Update your details" },
+  taarifa_card_sub: {
+    sw: "Badilisha kozi, semina, mwaka wa masomo au group lako — moja kwa moja.",
+    en: "Change your course, semina, study year or group — directly.",
+  },
 };
 
 const Ctx = createContext<{
