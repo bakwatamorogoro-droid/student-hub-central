@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Trash2, Upload, FileText, Lock, Copy, Unlock } from "lucide-react";
+import { Trash2, Upload, FileText, Lock, Copy, Unlock, AlertTriangle } from "lucide-react";
 import { eatLocalInputToUtcIso, utcIsoToEatLocalInput } from "@/lib/time";
 import { isMissingColumnError } from "@/lib/studentProfile";
 import { ACADEMIC_YEARS, SEMESTERS } from "@/lib/academicTargeting";
@@ -139,8 +139,41 @@ function Page() {
 
   if (!s) return <div>Inapakia...</div>;
 
+  // Columns added by drizzle/migrations/0004_add_semester.sql. Surfacing which
+  // ones are still absent tells the admin exactly what to run, instead of
+  // leaving them with silently unsaved fields.
+  const pendingColumns = (
+    [
+      ["course_list", s.course_list],
+      ["program_years", s.program_years],
+      ["academic_years_list", s.academic_years_list],
+      ["current_academic_year", s.current_academic_year],
+      ["current_semester", s.current_semester],
+    ] as const
+  ).filter(([, v]) => v === undefined).map(([k]) => k);
+
   return (
     <div className="grid lg:grid-cols-2 gap-4">
+      {pendingColumns.length > 0 && (
+        <Card className="lg:col-span-2 border-2 border-amber-500/50 bg-amber-500/10">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertTriangle className="h-5 w-5 text-amber-600" /> Migration Haijafanyika
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <p>
+              Safu zifuatazo hazipo kwenye hifadhidata bado: <b>{pendingColumns.join(", ")}</b>. Mfumo
+              unaendelea kufanya kazi, lakini sehemu hizo hazitahifadhiwa.
+            </p>
+            <p className="text-muted-foreground">
+              Endesha <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">supabase/migrations/20261027120000_add_semester.sql</code>{" "}
+              kwenye SQL Editor ya Supabase ili kuziwezesha.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="lg:col-span-2 border-2 border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
