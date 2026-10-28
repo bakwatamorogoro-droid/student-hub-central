@@ -30,6 +30,7 @@ import {
   studyYearsFor,
 } from "@/lib/academicTargeting";
 import { useI18n } from "@/lib/i18n";
+import { QrAttendanceCheckIn } from "@/components/QrAttendanceCheckIn";
 import { loadDirectory } from "@/lib/directory";
 
 export const Route = createFileRoute("/student")({
@@ -386,6 +387,8 @@ function Page() {
             </CardContent>
           </Card>
         )}
+
+        <QrAttendanceCheckIn />
 
         <Tabs defaultValue="edit" id="edit-taasrifa" className="scroll-mt-20">
           <TabsList className="grid grid-cols-2 w-full">

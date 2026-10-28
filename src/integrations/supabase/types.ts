@@ -805,6 +805,41 @@ export type Database = {
         }
         Returns: undefined
       }
+      // Added by supabase/HARDEN_ADMIN_PASSWORD.sql. Verifies the admin password
+      // server-side so the app never selects app_settings.admin_password.
+      admin_login: {
+        Args: {
+          p_username: string
+          p_password: string
+        }
+        Returns: boolean
+      }
+      // Added by supabase/APPLY_ATTENDANCE_QR.sql.
+      attendance_rotate_token: {
+        Args: { p_session_id: string }
+        Returns: { token: string; expires_at: string }[]
+      }
+      attendance_check_in_qr: {
+        Args: {
+          p_token: string
+          p_lat: number
+          p_lng: number
+          p_accuracy: number | null
+        }
+        Returns: {
+          ok: boolean
+          reason: string | null
+          full_name: string | null
+          semina: string | null
+          distance_m: number | null
+          radius_m: number | null
+          check_in_at: string | null
+        }[]
+      }
+      student_link_account: {
+        Args: { p_reg_no: string; p_user_id: string }
+        Returns: { ok: boolean; reason: string | null; full_name: string | null }[]
+      }
     }
     Enums: {
       [_ in never]: never

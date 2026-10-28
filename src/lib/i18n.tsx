@@ -27,6 +27,7 @@ const dict: Record<string, { sw: string; en: string }> = {
   nav_exams: { sw: "Mtihani wa Mtandaoni", en: "Online Test" },
   nav_quiz: { sw: "Kazi za Kufanya", en: "Assignment" },
   nav_student: { sw: "Update Taarifa", en: "Update details" },
+  nav_account: { sw: "Akaunti", en: "My account" },
   nav_semester_qs: { sw: "Maswali ya Semester", en: "Semester Questions" },
   coming_soon: { sw: "Coming Soon", en: "Coming Soon" },
   coming_soon_body: {

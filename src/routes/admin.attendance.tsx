@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/lib/toast";
 import { confirmAction } from "@/lib/alerts";
+import { AttendanceSessionPanel } from "@/components/AttendanceSessionPanel";
 
 export const Route = createFileRoute("/admin/attendance")({ component: Page });
 
@@ -133,6 +134,9 @@ function Page() {
 
   return (
     <div className="space-y-4">
+      {/* Rotating-QR sessions: students scan this to check in within 50 m */}
+      <AttendanceSessionPanel />
+
       {/* GPS settings */}
       <Card className="bg-gradient-to-br from-primary/10 via-card to-emerald-500/10 border-2 border-primary/30">
         <CardHeader className="pb-3">

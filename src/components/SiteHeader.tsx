@@ -1,5 +1,5 @@
 import { Link, useRouter } from "@tanstack/react-router";
-import { BookOpenCheck, Home, ArrowLeft, ArrowRight, Languages, UserCog, FileText } from "lucide-react";
+import { BookOpenCheck, Home, ArrowLeft, ArrowRight, Languages, UserCog, FileText, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
 
@@ -55,6 +55,11 @@ export function SiteHeader() {
                 to: "/student",
                 label: t("nav_student"),
                 icon: <UserCog className="h-3.5 w-3.5" />,
+              },
+              {
+                to: "/account",
+                label: t("nav_account"),
+                icon: <LogIn className="h-3.5 w-3.5" />,
               },
               { to: "/admin", label: t("admin") },
             ].map((l) => (
