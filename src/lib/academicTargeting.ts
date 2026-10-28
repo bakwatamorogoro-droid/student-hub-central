@@ -1,11 +1,15 @@
 export const STUDY_YEARS = [1, 2, 3, 4] as const;
 
-export const SEMESTERS = ["Semester ya Kwanza", "Semester ya Pili"] as const;
+/** Fixed group range: GROUP 1 … GROUP 25. */
+export const GROUPS = Array.from({ length: 25 }, (_, i) => `GROUP ${i + 1}`);
+
+/** Fixed semester range: SEMESTER 1 … SEMESTER 25. */
+export const SEMESTERS = Array.from({ length: 25 }, (_, i) => `SEMESTER ${i + 1}`);
 
 /** Fixed for the whole system, so no form ever asks the student for it. */
 export const CURRENT_ACADEMIC_YEAR = "2026/2027";
 
-export type Semester = (typeof SEMESTERS)[number];
+export type Semester = string;
 
 /** Study years offered by a programme of `programYears` years (e.g. 2 → [1, 2]). */
 export function studyYearsFor(programYears: number | string | null | undefined): number[] {

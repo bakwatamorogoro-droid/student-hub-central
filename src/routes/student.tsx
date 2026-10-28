@@ -24,6 +24,7 @@ import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 import { updateStudentProfile } from "@/lib/studentProfile";
 import {
   CURRENT_ACADEMIC_YEAR,
+  GROUPS,
   SEMESTERS,
   formatAcademicSummary,
   studyYearsFor,
@@ -87,7 +88,6 @@ function Page() {
         setCourseList((data?.course_list as string[]) || []);
         loadDirectory(data).then((dir) => {
           if (dir.semina.length) setSeminaList(dir.semina);
-          if (dir.groups.length) setGroupList(dir.groups);
           if (dir.courses.length) setCourseList(dir.courses);
         });
         setStudyYears(studyYearsFor(data?.program_years ?? 2));
@@ -428,6 +428,12 @@ function Page() {
                                 {g}
                               </SelectItem>
                             ))}
+                            {edit.new_student_group &&
+                              !groupList.includes(edit.new_student_group) && (
+                                <SelectItem value={edit.new_student_group}>
+                                  {edit.new_student_group}
+                                </SelectItem>
+                              )}
                             {edit.new_student_group &&
                               !groupList.includes(edit.new_student_group) && (
                                 <SelectItem value={edit.new_student_group}>

@@ -23,7 +23,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getDeviceId } from "@/lib/device-id";
 import { toast } from "sonner";
 import { CheckCircle2 } from "lucide-react";
-import { CURRENT_ACADEMIC_YEAR, SEMESTERS, studyYearsFor } from "@/lib/academicTargeting";
+import { CURRENT_ACADEMIC_YEAR, GROUPS, SEMESTERS, studyYearsFor } from "@/lib/academicTargeting";
 import { useI18n } from "@/lib/i18n";
 import { loadDirectory } from "@/lib/directory";
 import { isMissingColumnError } from "@/lib/studentProfile";
@@ -73,12 +73,11 @@ function RegisterPage() {
     const apply = (data: any) => {
       if (!data) return;
       setSeminaList((data.semina_list as string[]) || []);
-      setGroupList((data.group_list as string[]) || []);
+      setGroupList([...GROUPS]);
       setCourseList((data.course_list as string[]) || []);
       // Settings lists are a seed; merge in whatever the cohort actually uses.
       loadDirectory(data).then((dir) => {
         if (dir.semina.length) setSeminaList(dir.semina);
-        if (dir.groups.length) setGroupList(dir.groups);
         if (dir.courses.length) setCourseList(dir.courses);
       });
       setStudyYears(studyYearsFor(data.program_years ?? 2));
@@ -281,32 +280,24 @@ function RegisterPage() {
                 </div>
                 <div>
                   <Label>{t("course")}</Label>
-                  {courseList.length > 0 ? (
-                    <Select
-                      value={form.course}
-                      onValueChange={(v) => setForm({ ...form, course: v })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={t("choose_course")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {courseList.map((c) => (
-                          <SelectItem key={c} value={c}>
-                            {c}
-                          </SelectItem>
-                        ))}
-                        {form.course && !courseList.includes(form.course) && (
-                          <SelectItem value={form.course}>{form.course}</SelectItem>
-                        )}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input
-                      value={form.course}
-                      onChange={(e) => setForm({ ...form, course: e.target.value })}
-                      placeholder="Mfano: BIOGRAPHY OF PROPHET MUHAMMAD [IS234]"
-                    />
-                  )}
+                  <Select
+                    value={form.course}
+                    onValueChange={(v) => setForm({ ...form, course: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={t("choose_course")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {courseList.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {c}
+                        </SelectItem>
+                      ))}
+                      {form.course && !courseList.includes(form.course) && (
+                        <SelectItem value={form.course}>{form.course}</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -364,6 +355,9 @@ function RegisterPage() {
                         {g}
                       </SelectItem>
                     ))}
+                    {form.student_group && !groupList.includes(form.student_group) && (
+                      <SelectItem value={form.student_group}>{form.student_group}</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>

@@ -63,7 +63,7 @@ would build stale code. Deploy the working tree directly instead:
 
 ## Media assets
 
-`public/media/` holds only the motion clips and their posters (`exam-hero.mp4`,
-`home-animation.mp4`, `study-hall-loop.mp4`, `poster-*.jpg`) plus `mum-logo.png`. The cartoon
-and exam-hall stills were deleted at the owner's request; the event gallery shows only the
-real photographs stored in `study_images`.
+`public/media/` holds the motion clips and their posters (`exam-hero.mp4`, `home-animation.mp4`,
+`poster-exam.jpg`, `poster-home.jpg`) plus `mum-logo.png`. The cartoon and exam-hall stills were
+deleted at the owner's request; the dashboard hero shows only the real photographs stored in
+`study_images` (currently 3 active rows, all with `title = null`).

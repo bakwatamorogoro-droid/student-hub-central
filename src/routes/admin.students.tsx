@@ -22,7 +22,7 @@ import {
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { Pencil, Trash2, Download, CheckCircle2, XCircle } from "lucide-react";
-import { ACADEMIC_YEARS, SEMESTERS, studyYearsFor } from "@/lib/academicTargeting";
+import { ACADEMIC_YEARS, GROUPS, SEMESTERS, studyYearsFor } from "@/lib/academicTargeting";
 import { updateStudentProfile, isMissingColumnError } from "@/lib/studentProfile";
 
 export const Route = createFileRoute("/admin/students")({ component: Page });
@@ -89,7 +89,7 @@ function Page() {
         const apply = (d: any) => {
           if (!d) return;
           setSeminaList((d.semina_list as string[]) || []);
-          setGroupList((d.group_list as string[]) || []);
+          setGroupList([...GROUPS]);
           setCourseList((d.course_list as string[]) || []);
           setStudyYears(studyYearsFor(d.program_years ?? 2));
         };
