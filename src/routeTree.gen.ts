@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
-import { Route as BanaRouteImport } from './routes/bana'
 import { Route as ExamsRouteImport } from './routes/exams'
 import { Route as PdfQuizRouteImport } from './routes/pdf-quiz'
 import { Route as QuizRouteImport } from './routes/quiz'
@@ -21,7 +20,6 @@ import { Route as StudentRouteImport } from './routes/student'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminAttendanceRouteImport } from './routes/admin.attendance'
 import { Route as AdminExamsRouteImport } from './routes/admin.exams'
-import { Route as AdminGalleryRouteImport } from './routes/admin.gallery'
 import { Route as AdminIssuesRouteImport } from './routes/admin.issues'
 import { Route as AdminPdfRouteImport } from './routes/admin.pdf'
 import { Route as AdminRequestsRouteImport } from './routes/admin.requests'
@@ -39,11 +37,6 @@ const IndexRoute = IndexRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BanaRoute = BanaRouteImport.update({
-  id: '/bana',
-  path: '/bana',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ExamsRoute = ExamsRouteImport.update({
@@ -91,11 +84,6 @@ const AdminExamsRoute = AdminExamsRouteImport.update({
   path: '/exams',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminGalleryRoute = AdminGalleryRouteImport.update({
-  id: '/gallery',
-  path: '/gallery',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminIssuesRoute = AdminIssuesRouteImport.update({
   id: '/issues',
   path: '/issues',
@@ -140,7 +128,6 @@ const RSlugRoute = RSlugRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
-  '/bana': typeof BanaRoute
   '/exams': typeof ExamsRoute
   '/pdf-quiz': typeof PdfQuizRoute
   '/quiz': typeof QuizRoute
@@ -149,7 +136,6 @@ export interface FileRoutesByFullPath {
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/exams': typeof AdminExamsRoute
-  '/admin/gallery': typeof AdminGalleryRoute
   '/admin/issues': typeof AdminIssuesRoute
   '/admin/pdf': typeof AdminPdfRoute
   '/admin/requests': typeof AdminRequestsRoute
@@ -162,7 +148,6 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/bana': typeof BanaRoute
   '/exams': typeof ExamsRoute
   '/pdf-quiz': typeof PdfQuizRoute
   '/quiz': typeof QuizRoute
@@ -171,7 +156,6 @@ export interface FileRoutesByTo {
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/exams': typeof AdminExamsRoute
-  '/admin/gallery': typeof AdminGalleryRoute
   '/admin/issues': typeof AdminIssuesRoute
   '/admin/pdf': typeof AdminPdfRoute
   '/admin/requests': typeof AdminRequestsRoute
@@ -186,7 +170,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
-  '/bana': typeof BanaRoute
   '/exams': typeof ExamsRoute
   '/pdf-quiz': typeof PdfQuizRoute
   '/quiz': typeof QuizRoute
@@ -195,7 +178,6 @@ export interface FileRoutesById {
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/exams': typeof AdminExamsRoute
-  '/admin/gallery': typeof AdminGalleryRoute
   '/admin/issues': typeof AdminIssuesRoute
   '/admin/pdf': typeof AdminPdfRoute
   '/admin/requests': typeof AdminRequestsRoute
@@ -211,7 +193,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
-    | '/bana'
     | '/exams'
     | '/pdf-quiz'
     | '/quiz'
@@ -220,7 +201,6 @@ export interface FileRouteTypes {
     | '/student'
     | '/admin/attendance'
     | '/admin/exams'
-    | '/admin/gallery'
     | '/admin/issues'
     | '/admin/pdf'
     | '/admin/requests'
@@ -233,7 +213,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/bana'
     | '/exams'
     | '/pdf-quiz'
     | '/quiz'
@@ -242,7 +221,6 @@ export interface FileRouteTypes {
     | '/student'
     | '/admin/attendance'
     | '/admin/exams'
-    | '/admin/gallery'
     | '/admin/issues'
     | '/admin/pdf'
     | '/admin/requests'
@@ -256,7 +234,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
-    | '/bana'
     | '/exams'
     | '/pdf-quiz'
     | '/quiz'
@@ -265,7 +242,6 @@ export interface FileRouteTypes {
     | '/student'
     | '/admin/attendance'
     | '/admin/exams'
-    | '/admin/gallery'
     | '/admin/issues'
     | '/admin/pdf'
     | '/admin/requests'
@@ -280,7 +256,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
-  BanaRoute: typeof BanaRoute
   ExamsRoute: typeof ExamsRoute
   PdfQuizRoute: typeof PdfQuizRoute
   QuizRoute: typeof QuizRoute
@@ -305,13 +280,6 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/bana': {
-      id: '/bana'
-      path: '/bana'
-      fullPath: '/bana'
-      preLoaderRoute: typeof BanaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/exams': {
@@ -377,13 +345,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminExamsRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/gallery': {
-      id: '/admin/gallery'
-      path: '/gallery'
-      fullPath: '/admin/gallery'
-      preLoaderRoute: typeof AdminGalleryRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/issues': {
       id: '/admin/issues'
       path: '/issues'
@@ -446,7 +407,6 @@ declare module '@tanstack/react-router' {
 interface AdminRouteChildren {
   AdminAttendanceRoute: typeof AdminAttendanceRoute
   AdminExamsRoute: typeof AdminExamsRoute
-  AdminGalleryRoute: typeof AdminGalleryRoute
   AdminIssuesRoute: typeof AdminIssuesRoute
   AdminPdfRoute: typeof AdminPdfRoute
   AdminRequestsRoute: typeof AdminRequestsRoute
@@ -459,7 +419,6 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAttendanceRoute: AdminAttendanceRoute,
   AdminExamsRoute: AdminExamsRoute,
-  AdminGalleryRoute: AdminGalleryRoute,
   AdminIssuesRoute: AdminIssuesRoute,
   AdminPdfRoute: AdminPdfRoute,
   AdminRequestsRoute: AdminRequestsRoute,
@@ -474,7 +433,6 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
-  BanaRoute: BanaRoute,
   ExamsRoute: ExamsRoute,
   PdfQuizRoute: PdfQuizRoute,
   QuizRoute: QuizRoute,

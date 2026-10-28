@@ -2,7 +2,17 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Card, CardContent } from "@/components/ui/card";
-import { UserPlus, FileText, Trophy, Shield, Users, ClipboardCheck, Eye, ArrowRight, Brain } from "lucide-react";
+import {
+  UserPlus,
+  FileText,
+  Trophy,
+  Shield,
+  Users,
+  ClipboardCheck,
+  Eye,
+  ArrowRight,
+  Brain,
+} from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { supabase } from "@/integrations/supabase/client";
 import { getDeviceId } from "@/lib/device-id";
@@ -12,14 +22,17 @@ import { HomeAnimationHero } from "@/components/HomeAnimationHero";
 import { RealPhotoHero } from "@/components/RealPhotoHero";
 import { UpdateTaarifaCard } from "@/components/UpdateTaarifaCard";
 import { AnnouncementBanner } from "@/components/AnnouncementBanner";
-import { ExamHallGallery } from "@/components/ExamHallGallery";
 
 export const Route = createFileRoute("/")({
   component: Index,
   head: () => ({
     meta: [
       { title: "Islamic Studies Test — Mwanzo" },
-      { name: "description", content: "Karibu kwenye Mfumo wa Mtihani wa Islamic Studies. Fanya mitihani, quiz, na angalia matokeo." },
+      {
+        name: "description",
+        content:
+          "Karibu kwenye Mfumo wa Mtihani wa Islamic Studies. Fanya mitihani, quiz, na angalia matokeo.",
+      },
       { property: "og:title", content: "Islamic Studies Test — Mwanzo" },
       { property: "og:description", content: "Karibu kwenye Mfumo wa Mtihani wa Islamic Studies." },
     ],
@@ -48,15 +61,23 @@ function Index() {
         if (did) {
           await supabase.from("daily_visits").insert({ device_id: did }).select().maybeSingle();
         }
-      } catch { /* duplicate per day is fine */ }
+      } catch {
+        /* duplicate per day is fine */
+      }
 
       const today = new Date();
       const tzOffset = today.getTimezoneOffset() * 60000;
       const localDate = new Date(today.getTime() - tzOffset).toISOString().slice(0, 10);
       const [s, sub, v, ex] = await Promise.all([
         supabase.from("students").select("id", { count: "exact", head: true }),
-        supabase.from("submissions").select("id", { count: "exact", head: true }).not("submitted_at", "is", null),
-        supabase.from("daily_visits").select("id", { count: "exact", head: true }).eq("visit_date", localDate),
+        supabase
+          .from("submissions")
+          .select("id", { count: "exact", head: true })
+          .not("submitted_at", "is", null),
+        supabase
+          .from("daily_visits")
+          .select("id", { count: "exact", head: true })
+          .eq("visit_date", localDate),
         supabase.from("exams").select("id,title"),
       ]);
       setStats({ students: s.count || 0, submissions: sub.count || 0, visitsToday: v.count || 0 });
@@ -80,7 +101,7 @@ function Index() {
             .in("exam_id", ids)
             .not("submitted_at", "is", null);
           return { ...g, count: count || 0 };
-        })
+        }),
       );
       setTestStats(results);
     })();
@@ -90,7 +111,10 @@ function Index() {
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 relative overflow-hidden">
       <div className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute top-20 -left-20 w-96 h-96 rounded-full bg-primary/20 blur-3xl animate-pulse" />
-        <div className="absolute bottom-40 -right-20 w-[28rem] h-[28rem] rounded-full bg-emerald-500/15 blur-3xl animate-pulse" style={{ animationDelay: "1.5s" }} />
+        <div
+          className="absolute bottom-40 -right-20 w-[28rem] h-[28rem] rounded-full bg-emerald-500/15 blur-3xl animate-pulse"
+          style={{ animationDelay: "1.5s" }}
+        />
       </div>
       <AnnouncementBanner />
       <SiteHeader />
@@ -147,20 +171,30 @@ function Index() {
 
         {/* TAKWIMU — chini kwa mpangilio */}
         <section className="mt-10">
-          <h2 className="text-xl md:text-2xl font-extrabold tracking-tight mb-4">{t("stats_title")}</h2>
+          <h2 className="text-xl md:text-2xl font-extrabold tracking-tight mb-4">
+            {t("stats_title")}
+          </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             <Card className="bg-gradient-to-br from-primary/15 to-transparent border-primary/20">
               <CardContent className="p-4">
                 <Users className="h-6 w-6 text-primary mb-3" />
-                <div className="text-2xl font-extrabold tabular-nums">{stats.students.toLocaleString()}</div>
-                <div className="text-[10px] uppercase text-muted-foreground">{t("stat_registered")}</div>
+                <div className="text-2xl font-extrabold tabular-nums">
+                  {stats.students.toLocaleString()}
+                </div>
+                <div className="text-[10px] uppercase text-muted-foreground">
+                  {t("stat_registered")}
+                </div>
               </CardContent>
             </Card>
             <Card className="bg-gradient-to-br from-secondary/40 to-transparent border-secondary/30">
               <CardContent className="p-4">
                 <ClipboardCheck className="h-6 w-6 text-primary mb-3" />
-                <div className="text-2xl font-extrabold tabular-nums">{stats.submissions.toLocaleString()}</div>
-                <div className="text-[10px] uppercase text-muted-foreground">{t("stat_took_exam")}</div>
+                <div className="text-2xl font-extrabold tabular-nums">
+                  {stats.submissions.toLocaleString()}
+                </div>
+                <div className="text-[10px] uppercase text-muted-foreground">
+                  {t("stat_took_exam")}
+                </div>
               </CardContent>
             </Card>
             <Card className="bg-gradient-to-br from-emerald-500/15 to-transparent border-emerald-500/30">
@@ -170,8 +204,12 @@ function Index() {
                   <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
                   <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-500" />
                 </div>
-                <div className="text-2xl font-extrabold tabular-nums">{stats.visitsToday.toLocaleString()}</div>
-                <div className="text-[10px] uppercase text-muted-foreground">{t("stat_visits_today")}</div>
+                <div className="text-2xl font-extrabold tabular-nums">
+                  {stats.visitsToday.toLocaleString()}
+                </div>
+                <div className="text-[10px] uppercase text-muted-foreground">
+                  {t("stat_visits_today")}
+                </div>
               </CardContent>
             </Card>
             <Link to="/results" className="group">
@@ -185,13 +223,22 @@ function Index() {
             </Link>
           </div>
 
-          <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mt-8 mb-3">{t("per_test_title")}</h3>
+          <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mt-8 mb-3">
+            {t("per_test_title")}
+          </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             {testStats.map((ts) => (
-              <Card key={ts.key} className="border-primary/20 bg-gradient-to-br from-primary/10 to-transparent">
+              <Card
+                key={ts.key}
+                className="border-primary/20 bg-gradient-to-br from-primary/10 to-transparent"
+              >
                 <CardContent className="p-4">
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-primary">{t(ts.labelKey)}</div>
-                  <div className="text-3xl font-black tabular-nums mt-1">{ts.count.toLocaleString()}</div>
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-primary">
+                    {t(ts.labelKey)}
+                  </div>
+                  <div className="text-3xl font-black tabular-nums mt-1">
+                    {ts.count.toLocaleString()}
+                  </div>
                   <div className="text-[10px] uppercase text-muted-foreground">{t("took")}</div>
                 </CardContent>
               </Card>
@@ -227,8 +274,6 @@ function Index() {
             </Link>
           </div>
         </section>
-
-        <ExamHallGallery />
 
         <BigSystemTitle sub={t("badge_islamic")} />
       </main>

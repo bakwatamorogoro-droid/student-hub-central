@@ -41,11 +41,13 @@ async function distinct(column: "semina" | "student_group" | "course"): Promise<
   return (data as unknown as Record<string, string>[]).map((r) => r[column]);
 }
 
-export async function loadDirectory(settings: {
-  semina_list?: string[] | null;
-  group_list?: string[] | null;
-  course_list?: string[] | null;
-} | null): Promise<Directory> {
+export async function loadDirectory(
+  settings: {
+    semina_list?: string[] | null;
+    group_list?: string[] | null;
+    course_list?: string[] | null;
+  } | null,
+): Promise<Directory> {
   const [semina, groups, courses] = await Promise.all([
     distinct("semina"),
     distinct("student_group"),

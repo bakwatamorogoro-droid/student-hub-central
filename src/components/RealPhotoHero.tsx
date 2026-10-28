@@ -130,12 +130,6 @@ export function RealPhotoHero({ fallback }: { fallback: React.ReactNode }) {
               {t("update_cta")}
               <ArrowRight className="h-4 w-4 transition-transform group-hover/cta:translate-x-1" />
             </Link>
-            <Link
-              to="/bana"
-              className="glass-panel inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-primary-foreground transition-all hover:-translate-y-0.5"
-            >
-              <Images className="h-4 w-4" /> {t("open_media")}
-            </Link>
             <div className="glass-panel hidden items-center gap-2 rounded-xl px-3.5 py-2 text-primary-foreground sm:flex">
               <GraduationCap className="h-4 w-4" />
               <span className="text-xs font-semibold md:text-sm">{t("badge_islamic")}</span>

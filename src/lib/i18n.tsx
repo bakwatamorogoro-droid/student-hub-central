@@ -20,11 +20,13 @@ const dict: Record<string, { sw: string; en: string }> = {
   language: { sw: "Lugha", en: "Language" },
   loading: { sw: "Inapakia...", en: "Loading..." },
   title_app: { sw: "Mfumo wa Mtihani wa Islamic Studies", en: "Islamic Studies Exam System" },
-  subtitle_app: { sw: "Mtandaoni · AI · Kamera · GPS · Sahihi", en: "Online · AI · Camera · GPS · Signature" },
+  subtitle_app: {
+    sw: "Mtandaoni · AI · Kamera · GPS · Sahihi",
+    en: "Online · AI · Camera · GPS · Signature",
+  },
   nav_exams: { sw: "Mtihani wa Mtandaoni", en: "Online Test" },
   nav_quiz: { sw: "Kazi za Kufanya", en: "Assignment" },
-  nav_media: { sw: "Bana ya Media", en: "Media Gallery" },
-  nav_student: { sw: "Huduma ya Mwanafunzi", en: "Student Services" },
+  nav_student: { sw: "Update Taarifa", en: "Update details" },
   footer_note: {
     sw: "Kifaa chochote • Hakuna Copy/Paste • Muda wa EAT • Imeundwa na viwango stationary",
     en: "Any device • No copy/paste • EAT time zone • Built to stationary standards",
@@ -46,7 +48,10 @@ const dict: Record<string, { sw: string; en: string }> = {
   do_exam_sub: { sw: "Fanya mtihani rasmi — mtu mmoja", en: "Sit a formal exam — individually" },
   start_now: { sw: "Anza sasa", en: "Start now" },
   quiz: { sw: "Quiz", en: "Quiz" },
-  quiz_sub: { sw: "Group au Individual — utachagua ndani", en: "Group or individual — choose inside" },
+  quiz_sub: {
+    sw: "Group au Individual — utachagua ndani",
+    en: "Group or individual — choose inside",
+  },
   enter: { sw: "Ingia", en: "Enter" },
   attendance_today: { sw: "Mahudhurio ya Leo", en: "Today's attendance" },
   attendance_sub: { sw: "Jisajili kwa Reg Namba yako", en: "Check in with your Reg number" },
@@ -70,7 +75,7 @@ const dict: Record<string, { sw: string; en: string }> = {
   get_reg: { sw: "Pata Reg Namba", en: "Get a Reg number" },
   teachers_only: { sw: "Walimu pekee", en: "Teachers only" },
 
-  // --- update taarifa (student services) ---------------------------------
+  // --- update taarifa -----------------------------------------------------
   update_title: { sw: "Update Taarifa", en: "Update your details" },
   update_sub: {
     sw: "Weka Reg Namba yako, uone taarifa zako, kisha urekebishe kozi, semina, mwaka wa masomo na group lako.",
@@ -82,7 +87,10 @@ const dict: Record<string, { sw: string; en: string }> = {
   look_up: { sw: "Tafuta Taarifa Zangu", en: "Find my details" },
   looking_up: { sw: "Inatafuta...", en: "Searching..." },
   your_details: { sw: "Taarifa Zako", en: "Your details" },
-  not_found: { sw: "Hatukukupata. Kagua Reg Namba yako.", en: "We could not find you. Check your Reg number." },
+  not_found: {
+    sw: "Hatukukupata. Kagua Reg Namba yako.",
+    en: "We could not find you. Check your Reg number.",
+  },
   full_name: { sw: "Jina Kamili", en: "Full name" },
   phone: { sw: "Namba ya Simu", en: "Phone number" },
   age: { sw: "Umri", en: "Age" },
@@ -97,7 +105,10 @@ const dict: Record<string, { sw: string; en: string }> = {
   semester: { sw: "Semester", en: "Semester" },
   academic_year: { sw: "Mwaka wa Kitaaluma", en: "Academic year" },
   reason: { sw: "Sababu (hiari)", en: "Reason (optional)" },
-  reason_placeholder: { sw: "Mfano: jina lilikuwa limechapwa vibaya", en: "e.g. my name was misspelled" },
+  reason_placeholder: {
+    sw: "Mfano: jina lilikuwa limechapwa vibaya",
+    en: "e.g. my name was misspelled",
+  },
   choose_course: { sw: "Chagua kozi", en: "Choose a course" },
   choose_semina: { sw: "Chagua semina", en: "Choose a semina" },
   choose_group: { sw: "Chagua group", en: "Choose a group" },
@@ -106,7 +117,10 @@ const dict: Record<string, { sw: string; en: string }> = {
   academic_placeholder: { sw: "Mfano 2026/2027", en: "e.g. 2026/2027" },
   submit_request: { sw: "Tuma Ombi", en: "Submit request" },
   sending: { sw: "Inatuma...", en: "Sending..." },
-  request_sent: { sw: "Ombi lako limetumwa. Admin atathibitisha.", en: "Your request was sent. An admin will confirm." },
+  request_sent: {
+    sw: "Ombi lako limetumwa. Admin atathibitisha.",
+    en: "Your request was sent. An admin will confirm.",
+  },
   my_requests: { sw: "Maombi yako", en: "Your requests" },
   wrong_reg: { sw: "⚠ Nilikosea Reg Namba kabisa", en: "⚠ I used the wrong Reg number entirely" },
   wrong_reg_help: {
@@ -115,7 +129,10 @@ const dict: Record<string, { sw: string; en: string }> = {
   },
   new_reg: { sw: "Reg Namba Mpya", en: "New Reg number" },
   new_name: { sw: "Jina Kamili Jipya", en: "New full name" },
-  edits_disabled: { sw: "Huduma hii imezimwa na admin kwa sasa.", en: "This service is switched off by the admin right now." },
+  edits_disabled: {
+    sw: "Update Taarifa imezimwa na admin kwa sasa.",
+    en: "Update Taarifa is switched off by the admin right now.",
+  },
   confirm_reg_first: { sw: "Thibitisha Reg Namba kwanza.", en: "Confirm your Reg number first." },
   tab_edit: { sw: "Update Taarifa", en: "Update details" },
   tab_issue: { sw: "Changamoto", en: "Report an issue" },
@@ -126,7 +143,10 @@ const dict: Record<string, { sw: string; en: string }> = {
   issue_placeholder: { sw: "Andika kwa kina...", en: "Describe it in detail..." },
   submit_issue: { sw: "Tuma Changamoto", en: "Submit report" },
   my_issues: { sw: "Changamoto zako za awali", en: "Your earlier reports" },
-  issue_received: { sw: "Changamoto imepokelewa! Admin atajibu hivi karibuni.", en: "Report received! An admin will reply soon." },
+  issue_received: {
+    sw: "Changamoto imepokelewa! Admin atajibu hivi karibuni.",
+    en: "Report received! An admin will reply soon.",
+  },
   write_issue: { sw: "Andika changamoto yako", en: "Write your problem" },
   enter_reg: { sw: "Ingiza Reg Namba yako", en: "Enter your Reg number" },
 
@@ -137,26 +157,23 @@ const dict: Record<string, { sw: string; en: string }> = {
     en: "Fill in your details carefully. You receive your Reg number at the end.",
   },
   continue_confirm: { sw: "Endelea — Thibitisha Taarifa", en: "Continue — confirm details" },
-  already_registered: { sw: "Tayari umesajiliwa. Karibu tena!", en: "You are already registered. Welcome back!" },
-  registered_ok: { sw: "Usajili umethibitishwa kikamilifu!", en: "Registration confirmed successfully!" },
+  already_registered: {
+    sw: "Tayari umesajiliwa. Karibu tena!",
+    en: "You are already registered. Welcome back!",
+  },
+  registered_ok: {
+    sw: "Usajili umethibitishwa kikamilifu!",
+    en: "Registration confirmed successfully!",
+  },
 
   // --- media / gallery ----------------------------------------------------
-  media_kicker: { sw: "Uhuishaji wa Kisasa", en: "Modern animation" },
-  media_title: { sw: "Ukumbi wa Mtihani — Wanafunzi wa Kiislamu", en: "Exam hall — Muslim students" },
-  media_desc: {
-    sw: "Video ya uhuishaji inayoonyesha wanafunzi wa Kiislamu wakifanya mtihani kwa nidhamu, adabu na utulivu, pamoja na picha halisi za matukio yetu.",
-    en: "Animated video of Muslim students sitting exams with discipline, manners and calm, alongside real photos from our events.",
+  media_title: {
+    sw: "Ukumbi wa Mtihani — Wanafunzi wa Kiislamu",
+    en: "Exam hall — Muslim students",
   },
-  open_media: { sw: "Fungua Bana ya Media", en: "Open the media gallery" },
-  live_animation: { sw: "Uhuishaji hai · bila sauti", en: "Live animation · muted" },
-  pause: { sw: "Simamisha", en: "Pause" },
-  play: { sw: "Endesha", en: "Play" },
   photos_title: { sw: "Picha za Matukio", en: "Event photos" },
-  photos_sub: { sw: "Picha halisi kutoka kwa shughuli zetu.", en: "Real photos from our activities." },
   photos_kicker: { sw: "Picha Halisi", en: "Real photos" },
-  no_photos: { sw: "Hakuna picha bado.", en: "No photos yet." },
-  gallery_title: { sw: "Bana ya Picha za Masomo", en: "Study photo gallery" },
-  taarifa_kicker: { sw: "Huduma ya Mwanafunzi", en: "Student services" },
+  taarifa_kicker: { sw: "Update Taarifa", en: "Update your details" },
   taarifa_card_title: { sw: "Update Taarifa Zako", en: "Update your details" },
   taarifa_card_sub: {
     sw: "Badilisha kozi, semina, mwaka wa masomo au group lako — moja kwa moja.",
@@ -189,13 +206,16 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const setLang = (l: Lang) => {
     try {
       localStorage.setItem("lang", l);
-    } catch { /* private mode */ }
+    } catch {
+      /* private mode */
+    }
     setLangState(l);
   };
 
   const t = (k: string, vars?: Record<string, string | number>) => {
     let out = dict[k]?.[lang] ?? k;
-    if (vars) for (const [name, v] of Object.entries(vars)) out = out.replaceAll(`{${name}}`, String(v));
+    if (vars)
+      for (const [name, v] of Object.entries(vars)) out = out.replaceAll(`{${name}}`, String(v));
     return out;
   };
 
