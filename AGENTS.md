@@ -77,9 +77,17 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
 
 - **The semester migration exists twice and never ran.** `drizzle/migrations/0004_add_semester.sql`
   and `supabase/migrations/20261027120000_add_semester.sql` add an identical column set, but `0004`
-  is **absent from `drizzle/migrations/meta/_journal.json`** (the journal stops at `0003`), so the
-  migrator skipped it. That single omission is the root cause of every missing-column symptom.
-  When adding a migration, add the journal entry too.
+  was **absent from `drizzle/migrations/meta/_journal.json`** (the journal stopped at `0003`), so the
+  migrator skipped it. That single omission is the root cause of every missing-column symptom. The
+  journal now lists `0004` and `0005`, so a normal migration run creates both column sets. When
+  adding a migration, always add its journal entry too — a `.sql` file alone is never applied.
+
+- **`git push` cannot deliver that fix.** The `GITHUB_TOKEN` authenticates as
+  `bakwatamorogoro-droid` (the repo owner) but carries **no OAuth scopes**, so every push is
+  rejected with `403 Permission to … denied to bakwatamorogoro-droid`. Deploys therefore go through
+  the Vercel API (see below), and the Lovable project never sees the change. To make the journal fix
+  take effect, the owner must commit and push it from their own account (or paste it into Lovable),
+  then run the migration.
 
 - To apply, either ask the Lovable chat to run the migration, or paste `supabase/APPLY_PENDING.sql`
   into the Lovable project's SQL Editor. Verify afterwards with the PostgREST probe below.
