@@ -200,12 +200,17 @@ function Page() {
       }
       // apply_profile_update only covers reg/name/semina/group, so write the
       // academic fields separately.
-      const { error: acadErr, semesterUnsupported } = await updateStudentProfile(student.id, {
-        course: edit.new_course,
-        study_year: edit.new_study_year,
-        semester: edit.new_semester,
-        academic_year: edit.new_academic_year,
-      });
+      // Only write the fields the student actually changed, so an untouched
+      // semester never trips the "column not migrated yet" warning.
+      const acad: Record<string, unknown> = {};
+      if ((edit.new_course || "") !== (student.course || "")) acad.course = edit.new_course;
+      const yearNow = student.study_year == null ? "" : String(student.study_year);
+      if ((edit.new_study_year || "") !== yearNow) acad.study_year = edit.new_study_year;
+      if ((edit.new_semester || "") !== (student.semester || "")) acad.semester = edit.new_semester;
+      const { error: acadErr, semesterUnsupported } = await updateStudentProfile(
+        student.id,
+        acad as Parameters<typeof updateStudentProfile>[1],
+      );
       await (supabase as any)
         .from("profile_update_requests")
         .update({ reviewed_at: new Date().toISOString() })
