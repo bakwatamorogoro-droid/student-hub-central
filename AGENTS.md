@@ -67,13 +67,38 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   `…lovable.cloud` URL works for API and storage calls. Do not rewrite stored `image_url` values to
   the new project without re-uploading the files, or the gallery images will 404.
 
-- To re-check what is live, probe one column per migration over PostgREST: `select=<column>`
-  answers `200` when the column exists and `400` with code `42703` when it does not. Note that
-  `curl` must be used — a Python `urllib` request is rejected by Cloudflare with `403 error code: 1010`.
+- **The database is a Lovable Cloud project, not a plain Supabase one.** The REST URL is a
+  brokered `https://c--<uuid>-prod.lovable.cloud` host; the direct host
+  `owztbeotrhzzdfzhbnwu.supabase.co` does not resolve at all. `supabase/config.toml` points at that
+  unreachable host, so the Supabase CLI cannot be used. The SQL Editor lives in the **Lovable**
+  project, not at supabase.com:
+  <https://lovable.dev/projects/5ea8369e-0d0b-402b-aa5f-3a1e8becd478> (private; owner login required).
+  The owner's own Lovable account is the only place with DDL rights.
+
+- **The semester migration exists twice and never ran.** `drizzle/migrations/0004_add_semester.sql`
+  and `supabase/migrations/20261027120000_add_semester.sql` add an identical column set, but `0004`
+  is **absent from `drizzle/migrations/meta/_journal.json`** (the journal stops at `0003`), so the
+  migrator skipped it. That single omission is the root cause of every missing-column symptom.
+  When adding a migration, add the journal entry too.
+
+- To apply, either ask the Lovable chat to run the migration, or paste `supabase/APPLY_PENDING.sql`
+  into the Lovable project's SQL Editor. Verify afterwards with the PostgREST probe below.
+
+- **The Vercel deploy token is recoverable from the prior conversation log** and is *not* an env
+  var, so it does not survive in the shell. Extract it each session with
+  `grep -rhoE "vcp_[A-Za-z0-9]{56}" /workspace/conversations | sort -u` — it is exactly 60
+  characters. Team `team_Vdk2Y0gDRdZqQuxP6yvdHlMq`, project
+  `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`. This token has **no Supabase/DB access**; the project's six
+  env vars are only the Supabase URL and publishable key, so it cannot be used to run DDL.
 
 - `students.reg_no` values carry a **trailing space** (e.g. `"MUM2025-04-14106 "`), so exact
   `ilike` lookups silently miss. Trim both sides before comparing — see
   `src/lib/studentSearch.ts`.
+
+- To re-check what is live, probe one column per migration over PostgREST: `select=<column>`
+  answers `200` when the column exists and `400` with code `42703` when it does not. Note that
+  `curl` must be used — a Python `urllib` request is rejected by Cloudflare with `403 error code: 1010`.
+
 - Live `students.semina` holds `'SEMINA 1'`…`'SEMINA 14'`, which does not match the
   `semina_list` values seeded in app settings. Read the distinct values from `students` and
   merge, as `src/lib/directory.ts` does, rather than trusting the settings array.
