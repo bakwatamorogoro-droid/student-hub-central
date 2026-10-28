@@ -89,8 +89,23 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   take effect, the owner must commit and push it from their own account (or paste it into Lovable),
   then run the migration.
 
-- To apply, either ask the Lovable chat to run the migration, or paste `supabase/APPLY_PENDING.sql`
-  into the Lovable project's SQL Editor. Verify afterwards with the PostgREST probe below.
+- **The publishable key is not read-only, and `app_settings` has no write protection.** The
+  `sb_publishable_…` key ships in the public JS bundle, and it can `PATCH app_settings?id=eq.1`
+  successfully. It also exposes `admin_username` / `admin_password` (currently `1234` / `abdi77`) to
+  anyone who reads the bundle and calls the REST API. Admin auth is client-side only
+  (`localStorage` flag in `src/lib/admin-session.ts`), so knowing those values is enough to enter
+  `/admin`. Fixing this needs RLS policies plus a hashed password — i.e. the Lovable SQL Editor —
+  it cannot be corrected from the frontend.
+
+- **There is no DDL path with the available keys.** Every SQL route (`/pg/query`, `/rest/v1/rpc/exec_sql`,
+  `/rest/v1/rpc/apply_migration`, `/sql`, `/db/query`) answers `404`, and the only exposed function is
+  `/rpc/apply_profile_update`, which edits one student profile. Migrations genuinely require the
+  Lovable SQL Editor.
+
+- **Never probe writes against a live table.** A `PATCH` with a test value really lands in
+  production; RLS does not make it a dry run. To test a column's existence, use a read-only
+  `select=<column>` request instead. If a probe does write, find the previous value in the
+  conversation logs (`grep -rhoE '"<column>":"[^"]*"' conversations/`) and restore it immediately.
 
 - **The Vercel deploy token is recoverable from the prior conversation log** and is *not* an env
   var, so it does not survive in the shell. Extract it each session with
