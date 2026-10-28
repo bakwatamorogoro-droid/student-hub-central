@@ -36,10 +36,19 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
 - `students.reg_no` values carry a **trailing space** (e.g. `"MUM2025-04-14106 "`), so exact
   `ilike` lookups silently miss. Trim both sides before comparing — see
   `src/lib/studentSearch.ts`.
-- Live `students.semina` holds `'SEMINA 1'`…`'SEMINA 14'` and `student_group` holds
-  `'GROUP 1'`…`'GROUP 27'`, which do not match the `semina_list` / `group_list` values seeded
-  in app settings. Read the distinct values from `students` and merge, as `src/lib/directory.ts`
-  does, rather than trusting the settings arrays.
+- Live `students.semina` holds `'SEMINA 1'`…`'SEMINA 14'`, which does not match the
+  `semina_list` values seeded in app settings. Read the distinct values from `students` and
+  merge, as `src/lib/directory.ts` does, rather than trusting the settings array.
+- `student_group` and the semester field are **fixed ranges** the owner specified:
+  `GROUPS` is `GROUP 1`…`GROUP 25` and `SEMESTERS` is `SEMESTER 1`…`SEMESTER 25`, both built in
+  `src/lib/academicTargeting.ts`. Register, profile edit and admin students render `GROUPS`
+  directly, not the `group_list` setting. Live rows still carry values like `GROUP 7` from the
+  old seed; every picker re-adds the student's stored value so an edit cannot blank it out.
+- The academic year is fixed to `2026/2027` (`CURRENT_ACADEMIC_YEAR`); the register and profile
+  forms display it read-only. `students.academic_year` and `students.study_year` exist but are
+  currently null for the whole cohort.
+- `students.course` values carry trailing spaces (`'BAED '`, `'Islamic studies '`), so the course
+  picker keeps the stored value selectable rather than only offering the normalised list.
 - `study_images` is the table behind the real-photo gallery; rows need `active = true` to show.
   Its rows currently have `title = null`, so they render without a caption and without alt text.
 
