@@ -83,7 +83,9 @@ function Page() {
       .then(({ data }: { data: any }) => {
         setSettings(data);
         setSeminaList((data?.semina_list as string[]) || []);
-        setGroupList((data?.group_list as string[]) || []);
+        // Groups come from the fixed 1..20 range, never the stale app_settings
+        // seed, so a student can only ever be moved inside the real cohorts.
+        setGroupList([...GROUPS]);
         setCourseList((data?.course_list as string[]) || []);
         loadDirectory(data).then((dir) => {
           if (dir.semina.length) setSeminaList(dir.semina);
