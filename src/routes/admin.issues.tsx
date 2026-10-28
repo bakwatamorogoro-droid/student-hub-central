@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { alertSuccess, alertError, confirmAction } from "@/lib/alerts";
@@ -14,8 +15,15 @@ function Page() {
   const [rows, setRows] = useState<any[]>([]);
   const [replies, setReplies] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState<string>("all");
+  const [enabled, setEnabled] = useState(true);
 
   const load = async () => {
+    const { data: s } = await supabase
+      .from("app_settings")
+      .select("issues_enabled")
+      .eq("id", 1)
+      .single();
+    setEnabled(s?.issues_enabled !== false);
     const { data } = await (supabase as any)
       .from("issue_reports")
       .select("*")
@@ -25,6 +33,12 @@ function Page() {
   useEffect(() => {
     load();
   }, []);
+
+  const toggleEnabled = async (v: boolean) => {
+    await supabase.from("app_settings").update({ issues_enabled: v }).eq("id", 1);
+    setEnabled(v);
+    toast.success(v ? "Changamoto imewashwa" : "Changamoto imezimwa");
+  };
 
   const resolve = async (r: any) => {
     const reply = replies[r.id] || "Tumepokea. Asante.";
@@ -55,7 +69,16 @@ function Page() {
             <AlertTriangle className="h-5 w-5" /> Changamoto za Wanafunzi ({rows.length})
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-card border">
+            <Switch checked={enabled} onCheckedChange={toggleEnabled} />
+            <div className="flex-1">
+              <div className="font-bold text-sm">{enabled ? "Imewashwa" : "Imezimwa"}</div>
+              <div className="text-xs text-muted-foreground">
+                Wanafunzi waweze kuwasilisha changamoto zao kwenye Update Taarifa.
+              </div>
+            </div>
+          </div>
           <div className="flex gap-1 flex-wrap mb-3">
             {cats.map((c) => (
               <Button

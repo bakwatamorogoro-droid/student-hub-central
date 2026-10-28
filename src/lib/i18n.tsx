@@ -104,11 +104,6 @@ const dict: Record<string, { sw: string; en: string }> = {
   year_n: { sw: "Mwaka wa {n}", en: "Year {n}" },
   semester: { sw: "Semester", en: "Semester" },
   academic_year: { sw: "Mwaka wa Kitaaluma", en: "Academic year" },
-  reason: { sw: "Sababu (hiari)", en: "Reason (optional)" },
-  reason_placeholder: {
-    sw: "Mfano: jina lilikuwa limechapwa vibaya",
-    en: "e.g. my name was misspelled",
-  },
   choose_course: { sw: "Chagua kozi", en: "Choose a course" },
   choose_semina: { sw: "Chagua semina", en: "Choose a semina" },
   choose_group: { sw: "Chagua group", en: "Choose a group" },
@@ -120,6 +115,23 @@ const dict: Record<string, { sw: string; en: string }> = {
   request_sent: {
     sw: "Ombi lako limetumwa. Admin atathibitisha.",
     en: "Your request was sent. An admin will confirm.",
+  },
+  auto_approved: {
+    sw: "Marekebisho yako yamehifadhiwa na yameanza kutumika mara moja.",
+    en: "Your corrections are saved and already in effect.",
+  },
+  saved_title: { sw: "Imefanikiwa!", en: "Success!" },
+  saved_body: {
+    sw: "Marekebisho yako yamehifadhiwa. Taarifa mpya zinaonekana hapa chini.",
+    en: "Your corrections are saved. The updated details are shown below.",
+  },
+  semester_inactive: {
+    sw: "Semester hiyo bado haijawashwa. Chagua SEMESTER 1.",
+    en: "That semester is not active yet. Choose SEMESTER 1.",
+  },
+  issues_disabled: {
+    sw: "Changamoto imezimwa na admin kwa sasa.",
+    en: "Report an issue is switched off by the admin right now.",
   },
   my_requests: { sw: "Maombi yako", en: "Your requests" },
   wrong_reg: { sw: "⚠ Nilikosea Reg Namba kabisa", en: "⚠ I used the wrong Reg number entirely" },

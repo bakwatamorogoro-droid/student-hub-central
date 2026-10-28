@@ -18,7 +18,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { alertSuccess, alertWarning } from "@/lib/alerts";
 import { UserCog, AlertTriangle, CheckCircle2, Mail, Clock } from "lucide-react";
-import { GroupSwitcher } from "@/components/GroupSwitcher";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 import { updateStudentProfile } from "@/lib/studentProfile";
@@ -27,6 +26,7 @@ import {
   GROUPS,
   SEMESTERS,
   formatAcademicSummary,
+  isSemesterActive,
   studyYearsFor,
 } from "@/lib/academicTargeting";
 import { useI18n } from "@/lib/i18n";
@@ -66,7 +66,6 @@ function Page() {
     new_study_year: "",
     new_semester: "",
     new_academic_year: "",
-    reason: "",
   });
   const [wrongReg, setWrongReg] = useState(false);
   const [editStatus, setEditStatus] = useState<any[]>([]);
@@ -112,7 +111,6 @@ function Page() {
       new_study_year: data.study_year ? String(data.study_year) : "",
       new_semester: data.semester || "",
       new_academic_year: CURRENT_ACADEMIC_YEAR,
-      reason: "",
     });
     localStorage.setItem("student_reg", data.reg_no);
     const { data: reqs } = await (supabase as any)
@@ -150,6 +148,8 @@ function Page() {
   const submitEdit = async () => {
     if (!student) return;
     if (!settings?.profile_edits_enabled) return toast.error(t("edits_disabled"));
+    if (edit.new_semester && !isSemesterActive(edit.new_semester))
+      return toast.error(t("semester_inactive"));
     setSubmitting(true);
     const reasonPrefix = wrongReg
       ? "[NILIKOSEA REG KABISA] Tafadhali admin athibitishe matokeo yangu ya awali yahamishwe kwa Reg mpya. "
@@ -167,7 +167,7 @@ function Page() {
         new_full_name: edit.new_full_name || null,
         new_semina: edit.new_semina || null,
         new_student_group: edit.new_student_group || null,
-        reason: (reasonPrefix + (edit.reason || "")).trim() || null,
+        reason: reasonPrefix.trim() || null,
         status: autoApprove ? "approved" : "pending",
       })
       .select()
@@ -224,7 +224,7 @@ function Page() {
           "Semester bado haijawashwa kwenye mfumo (admin aendeshe migration 0004).",
         );
       } else {
-        await alertSuccess("Taarifa zimehifadhiwa", t("auto_approved"));
+        await alertSuccess(t("saved_title"), t("saved_body"));
       }
       lookup(newRef);
       return;
@@ -237,6 +237,7 @@ function Page() {
   };
 
   const submitIssue = async () => {
+    if (!settings?.issues_enabled) return toast.error(t("issues_disabled"));
     if (!issue.message.trim()) return toast.error(t("write_issue"));
     if (!student && (!reg || reg.length < 3)) return toast.error(t("enter_reg"));
     setSubmitting(true);
@@ -345,14 +346,12 @@ function Page() {
           </Card>
         )}
 
-        {student && <GroupSwitcher student={student} onChanged={() => lookup(student.reg_no)} />}
-
         <Tabs defaultValue="edit" id="edit-taasrifa" className="scroll-mt-20">
           <TabsList className="grid grid-cols-2 w-full">
             <TabsTrigger value="edit" className="gap-1">
               <UserCog className="h-4 w-4" /> {t("update_title")}
             </TabsTrigger>
-            <TabsTrigger value="issue" className="gap-1">
+            <TabsTrigger value="issue" className="gap-1" disabled={!settings?.issues_enabled}>
               <AlertTriangle className="h-4 w-4" /> {t("tab_issue")}
             </TabsTrigger>
           </TabsList>
@@ -497,8 +496,9 @@ function Page() {
                           </SelectTrigger>
                           <SelectContent>
                             {SEMESTERS.map((s) => (
-                              <SelectItem key={s} value={s}>
+                              <SelectItem key={s} value={s} disabled={!isSemesterActive(s)}>
                                 {s}
+                                {!isSemesterActive(s) && " (bado)"}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -513,14 +513,6 @@ function Page() {
                           Umewekwa kiotomatiki — hauwezi kubadilishwa.
                         </p>
                       </div>
-                    </div>
-                    <div>
-                      <Label>{t("reason")}</Label>
-                      <Textarea
-                        value={edit.reason}
-                        onChange={(e) => setEdit({ ...edit, reason: e.target.value })}
-                        placeholder={t("reason_placeholder")}
-                      />
                     </div>
                     <label className="flex items-start gap-2 p-3 rounded-lg border-2 border-amber-500/40 bg-amber-500/5 cursor-pointer hover:bg-amber-500/10 transition-colors">
                       <input
@@ -590,6 +582,11 @@ function Page() {
                   Kwa wasiofanya Test 1 / Test 2 au wenye matatizo yoyote — andika hapa, admin
                   atapokea.
                 </p>
+                {!settings?.issues_enabled && (
+                  <p className="flex items-center gap-1 text-xs text-amber-600">
+                    <Clock className="h-3 w-3" /> {t("issues_disabled")}
+                  </p>
+                )}
               </CardHeader>
               <CardContent className="space-y-3">
                 <div>
@@ -638,7 +635,11 @@ function Page() {
                     placeholder={t("issue_placeholder")}
                   />
                 </div>
-                <Button onClick={submitIssue} disabled={submitting} className="w-full font-bold">
+                <Button
+                  onClick={submitIssue}
+                  disabled={submitting || !settings?.issues_enabled}
+                  className="w-full font-bold"
+                >
                   {t("submit_issue")}
                 </Button>
 

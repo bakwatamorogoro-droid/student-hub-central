@@ -1,4 +1,5 @@
 <!-- LOVABLE:BEGIN -->
+
 > [!IMPORTANT]
 > This project is connected to [Lovable](https://lovable.dev). Avoid rewriting
 > published git history — force pushing, or rebasing/amending/squashing commits
@@ -7,6 +8,7 @@
 >
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
+
 <!-- LOVABLE:END -->
 
 - Use shared semantic glass surfaces, Outfit headings, and Figtree body text across public and admin UI so visual updates remain consistent and theme-safe.
@@ -24,7 +26,7 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
 - The project needs six environment variables or the build fails: `VITE_SUPABASE_URL`,
   `VITE_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and the
   `*_PROJECT_ID` pair. `src/integrations/supabase/client.ts` reads the `VITE_` ones at build
-  time, so they must be present *during* the build, not only at runtime.
+  time, so they must be present _during_ the build, not only at runtime.
 - Vercel blocks deploys whose lockfile resolves `@tanstack/react-start` below `1.168.60`
   (CVE-2026-102989) with a `text/plain` error. Keep `package.json` at `^1.168.60` or later.
 - `bun.lock` was generated on Lovable and pins 115 packages to
@@ -40,15 +42,26 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   `semina_list` values seeded in app settings. Read the distinct values from `students` and
   merge, as `src/lib/directory.ts` does, rather than trusting the settings array.
 - `student_group` and the semester field are **fixed ranges** the owner specified:
-  `GROUPS` is `GROUP 1`…`GROUP 25` and `SEMESTERS` is `SEMESTER 1`…`SEMESTER 25`, both built in
-  `src/lib/academicTargeting.ts`. Register, profile edit and admin students render `GROUPS`
-  directly, not the `group_list` setting. Live rows still carry values like `GROUP 7` from the
-  old seed; every picker re-adds the student's stored value so an edit cannot blank it out.
+  `GROUPS` is `GROUP 1`…`GROUP 20`, built in `src/lib/academicTargeting.ts`. Register, profile
+  edit and admin students render `GROUPS` directly, not the `group_list` setting. Live rows still
+  carry values like `GROUP 7` from the old seed; every picker re-adds the student's stored value
+  so an edit cannot blank it out.
+- `SEMESTERS` lists `SEMESTER 1` and `SEMESTER 2`, but only `SEMESTER 1` is in
+  `ACTIVE_SEMESTERS`. Inactive entries render disabled with a "(bado)" suffix and
+  `isSemesterActive()` rejects them on submit, so SEMESTER 2 cannot be chosen until the owner
+  moves it into `ACTIVE_SEMESTERS`.
 - The academic year is fixed to `2026/2027` (`CURRENT_ACADEMIC_YEAR`); the register and profile
   forms display it read-only. `students.academic_year` and `students.study_year` exist but are
   currently null for the whole cohort.
 - `students.course` values carry trailing spaces (`'BAED '`, `'Islamic studies '`), so the course
   picker keeps the stored value selectable rather than only offering the normalised list.
+- **`students.semester` does not exist on the live database** (`42703`). Run
+  `supabase/migrations/20261027120000_add_semester.sql` in the Supabase SQL editor to add it;
+  until then `updateStudentProfile()` saves the other fields and reports `semesterUnsupported`
+  so the UI can say so.
+- Both `Update Taarifa` (edits) and `Changamoto` (issue reports) are gated by admin switches in
+  `app_settings`: `profile_edits_enabled` (toggled on `/admin/requests`) and `issues_enabled`
+  (toggled on `/admin/issues`). Students cannot submit while the relevant switch is off.
 - `study_images` is the table behind the real-photo gallery; rows need `active = true` to show.
   Its rows currently have `title = null`, so they render without a caption and without alt text.
 

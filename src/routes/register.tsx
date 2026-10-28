@@ -23,7 +23,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { getDeviceId } from "@/lib/device-id";
 import { toast } from "sonner";
 import { CheckCircle2 } from "lucide-react";
-import { CURRENT_ACADEMIC_YEAR, GROUPS, SEMESTERS, studyYearsFor } from "@/lib/academicTargeting";
+import {
+  CURRENT_ACADEMIC_YEAR,
+  GROUPS,
+  SEMESTERS,
+  isSemesterActive,
+  studyYearsFor,
+} from "@/lib/academicTargeting";
 import { useI18n } from "@/lib/i18n";
 import { loadDirectory } from "@/lib/directory";
 import { isMissingColumnError } from "@/lib/studentProfile";
@@ -163,6 +169,10 @@ function RegisterPage() {
       !form.academic_year
     ) {
       toast.error("Jaza taarifa zote zinazohitajika");
+      return;
+    }
+    if (form.semester && !isSemesterActive(form.semester)) {
+      toast.error("Semester hiyo bado haijawashwa. Chagua SEMESTER 1.");
       return;
     }
     setLoading(true);
@@ -391,8 +401,9 @@ function RegisterPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {SEMESTERS.map((s) => (
-                        <SelectItem key={s} value={s}>
+                        <SelectItem key={s} value={s} disabled={!isSemesterActive(s)}>
                           {s}
+                          {!isSemesterActive(s) && " (bado)"}
                         </SelectItem>
                       ))}
                     </SelectContent>

@@ -22,7 +22,13 @@ import {
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { Pencil, Trash2, Download, CheckCircle2, XCircle } from "lucide-react";
-import { ACADEMIC_YEARS, GROUPS, SEMESTERS, studyYearsFor } from "@/lib/academicTargeting";
+import {
+  ACADEMIC_YEARS,
+  GROUPS,
+  SEMESTERS,
+  isSemesterActive,
+  studyYearsFor,
+} from "@/lib/academicTargeting";
 import { updateStudentProfile, isMissingColumnError } from "@/lib/studentProfile";
 
 export const Route = createFileRoute("/admin/students")({ component: Page });
@@ -512,8 +518,9 @@ function Page() {
                       <SelectContent>
                         <SelectItem value="none">Haujawekwa</SelectItem>
                         {SEMESTERS.map((s) => (
-                          <SelectItem key={s} value={s}>
+                          <SelectItem key={s} value={s} disabled={!isSemesterActive(s)}>
                             {s}
+                            {!isSemesterActive(s) && " (bado)"}
                           </SelectItem>
                         ))}
                       </SelectContent>
