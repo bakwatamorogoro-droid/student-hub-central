@@ -50,6 +50,9 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   `ACTIVE_SEMESTERS`. Inactive entries render disabled with a "(bado)" suffix and
   `isSemesterActive()` rejects them on submit, so SEMESTER 2 cannot be chosen until the owner
   moves it into `ACTIVE_SEMESTERS`.
+- `app_settings.group_list` still holds the old seed (`Group A`…`Group C`) and is **not** a
+  source of truth for pickers. Read `GROUPS` instead; `loadDirectory()` merges it in only for
+  the semina and course lists.
 - The academic year is fixed to `2026/2027` (`CURRENT_ACADEMIC_YEAR`); the register and profile
   forms display it read-only. `students.academic_year` and `students.study_year` exist but are
   currently null for the whole cohort.
@@ -58,7 +61,9 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
 - **`students.semester` does not exist on the live database** (`42703`). Run
   `supabase/migrations/20261027120000_add_semester.sql` in the Supabase SQL editor to add it;
   until then `updateStudentProfile()` saves the other fields and reports `semesterUnsupported`
-  so the UI can say so.
+  so the UI can say so. `Update Taarifa` only writes the academic fields the student actually
+  changed: an untouched semester must never be sent, otherwise every save hits the missing
+  column and the student sees the migration warning instead of a success message.
 - Both `Update Taarifa` (edits) and `Changamoto` (issue reports) are gated by admin switches in
   `app_settings`: `profile_edits_enabled` (toggled on `/admin/requests`) and `issues_enabled`
   (toggled on `/admin/issues`). Students cannot submit while the relevant switch is off.
@@ -67,8 +72,8 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
 
 ## Deploying without git write access
 
-The GitHub token in this environment cannot create refs (`403 Resource not accessible by
-integration`), so a branch pushed locally never reaches GitHub and a `gitSource` deploy
+The GitHub token in this environment cannot create or update refs (`403 Resource not accessible
+by integration`), so a branch pushed locally never reaches GitHub and a `gitSource` deploy
 would build stale code. Deploy the working tree directly instead:
 
 1. `npx vite build`
@@ -79,9 +84,14 @@ would build stale code. Deploy the working tree directly instead:
    entry is `{file, size, sha}` (sha1). Vercel answers `400 missing_files` until every digest
    is uploaded via `POST /v2/files` with the `x-vercel-digest` header; then re-POST the
    deployment.
-4. The production domain is `student-hub-central-theta.vercel.app`; a new deployment does not
-   move it automatically. Point it over with
-   `POST /v2/deployments/<id>/aliases {"alias":"student-hub-central-theta.vercel.app"}`.
+4. The live domains are `www.islamicstudiestest.online` (apex 308-redirects to `www`) and
+   `student-hub-central-theta.vercel.app`. Recent deployments moved all of them automatically,
+   so check `GET /v13/deployments/<id>` for the `alias` array before assuming a manual
+   re-point is needed; if one is, use
+   `POST /v2/deployments/<id>/aliases {"alias":"<domain>"}`.
+5. Verify the alias really serves the new build: compare the `assets/index-*.js` hash in the
+   live HTML against `dist/assets/index-*.js` locally. The Vercel build is a fresh `vite build`
+   server-side, so its hash legitimately differs from a local build of the same source.
 
 ## Media assets
 
@@ -89,3 +99,10 @@ would build stale code. Deploy the working tree directly instead:
 `poster-exam.jpg`, `poster-home.jpg`) plus `mum-logo.png`. The cartoon and exam-hall stills were
 deleted at the owner's request; the dashboard hero shows only the real photographs stored in
 `study_images` (currently 3 active rows, all with `title = null`).
+
+`RealPhotoHero` takes precedence on the dashboard and cross-fades those photos; `HomeAnimationHero`
+(`home-animation.mp4`) is its fallback and only paints when `study_images` has no active row or
+the query has not returned yet. `/exams` always shows `ExamVideoHero` (`exam-hero.mp4`). Both
+clips loop, are muted, and are served from `public/media/` rather than a host-specific asset
+path. Give the `study_images` rows a `title` when the owner wants a caption — it doubles as the
+`alt` text.
