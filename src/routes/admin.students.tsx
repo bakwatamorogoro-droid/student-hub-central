@@ -20,7 +20,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import * as XLSX from "xlsx";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
+import { confirmAction } from "@/lib/alerts";
 import { Pencil, Trash2, Download, CheckCircle2, XCircle } from "lucide-react";
 import {
   ACADEMIC_YEARS,
@@ -173,7 +174,13 @@ function Page() {
       const parsed = JSON.parse(await file.text());
       const list: any[] = Array.isArray(parsed) ? parsed : parsed.students;
       if (!Array.isArray(list) || !list.length) return toast.error("Faili halina wanafunzi");
-      if (!confirm(`Rejesha wanafunzi ${list.length}? Waliopo (reg no ile ile) watasasishwa.`))
+      if (
+        !(await confirmAction(
+          `Rejesha wanafunzi ${list.length}?`,
+          "Waliopo (reg no ile ile) watasasishwa.",
+          "Ndiyo, rejesha",
+        ))
+      )
         return;
       for (let i = 0; i < list.length; i += 500) {
         const { error } = await supabase
@@ -220,9 +227,10 @@ function Page() {
 
   const del = async (s: Student) => {
     if (
-      !confirm(
-        `Una uhakika kufuta usajili wa "${s.full_name}" (${s.reg_no})?\n\nMajibu yote ya mtihani yake pia yatafutwa.`,
-      )
+      !(await confirmAction(
+        `Futa usajili wa "${s.full_name}" (${s.reg_no})?`,
+        "Majibu yote ya mtihani yake pia yatafutwa. Haitarudishwa.",
+      ))
     )
       return;
     const { error } = await supabase.from("students").delete().eq("id", s.id);

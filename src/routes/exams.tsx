@@ -9,7 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getDeviceId } from "@/lib/device-id";
 import { formatEat } from "@/lib/time";
 import { Clock, User, GraduationCap, Phone, CheckCircle2, Calendar } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ExamVideoHero, BigSystemTitle } from "@/components/ExamVideoHero";
 

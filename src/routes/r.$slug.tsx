@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Trophy, User, GraduationCap, Lock } from "lucide-react";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 export const Route = createFileRoute("/r/$slug")({ component: SecretResults });
 

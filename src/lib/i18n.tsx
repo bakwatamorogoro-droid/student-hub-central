@@ -27,6 +27,27 @@ const dict: Record<string, { sw: string; en: string }> = {
   nav_exams: { sw: "Mtihani wa Mtandaoni", en: "Online Test" },
   nav_quiz: { sw: "Kazi za Kufanya", en: "Assignment" },
   nav_student: { sw: "Update Taarifa", en: "Update details" },
+  nav_semester_qs: { sw: "Maswali ya Semester", en: "Semester Questions" },
+  coming_soon: { sw: "Coming Soon", en: "Coming Soon" },
+  coming_soon_body: {
+    sw: "Sehemu hii inaandaliwa. Itakua tayari hivi karibuni — subiri tangazo.",
+    en: "This section is being prepared. It will be ready soon — watch for the announcement.",
+  },
+  semester_qs_title: { sw: "Maswali ya Semester", en: "Semester Questions" },
+  semester_qs_sub: {
+    sw: "Maswali ya semester iliyowashwa, yaliyowekwa na admin kwa muundo wa PDF.",
+    en: "Question papers for the active semester, uploaded by the admin as PDF.",
+  },
+  semester_qs_empty: {
+    sw: "Hakuna maswali yaliyowekwa kwa semester hii bado.",
+    en: "No question papers have been uploaded for this semester yet.",
+  },
+  semester_qs_need_reg: {
+    sw: "Ingiza Reg Namba yako ili kuona maswali ya semester yako.",
+    en: "Enter your Reg number to see your semester's questions.",
+  },
+  open_pdf: { sw: "Fungua PDF", en: "Open PDF" },
+  download_pdf: { sw: "Pakua", en: "Download" },
   footer_note: {
     sw: "Kifaa chochote • Hakuna Copy/Paste • Muda wa EAT • Imeundwa na viwango stationary",
     en: "Any device • No copy/paste • EAT time zone • Built to stationary standards",

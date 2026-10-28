@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import * as XLSX from "xlsx";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
+import { confirmAction } from "@/lib/alerts";
 import { Download, FileSpreadsheet, Eye, EyeOff, MapPin, Search, FileText, FileType, Trash2, Pencil, CheckCircle2, ShieldCheck } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -169,7 +170,7 @@ function Page() {
   };
 
   const deleteSubmission = async (s: any) => {
-    if (!confirm(`Una uhakika kufuta jibu la ${s.students?.full_name || s.reg_no}?`)) return;
+    if (!(await confirmAction(`Futa jibu la ${s.students?.full_name || s.reg_no}?`, "Haitarudishwa."))) return;
     const { error } = await supabase.from("submissions").delete().eq("id", s.id);
     if (error) return toast.error(error.message);
     toast.success("Imefutwa");
@@ -186,7 +187,14 @@ function Page() {
   const confirmAllPending = async () => {
     const pending = subs.filter((s) => !s.ai_confirmed);
     if (!pending.length) return toast.info("Hakuna inayosubiri uthibitisho");
-    if (!confirm(`Thibitisha alama za AI kwa wanafunzi ${pending.length}?`)) return;
+    if (
+      !(await confirmAction(
+        `Thibitisha alama za AI kwa wanafunzi ${pending.length}?`,
+        "Alama zilizopendekezwa na AI zitathibitishwa.",
+        "Ndiyo, thibitisha",
+      ))
+    )
+      return;
     const ids = pending.map((s) => s.id);
     const { error } = await supabase.from("submissions").update({ ai_confirmed: true }).in("id", ids);
     if (error) return toast.error(error.message);

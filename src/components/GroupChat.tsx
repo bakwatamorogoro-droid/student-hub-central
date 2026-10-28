@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MessageCircle, Send } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 type Msg = { id: string; student_id: string; full_name: string; message: string; created_at: string };
 

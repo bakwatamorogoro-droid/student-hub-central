@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { getDeviceId } from "@/lib/device-id";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { CheckCircle2 } from "lucide-react";
 import {
   CURRENT_ACADEMIC_YEAR,

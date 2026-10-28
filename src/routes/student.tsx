@@ -15,12 +15,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { alertSuccess, alertWarning } from "@/lib/alerts";
 import { UserCog, AlertTriangle, CheckCircle2, Mail, Clock } from "lucide-react";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
-import { updateStudentProfile } from "@/lib/studentProfile";
+import { updateStudentProfile, isMissingColumnError } from "@/lib/studentProfile";
 import {
   CURRENT_ACADEMIC_YEAR,
   GROUPS,
@@ -159,21 +159,55 @@ function Page() {
     const newRegUp = edit.new_reg_no?.toUpperCase() || null;
     // Auto-approval: tu kwa marekebisho ya kawaida (sio "nilikosea reg kabisa")
     const autoApprove = !wrongReg;
-    const { data: inserted, error } = await (supabase as any)
+    // Which fields actually differ from what the student has now. The admin view
+    // shows these, so a second edit still surfaces what changed even when the
+    // request's "current" snapshot already equals the new value.
+    const changed: string[] = [];
+    if (newRegUp && newRegUp !== student.reg_no) changed.push("reg_no");
+    if ((edit.new_full_name || "") !== (student.full_name || "")) changed.push("full_name");
+    if ((edit.new_semina || "") !== (student.semina || "")) changed.push("semina");
+    if ((edit.new_student_group || "") !== (student.student_group || "")) changed.push("group");
+    if ((edit.new_course || "") !== (student.course || "")) changed.push("course");
+    if (
+      (edit.new_study_year || "") !== (student.study_year == null ? "" : String(student.study_year))
+    )
+      changed.push("study_year");
+    if ((edit.new_semester || "") !== (student.semester || "")) changed.push("semester");
+    const basePayload: Record<string, unknown> = {
+      student_id: student.id,
+      current_reg_no: student.reg_no,
+      current_full_name: student.full_name,
+      new_reg_no: newRegUp,
+      new_full_name: edit.new_full_name || null,
+      new_semina: edit.new_semina || null,
+      new_student_group: edit.new_student_group || null,
+      reason: reasonPrefix.trim() || null,
+      status: autoApprove ? "approved" : "pending",
+    };
+    // The extra columns come from the stats/request-fields migration. Until it is
+    // applied, save the request without them so the edit still reaches the admin.
+    const detailPayload: Record<string, unknown> = {
+      ...basePayload,
+      new_course: edit.new_course || null,
+      new_study_year: edit.new_study_year ? Number(edit.new_study_year) : null,
+      new_semester: edit.new_semester || null,
+      new_academic_year: CURRENT_ACADEMIC_YEAR,
+      changed_fields: changed,
+    };
+    let { data: inserted, error } = await (supabase as any)
       .from("profile_update_requests")
-      .insert({
-        student_id: student.id,
-        current_reg_no: student.reg_no,
-        current_full_name: student.full_name,
-        new_reg_no: newRegUp,
-        new_full_name: edit.new_full_name || null,
-        new_semina: edit.new_semina || null,
-        new_student_group: edit.new_student_group || null,
-        reason: reasonPrefix.trim() || null,
-        status: autoApprove ? "approved" : "pending",
-      })
+      .insert(detailPayload)
       .select()
       .single();
+    if (error && isMissingColumnError(error)) {
+      const retry = await (supabase as any)
+        .from("profile_update_requests")
+        .insert(basePayload)
+        .select()
+        .single();
+      inserted = retry.data;
+      error = retry.error;
+    }
     if (error) {
       setSubmitting(false);
       return toast.error(error.message);

@@ -17,7 +17,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { getDeviceId } from "@/lib/device-id";
 import { gradeShortAnswer, explainAnswer } from "@/lib/grading.functions";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import SignatureCanvas from "react-signature-canvas";
 import { Camera, MapPin, Mic, Clock, Eye, FileDown, Printer } from "lucide-react";
 import { RichTextEditor } from "@/components/RichTextEditor";

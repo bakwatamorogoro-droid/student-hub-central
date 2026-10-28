@@ -6,7 +6,6 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 
-import { Toaster } from "@/components/ui/sonner";
 import { I18nProvider, useI18n } from "@/lib/i18n";
 import { LockGate } from "@/components/LockGate";
 import { PageLoader } from "@/components/PageLoader";
@@ -82,7 +81,6 @@ function RootComponent() {
         <SiteFooter />
       </LockGate>
       <PageLoader />
-      <Toaster richColors position="top-center" />
     </I18nProvider>
   );
 }

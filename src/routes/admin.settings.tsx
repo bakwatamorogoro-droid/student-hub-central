@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Trash2, Upload, FileText, Lock, Copy, Unlock, AlertTriangle } from "lucide-react";
 import { eatLocalInputToUtcIso, utcIsoToEatLocalInput } from "@/lib/time";
 import { isMissingColumnError } from "@/lib/studentProfile";
@@ -106,6 +106,30 @@ function Page() {
     }
     if (error) toast.error(error.message);
     else toast.success("Mipangilio imehifadhiwa");
+    loadAll();
+  };
+
+  /**
+   * Toggling a stat saves immediately (unlike the rest of the form, which waits
+   * for "Hifadhi"). Hiding stamps `stats_hidden_at` the first time so the home
+   * page can count only takers from that moment on; clearing it on re-show
+   * would resurrect the total the admin wanted hidden.
+   */
+  const saveStatVisibility = async (patch: Record<string, unknown>) => {
+    const next = { ...s, ...patch };
+    setS(next);
+    const payload: Record<string, unknown> = { ...patch };
+    const nowHidden = next.show_submissions_stat === false || next.show_test1_stat === false;
+    if (nowHidden && !s.stats_hidden_at) payload.stats_hidden_at = new Date().toISOString();
+    const { error } = await supabase
+      .from("app_settings")
+      .update(payload as any)
+      .eq("id", 1);
+    if (error) {
+      toast.error("Imeshindikana kuhifadhi — endesha migration ya takwimu: " + error.message);
+      return;
+    }
+    toast.success("Takwimu zimehifadhiwa");
     loadAll();
   };
 
@@ -464,6 +488,27 @@ function Page() {
                 onCheckedChange={(v) => setS({ ...s, global_audio: v })}
               />
               Sauti
+            </label>
+          </div>
+          <div className="rounded-lg border p-3 space-y-3">
+            <div className="text-sm font-bold">Kuonekana kwa Takwimu (Home page)</div>
+            <p className="text-xs text-muted-foreground">
+              Zima kionyeshi ili wanafunzi wasione jumla halisi. Kikizimwa, kikawashwa tena,
+              kutaonyesha tu waliofanya baada ya muda huo.
+            </p>
+            <label className="flex items-center gap-2">
+              <Switch
+                checked={s.show_submissions_stat !== false}
+                onCheckedChange={(v) => saveStatVisibility({ show_submissions_stat: v })}
+              />
+              Onyesha idadi ya waliofanya mtihani
+            </label>
+            <label className="flex items-center gap-2">
+              <Switch
+                checked={s.show_test1_stat !== false}
+                onCheckedChange={(v) => saveStatVisibility({ show_test1_stat: v })}
+              />
+              Onyesha idadi ya waliofanya Test 1
             </label>
           </div>
           <div className="grid grid-cols-2 gap-2">

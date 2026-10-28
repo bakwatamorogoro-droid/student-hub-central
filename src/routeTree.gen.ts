@@ -16,6 +16,7 @@ import { Route as PdfQuizRouteImport } from './routes/pdf-quiz'
 import { Route as QuizRouteImport } from './routes/quiz'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ResultsRouteImport } from './routes/results'
+import { Route as SemesterQuestionsRouteImport } from './routes/semester-questions'
 import { Route as StudentRouteImport } from './routes/student'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminAttendanceRouteImport } from './routes/admin.attendance'
@@ -62,6 +63,11 @@ const RegisterRoute = RegisterRouteImport.update({
 const ResultsRoute = ResultsRouteImport.update({
   id: '/results',
   path: '/results',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SemesterQuestionsRoute = SemesterQuestionsRouteImport.update({
+  id: '/semester-questions',
+  path: '/semester-questions',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StudentRoute = StudentRouteImport.update({
@@ -133,6 +139,7 @@ export interface FileRoutesByFullPath {
   '/quiz': typeof QuizRoute
   '/register': typeof RegisterRoute
   '/results': typeof ResultsRoute
+  '/semester-questions': typeof SemesterQuestionsRoute
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/exams': typeof AdminExamsRoute
@@ -153,6 +160,7 @@ export interface FileRoutesByTo {
   '/quiz': typeof QuizRoute
   '/register': typeof RegisterRoute
   '/results': typeof ResultsRoute
+  '/semester-questions': typeof SemesterQuestionsRoute
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/exams': typeof AdminExamsRoute
@@ -175,6 +183,7 @@ export interface FileRoutesById {
   '/quiz': typeof QuizRoute
   '/register': typeof RegisterRoute
   '/results': typeof ResultsRoute
+  '/semester-questions': typeof SemesterQuestionsRoute
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/exams': typeof AdminExamsRoute
@@ -198,6 +207,7 @@ export interface FileRouteTypes {
     | '/quiz'
     | '/register'
     | '/results'
+    | '/semester-questions'
     | '/student'
     | '/admin/attendance'
     | '/admin/exams'
@@ -218,6 +228,7 @@ export interface FileRouteTypes {
     | '/quiz'
     | '/register'
     | '/results'
+    | '/semester-questions'
     | '/student'
     | '/admin/attendance'
     | '/admin/exams'
@@ -239,6 +250,7 @@ export interface FileRouteTypes {
     | '/quiz'
     | '/register'
     | '/results'
+    | '/semester-questions'
     | '/student'
     | '/admin/attendance'
     | '/admin/exams'
@@ -261,6 +273,7 @@ export interface RootRouteChildren {
   QuizRoute: typeof QuizRoute
   RegisterRoute: typeof RegisterRoute
   ResultsRoute: typeof ResultsRoute
+  SemesterQuestionsRoute: typeof SemesterQuestionsRoute
   StudentRoute: typeof StudentRoute
   ExamExamIdRoute: typeof ExamExamIdRoute
   RSlugRoute: typeof RSlugRoute
@@ -315,6 +328,13 @@ declare module '@tanstack/react-router' {
       path: '/results'
       fullPath: '/results'
       preLoaderRoute: typeof ResultsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/semester-questions': {
+      id: '/semester-questions'
+      path: '/semester-questions'
+      fullPath: '/semester-questions'
+      preLoaderRoute: typeof SemesterQuestionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/student': {
@@ -438,6 +458,7 @@ const rootRouteChildren: RootRouteChildren = {
   QuizRoute: QuizRoute,
   RegisterRoute: RegisterRoute,
   ResultsRoute: ResultsRoute,
+  SemesterQuestionsRoute: SemesterQuestionsRoute,
   StudentRoute: StudentRoute,
   ExamExamIdRoute: ExamExamIdRoute,
   RSlugRoute: RSlugRoute,

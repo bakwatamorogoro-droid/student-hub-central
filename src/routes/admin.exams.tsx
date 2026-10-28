@@ -9,7 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
+import { confirmAction } from "@/lib/alerts";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { eatLocalInputToUtcIso, utcIsoToEatLocalInput } from "@/lib/time";
 import { ACADEMIC_YEARS, STUDY_YEARS } from "@/lib/academicTargeting";
@@ -57,7 +58,7 @@ function Page() {
   };
 
   const del = async (id: string) => {
-    if (!confirm("Una uhakika?")) return;
+    if (!(await confirmAction("Futa mtihani huu?", "Haitarudishwa."))) return;
     await supabase.from("exams").delete().eq("id", id);
     load();
   };

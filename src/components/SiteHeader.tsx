@@ -1,5 +1,5 @@
 import { Link, useRouter } from "@tanstack/react-router";
-import { BookOpenCheck, Home, ArrowLeft, ArrowRight, Languages, UserCog } from "lucide-react";
+import { BookOpenCheck, Home, ArrowLeft, ArrowRight, Languages, UserCog, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
 
@@ -45,6 +45,11 @@ export function SiteHeader() {
               { to: "/register", label: t("register") },
               { to: "/exams", label: t("nav_exams") },
               { to: "/quiz", label: t("nav_quiz") },
+              {
+                to: "/semester-questions",
+                label: t("nav_semester_qs"),
+                icon: <FileText className="h-3.5 w-3.5" />,
+              },
               { to: "/results", label: t("results") },
               {
                 to: "/student",
