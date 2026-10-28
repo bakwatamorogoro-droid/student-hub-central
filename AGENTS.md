@@ -35,15 +35,41 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
 
 ## Database notes
 
-- **PENDING MIGRATION.** `supabase/migrations/20261028090000_add_stats_switches_and_request_fields.sql`
-  is written but has **not** been applied to the live database. It adds
-  `app_settings.{show_submissions_stat,show_test1_stat,stats_hidden_at}`,
-  `profile_update_requests.{new_course,new_study_year,new_semester,new_academic_year,changed_fields}`,
-  `exam_pdfs.target_semester` and `exams.target_semester`. Until the owner runs it in the
-  Supabase SQL editor, the admin stat switches and the semester-targeted filters are inert;
-  every affected write/read falls back to the pre-migration column set so nothing errors
-  (see `isMissingColumnError` in `src/lib/studentProfile.ts`). Verified live: all four new
-  columns answer `42703 column does not exist`.
+- **TWO MIGRATIONS ARE PENDING ON LIVE.** `supabase/APPLY_PENDING.sql` is the ready-to-paste
+  combination of both. Checked by probing PostgREST per column, the live project has neither:
+  - `20261027120000_add_semester.sql` — `students.semester`, `exams.target_semester`,
+    `app_settings.{course_list,program_years,current_academic_year,current_semester,academic_years_list}`,
+    `announcements.image_url`.
+  - `20261028090000_add_stats_switches_and_request_fields.sql` — `exam_pdfs.target_semester`,
+    `profile_update_requests.{new_course,new_study_year,new_semester,new_academic_year,changed_fields}`,
+    `app_settings.{show_submissions_stat,show_test1_stat,stats_hidden_at}`.
+
+  **Impact is limited to the newer features, not the core app.** Confirmed by probing the live
+  REST API: 1561 students, 2 exams, 2602 submissions and 13 announcements all read fine, and the
+  home page renders its real stats. `exams.tsx` never sends `target_semester`, and `admin.pdf.tsx`
+  retries without it on `isMissingColumnError`, so exam creation and uploads still work. What stays
+  inert until the SQL runs: the admin stat-visibility switches (they read `app_settings` with these
+  columns and swallow the error, so the page still renders), the semester filter on
+  `semester-questions`, and `students.semester` targeting.
+
+  These migrations cannot be applied from this environment: there is no service_role key, no
+  database password, and no Supabase access token. The only key available is the publishable
+  `sb_publishable_…`, which is RLS-limited and cannot run DDL. The owner must paste the file into
+  Supabase → SQL Editor.
+
+- **`students.reg_no` values carry a trailing space** (e.g. `"MUM2025-04-14106 "`), so exact
+  `ilike` lookups silently miss. Trim both sides before comparing — see
+  `src/lib/studentSearch.ts`.
+
+- **The legacy project host `tkagffueenwajmkhuopn.supabase.co` is still live** and still serves the
+  gallery images in `study_images.image_url`. The newer project host
+  `owztbeotrhzzdfbnwu.supabase.co` does **not** resolve (DNS failure), so only the brokered
+  `…lovable.cloud` URL works for API and storage calls. Do not rewrite stored `image_url` values to
+  the new project without re-uploading the files, or the gallery images will 404.
+
+- To re-check what is live, probe one column per migration over PostgREST: `select=<column>`
+  answers `200` when the column exists and `400` with code `42703` when it does not. Note that
+  `curl` must be used — a Python `urllib` request is rejected by Cloudflare with `403 error code: 1010`.
 
 - `students.reg_no` values carry a **trailing space** (e.g. `"MUM2025-04-14106 "`), so exact
   `ilike` lookups silently miss. Trim both sides before comparing — see
