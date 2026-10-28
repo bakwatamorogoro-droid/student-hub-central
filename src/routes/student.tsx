@@ -433,12 +433,6 @@ function Page() {
                                   {edit.new_student_group}
                                 </SelectItem>
                               )}
-                            {edit.new_student_group &&
-                              !groupList.includes(edit.new_student_group) && (
-                                <SelectItem value={edit.new_student_group}>
-                                  {edit.new_student_group}
-                                </SelectItem>
-                              )}
                           </SelectContent>
                         </Select>
                       </div>
