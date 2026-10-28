@@ -15,7 +15,7 @@ import {
   GraduationCap,
 } from "lucide-react";
 import { findStudentsByQuery } from "@/lib/studentSearch";
-import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
+import { StudentMatchesPicker, type Student } from "@/components/StudentMatchesPicker";
 import { ACTIVE_SEMESTERS } from "@/lib/academicTargeting";
 import { useI18n } from "@/lib/i18n";
 
@@ -43,11 +43,24 @@ type Paper = {
   created_at: string;
 };
 
+// `target_semester` is not in the generated `exam_pdfs` types until the semester
+// migration lands, so query through a narrow shape instead of the generated client.
+type PaperQuery = {
+  eq: (column: string, value: unknown) => PaperQuery;
+  order: (column: string, opts: { ascending: boolean }) => Promise<{ data: Paper[] | null }>;
+};
+
+function papersTable(): { select: (columns: string) => PaperQuery } {
+  return (
+    supabase as unknown as { from: (table: string) => { select: (c: string) => PaperQuery } }
+  ).from("exam_pdfs");
+}
+
 function Page() {
   const { t } = useI18n();
   const [reg, setReg] = useState("");
-  const [student, setStudent] = useState<any>(null);
-  const [matches, setMatches] = useState<any[]>([]);
+  const [student, setStudent] = useState<Student | null>(null);
+  const [matches, setMatches] = useState<Student[]>([]);
   const [papers, setPapers] = useState<Paper[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -62,26 +75,23 @@ function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadPapers = async (s: any) => {
-    const columns = "id,title,file_url,file_name,target_semester,target_study_year,created_at";
-    let { data } = await (supabase as any)
-      .from("exam_pdfs")
-      .select(columns)
+  const loadPapers = async (s: Student | null) => {
+    let { data } = await papersTable()
+      .select("id,title,file_url,file_name,target_semester,target_study_year,created_at")
       .eq("active", true)
       .eq("is_assignment", false)
       .order("created_at", { ascending: false });
     if (!data) {
       // `target_semester` arrives with the semester migration; without it every
       // paper is simply visible rather than the page appearing empty.
-      const retry = await (supabase as any)
-        .from("exam_pdfs")
+      const retry = await papersTable()
         .select("id,title,file_url,file_name,target_study_year,created_at")
         .eq("active", true)
         .eq("is_assignment", false)
         .order("created_at", { ascending: false });
       data = retry.data;
     }
-    const rows = ((data as Paper[]) || []).filter((p) => {
+    const rows = (data || []).filter((p) => {
       // Only the semester the owner has switched on is visible.
       if (p.target_semester && !ACTIVE_SEMESTERS.includes(p.target_semester)) return false;
       // A paper aimed at one study year only shows for that year.
@@ -92,7 +102,7 @@ function Page() {
     setPapers(rows);
   };
 
-  const confirmStudent = (s: any) => {
+  const confirmStudent = (s: Student) => {
     setStudent(s);
     setMatches([]);
     setReg(s.reg_no);
