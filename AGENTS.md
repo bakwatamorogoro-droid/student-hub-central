@@ -201,3 +201,49 @@ the query has not returned yet. `/exams` always shows `ExamVideoHero` (`exam-her
 clips loop, are muted, and are served from `public/media/` rather than a host-specific asset
 path. Give the `study_images` rows a `title` when the owner wants a caption — it doubles as the
 `alt` text.
+
+## QR + geolocation attendance
+
+`supabase/APPLY_ATTENDANCE_QR.sql` (identical to `drizzle/migrations/0006_attendance_qr.sql`)
+creates `attendance_sessions` and the RPCs behind the QR attendance feature. It is written to be
+safe to run more than once. Until the owner applies it, `/student` and `/admin/attendance` render
+the feature but every check-in returns `not_ready`, and the UI says so in Swahili. The owner is the
+only account with DDL rights, so this cannot be applied from the agent environment.
+
+Design points worth keeping:
+
+* Only the SHA-256 hash of a session token is stored. Reading `attendance_sessions` never yields a
+  usable QR payload.
+* Every gate (token, expiry, session window, identity, geofence, duplicate) is enforced inside
+  `attendance_check_in_qr()`. The browser only supplies a token and a GPS fix, so a tampered client
+  cannot widen the 50 m radius.
+* Student identity is resolved from `auth.uid()` first, then from `students.device_id`. The device
+  fallback exists because **Supabase email auth is disabled on this project**
+  (`/auth/v1/settings` reports `"email": false`), so `supabase.auth.signInWithPassword` cannot
+  succeed until the owner turns email auth on. Every one of the 1561 student rows already carries a
+  `device_id`, which is the same trust anchor the exam flow uses.
+* `attendance_check_in_qr()` is `SECURITY DEFINER` and granted to `anon`/`authenticated`, so a
+  check-in needs no service-role key. `SUPABASE_SERVICE_ROLE_KEY` is **not** set on Vercel; only the
+  student-account registration path (`studentAccount.functions.ts`) needs it, and that path is
+  inert until email auth is enabled.
+
+### Testing SQL before shipping it
+
+The SQL is verified against a real Postgres, not by reading it. Start one and run the harness:
+
+```sh
+sudo dockerd >/tmp/dockerd.log 2>&1 &
+sudo docker run -d --name attpg -e POSTGRES_PASSWORD=pg -e POSTGRES_DB=test postgres:16-alpine
+# harness lives in /tmp/att_test: 00_setup.sql (tables + auth.uid() + Supabase roles),
+# 0006_attendance_qr.sql, 01_tests.sql (19 assertions), run.sh
+```
+
+Two classes of bug the harness caught that a code read would not:
+
+1. **Uncast NULLs in `RETURN QUERY`.** Postgres types a bare `NULL` as `text`, which does not match
+   a `double precision` or `timestamptz` output column, and the whole function aborts at runtime.
+   Every NULL in a `RETURN QUERY` needs an explicit cast.
+2. **`FOUND` is sticky.** `FOUND` keeps its value from the *previous* statement when an `IF` branch
+   does not run, so `IF NOT FOUND AND ...` silently skips the device lookup and can insert a row
+   with a NULL `student_id`. Gate on a real value (`v_student.id IS NULL`), never on `FOUND`, after
+   a conditional `SELECT ... INTO`.
