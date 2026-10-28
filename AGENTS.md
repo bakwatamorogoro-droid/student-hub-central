@@ -91,7 +91,7 @@ conversation under `/workspace/conversations/<id>/events/` (search for `VERCEL_T
 It is a **team** token: `GET /v2/user` 404s and the CLI fails with "User not found", so always
 pass `teamId=team_Vdk2Y0gDRdZqQuxP6yvdHlMq`.
 
-A ready-made script is at `/tmp/deploy2.py`. The flow is:
+Re-extract the token from that log each session; do not keep it on disk. The flow is:
 
 1. `npx vite build` (verify it succeeds before deploying).
 2. POST `/v13/deployments?teamId=<TEAM>&forceNew=1` with
