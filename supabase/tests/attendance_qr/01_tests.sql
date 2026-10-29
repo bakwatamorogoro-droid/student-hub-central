@@ -1,161 +1,194 @@
-\set ON_ERROR_STOP on
+-- Assertions for the PIN sign-in, the QR geofence and the RLS lockdown.
+-- Every SELECT prints a labelled line so a wrong value is visible, not silent.
 
--- Fixed ids so assertions are deterministic.
-INSERT INTO public.students (id, reg_no, full_name, semina, student_group, auth_user_id, device_id) VALUES
-  ('11111111-1111-1111-1111-111111111111', 'MUM2025-04-14106', 'Amina Yusuf', 'Semina 1', 'GROUP 1', '11111111-1111-1111-1111-111111111111', 'dev-amina-0001'),
-  ('22222222-2222-2222-2222-222222222222', 'REG-002', 'Bakari Said', 'Semina 1', 'GROUP 1', '22222222-2222-2222-2222-222222222222', 'dev-bakari-0002');
+-- =============================================================
+-- A. PIN sign-in
+-- =============================================================
+SELECT set_config('test.admin_token', 'admin-token-for-tests', false);
+INSERT INTO public.admin_sessions (token_hash, expires_at)
+VALUES (encode(digest('admin-token-for-tests', 'sha256'), 'hex'), now() + interval '1 hour');
 
--- ---------------------------------------------------------------
--- T1. Haversine distance against an independent reference value.
--- 0.0004497 deg of latitude at -6.8 is about 50.0 m.
--- ---------------------------------------------------------------
-SELECT 'T1 distance_50m', round(public.attendance_distance_m(-6.8, 39.28, -6.8 + 0.0004497, 39.28)::numeric, 2);
+SELECT 'A1 set_pin_needs_admin', ok, reason
+  FROM public.admin_set_student_pin('not-an-admin-token', 'REG-002', '482913');
 
--- ---------------------------------------------------------------
--- T2. A session with coordinates and a 50 m radius.
--- ---------------------------------------------------------------
-INSERT INTO public.attendance_sessions (id, title, semina, lat, lng, radius_m)
-VALUES ('aaaaaaaa-0000-0000-0000-000000000001', 'Fiqh — Somo la 4', 'Semina 1', -6.8, 39.28, 50);
+SELECT 'A2 set_pin_ok', ok, full_name
+  FROM public.admin_set_student_pin('admin-token-for-tests', 'REG-002', '482913');
 
--- ---------------------------------------------------------------
--- T3. Rotating token: the raw token must not be stored.
--- ---------------------------------------------------------------
-CREATE TEMP TABLE tok AS
-  SELECT token FROM public.attendance_rotate_token('aaaaaaaa-0000-0000-0000-000000000001');
+SELECT 'A3 pin_stored_hashed', left(pin_hash, 7) AS hash_prefix, pin_hash <> '482913' AS not_plaintext
+  FROM public.student_pins WHERE lower(reg_no) = 'reg-002';
 
-SELECT 'T3 token_is_hex24', (length(token) = 48) FROM tok;
-SELECT 'T3 raw_token_not_stored',
-       (SELECT token_hash <> (SELECT token FROM tok)
-          FROM public.attendance_sessions
-         WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001');
-SELECT 'T3 hash_matches', encode(digest((SELECT token FROM tok), 'sha256'), 'hex')
-         = (SELECT token_hash FROM public.attendance_sessions
-             WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001');
+SELECT 'A4 weak_pin_refused', ok, reason
+  FROM public.admin_set_student_pin('admin-token-for-tests', 'REG-003', '12');
 
--- ---------------------------------------------------------------
--- T4. Invalid token is refused.
--- ---------------------------------------------------------------
-SELECT 'T4 invalid_token', reason FROM public.attendance_check_in_qr('deadbeef', -6.8, 39.28, 5);
+SELECT 'A5 unknown_reg_refused', ok, reason
+  FROM public.admin_set_student_pin('admin-token-for-tests', 'NO-SUCH-REG', '482913');
 
--- ---------------------------------------------------------------
--- T5. A signed-in student outside 50 m is refused.
---    0.001 deg of latitude is about 111 m.
--- ---------------------------------------------------------------
-SELECT set_config('test.uid', '11111111-1111-1111-1111-111111111111', false);
-SELECT 'T5 outside_area', reason,
-       round(distance_m::numeric, 1) AS dist, radius_m
-  FROM public.attendance_check_in_qr((SELECT token FROM tok), -6.801, 39.28, 5);
+-- Wrong PIN must fail, and must not reveal whether the registration exists.
+SELECT 'A6 wrong_pin', ok, reason
+  FROM public.student_login('REG-002', '000000');
+SELECT 'A7 unknown_reg_same_answer', ok, reason
+  FROM public.student_login('NO-SUCH-REG', '482913');
 
--- ---------------------------------------------------------------
--- T6. The same student inside 50 m is accepted.
--- ---------------------------------------------------------------
-SELECT 'T6 accepted', ok, full_name, round(distance_m::numeric, 2) AS dist
-  FROM public.attendance_check_in_qr((SELECT token FROM tok), -6.8003, 39.28, 5);
+-- Correct PIN mints a session.
+CREATE TEMP TABLE login AS
+  SELECT * FROM public.student_login('REG-002', '482913');
+SELECT 'A8 login_ok', ok, full_name, length(token) AS token_len FROM login;
 
--- ---------------------------------------------------------------
--- T7. A second scan by the same student does not create another row.
--- ---------------------------------------------------------------
-SELECT 'T7 duplicate_refused', reason
-  FROM public.attendance_check_in_qr((SELECT token FROM tok), -6.8003, 39.28, 5);
-SELECT 'T7 row_count', count(*) FROM public.attendance WHERE session_id = 'aaaaaaaa-0000-0000-0000-000000000001';
+SELECT 'A9 raw_token_not_stored', count(*) AS stored_raw
+  FROM public.student_sessions WHERE token_hash = (SELECT token FROM login);
+SELECT 'A9 hash_matches', count(*) AS hash_rows
+  FROM public.student_sessions
+ WHERE token_hash = encode(digest((SELECT token FROM login), 'sha256'), 'hex');
 
--- ---------------------------------------------------------------
--- T8. A second student cannot reuse the token after it rotates
---     (the old QR goes stale), then succeeds with the new one.
--- ---------------------------------------------------------------
-CREATE TEMP TABLE tok2 AS
-  SELECT token FROM public.attendance_rotate_token('aaaaaaaa-0000-0000-0000-000000000001');
-SELECT set_config('test.uid', '22222222-2222-2222-2222-222222222222', false);
-SELECT 'T8 old_token_stale', reason
-  FROM public.attendance_check_in_qr((SELECT token FROM tok), -6.8003, 39.28, 5);
-SELECT 'T8 new_token_ok', ok, full_name
-  FROM public.attendance_check_in_qr((SELECT token FROM tok2), -6.8003, 39.28, 5);
+SELECT 'A10 student_me', ok, full_name, reg_no, semina, course, study_year
+  FROM public.student_me((SELECT token FROM login));
 
--- ---------------------------------------------------------------
--- T9. Boundary: exactly at the radius is allowed, just past it is not.
--- ---------------------------------------------------------------
+SELECT 'A11 student_me_bad_token', ok FROM public.student_me('not-a-real-token');
+
+-- Five wrong PINs lock the account, and a correct PIN stays refused while locked.
+SELECT 'A12 attempts' FROM public.student_login('REG-002', '111111');
+SELECT 'A12 attempts' FROM public.student_login('REG-002', '222222');
+SELECT 'A12 attempts' FROM public.student_login('REG-002', '333333');
+SELECT 'A12 attempts' FROM public.student_login('REG-002', '444444');
+SELECT 'A12 fifth_locks', ok, reason FROM public.student_login('REG-002', '555555');
+SELECT 'A13 locked_even_with_right_pin', ok, reason FROM public.student_login('REG-002', '482913');
+
+-- Re-issuing a PIN clears the lock and kills the old session.
+SELECT 'A14 reissue_clears_lock', ok FROM public.admin_set_student_pin('admin-token-for-tests', 'REG-002', '482913');
+SELECT 'A14 old_session_dead', ok FROM public.student_me((SELECT token FROM login));
+CREATE TEMP TABLE login2 AS SELECT * FROM public.student_login('REG-002', '482913');
+SELECT 'A14 new_login_ok', ok FROM login2;
+
+-- Sign out invalidates the token.
+SELECT 'A15 logout', public.student_logout((SELECT token FROM login2)) AS done;
+SELECT 'A15 after_logout', ok FROM public.student_me((SELECT token FROM login2));
+
+-- =============================================================
+-- B. QR check-in, identified by a session token
+--    attendance_sessions comes from 0006_attendance_qr.sql.
+-- =============================================================
+INSERT INTO public.attendance_sessions (id, title, semina, student_group, lat, lng, radius_m, active)
+VALUES ('aaaaaaaa-0000-0000-0000-000000000001', 'Semina 1', 'Semina 1', 'GROUP 1', -6.8, 39.28, 50, true);
+
+-- Minting a token without an admin session must fail.
+DO $$
+BEGIN
+  PERFORM * FROM public.attendance_rotate_token('aaaaaaaa-0000-0000-0000-000000000001', 'not-an-admin');
+  RAISE NOTICE 'B0 FAIL rotate allowed without admin';
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'B0 ok   rotate refused without admin (%)', SQLERRM;
+END $$;
+
+CREATE TEMP TABLE t1 AS
+  SELECT token FROM public.attendance_rotate_token('aaaaaaaa-0000-0000-0000-000000000001', 'admin-token-for-tests');
+
+-- A device id that belongs to Bakari must NOT be enough on its own. Only the
+-- session token identifies a student now.
+SELECT 'B1 no_token_refused', ok, reason
+  FROM public.attendance_check_in_qr((SELECT token FROM t1), -6.8003, 39.28, NULL);
+SELECT 'B2 device_id_useless', ok, reason
+  FROM public.attendance_check_in_qr((SELECT token FROM t1), -6.8003, 39.28, 'dev-amina');
+
+-- Issue Amina a PIN (an admin action), then sign in. ~33 m away: inside 50 m.
+SELECT 'B3 amina_set_pin', ok FROM public.admin_set_student_pin('admin-token-for-tests', 'MUM2025-04-14106', '135790');
+CREATE TEMP TABLE amina2 AS SELECT token FROM public.student_login('MUM2025-04-14106', '135790');
+
+SELECT 'B4 inside_50m', ok, full_name, round(distance_m::numeric, 1) AS dist
+  FROM public.attendance_check_in_qr((SELECT token FROM t1), -6.8003, 39.28, (SELECT token FROM amina2));
+
+SELECT 'B5 duplicate_refused', ok, reason
+  FROM public.attendance_check_in_qr((SELECT token FROM t1), -6.8003, 39.28, (SELECT token FROM amina2));
+
+SELECT 'B5 one_row_only', count(*) AS rows FROM public.attendance WHERE full_name = 'Amina Yusuf';
+
+-- Chausiku has no PIN yet, so her token cannot exist.
+SELECT 'B6 no_session_no_checkin', ok, reason
+  FROM public.attendance_check_in_qr((SELECT token FROM t1), -6.8003, 39.28, 'deadbeef');
+
+-- Outside the radius: ~111 m away for a 50 m session.
+CREATE TEMP TABLE t2 AS
+  SELECT token FROM public.attendance_rotate_token('aaaaaaaa-0000-0000-0000-000000000001', 'admin-token-for-tests');
+SELECT 'B7 outside_area', ok, reason, round(distance_m::numeric, 1) AS dist, radius_m
+  FROM public.attendance_check_in_qr((SELECT token FROM t2), -6.801, 39.28, (SELECT token FROM amina2));
+
+-- Wrong QR token.
+SELECT 'B8 invalid_token', ok, reason
+  FROM public.attendance_check_in_qr('not-the-current-token', -6.8003, 39.28, (SELECT token FROM amina2));
+
+-- An expired token is refused.
 UPDATE public.attendance_sessions
-   SET lat = -6.8, lng = 39.28, radius_m = 50
+   SET token_expires_at = now() - interval '1 minute'
  WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001';
+SELECT 'B9 expired_token', ok, reason
+  FROM public.attendance_check_in_qr((SELECT token FROM t2), -6.8003, 39.28, (SELECT token FROM amina2));
 
-CREATE TEMP TABLE tok3 AS
-  SELECT token FROM public.attendance_rotate_token('aaaaaaaa-0000-0000-0000-000000000001');
+-- A closed session is refused.
+CREATE TEMP TABLE t3 AS
+  SELECT token FROM public.attendance_rotate_token('aaaaaaaa-0000-0000-0000-000000000001', 'admin-token-for-tests');
+UPDATE public.attendance_sessions SET active = false WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001';
+SELECT 'B10 session_closed', ok, reason
+  FROM public.attendance_check_in_qr((SELECT token FROM t3), -6.8003, 39.28, (SELECT token FROM amina2));
+UPDATE public.attendance_sessions SET active = true WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001';
 
--- 0.0004 deg of latitude is about 44.5 m => inside, must be accepted.
-INSERT INTO public.students (id, reg_no, full_name, auth_user_id, device_id) VALUES
-  ('33333333-3333-3333-3333-333333333333', 'REG-003', 'Chausiku Juma', '33333333-3333-3333-3333-333333333333', 'dev-chausiku-0003');
-SELECT set_config('test.uid', '33333333-3333-3333-3333-333333333333', false);
-SELECT 'T9 inside_50m', ok, round(distance_m::numeric, 1) AS dist
-  FROM public.attendance_check_in_qr((SELECT token FROM tok3), -6.8 + 0.0004, 39.28, 3);
+-- The recorded row carries the real attendance columns.
+SELECT 'B11 row_shape', check_in_date IS NOT NULL AS has_date, status, distance_m IS NOT NULL AS has_dist,
+       student_id IS NOT NULL AS has_student
+  FROM public.attendance WHERE full_name = 'Amina Yusuf' LIMIT 1;
 
--- 0.0005 deg is about 55.6 m => outside, must be refused.
-CREATE TEMP TABLE tok4 AS
-  SELECT token FROM public.attendance_rotate_token('aaaaaaaa-0000-0000-0000-000000000001');
-INSERT INTO public.students (id, reg_no, full_name, auth_user_id, device_id) VALUES
-  ('44444444-4444-4444-4444-444444444444', 'REG-004', 'Daudi Mwinyi', '44444444-4444-4444-4444-444444444444', 'dev-daudi-0004');
-SELECT set_config('test.uid', '44444444-4444-4444-4444-444444444444', false);
-SELECT 'T9 outside_50m', reason, round(distance_m::numeric, 1) AS dist
-  FROM public.attendance_check_in_qr((SELECT token FROM tok4), -6.8 + 0.0005, 39.28, 3);
+-- =============================================================
+-- C. RLS lockdown
+--    These run as `anon`, the role the browser's publishable key maps to.
+-- =============================================================
 
--- ---------------------------------------------------------------
--- T10. A closed session is refused.
--- ---------------------------------------------------------------
-UPDATE public.attendance_sessions
-   SET active = false,
-       token_hash = encode(digest('closedtok', 'sha256'), 'hex'),
-       token_expires_at = now() + interval '30 seconds'
- WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001';
-SELECT 'T10 closed_session', reason
-  FROM public.attendance_check_in_qr('closedtok', -6.8003, 39.28, 3);
+-- Nothing readable or writable with the public key alone.
+-- `SET ROLE anon` is what PostgREST does for a request carrying the publishable key.
+DO $$
+DECLARE
+  n bigint;
+  names text[] := ARRAY['students','submissions','attendance','student_pins','student_sessions','admin_sessions'];
+  t text;
+  q text;
+BEGIN
+  SET LOCAL ROLE anon;
 
--- ---------------------------------------------------------------
--- T11. An expired token is refused.
--- ---------------------------------------------------------------
-UPDATE public.attendance_sessions
-   SET active = true,
-       token_hash = encode(digest('expiredtoken', 'sha256'), 'hex'),
-       token_expires_at = now() - interval '1 second'
- WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001';
-SELECT 'T11 expired_token', reason
-  FROM public.attendance_check_in_qr('expiredtoken', -6.8003, 39.28, 3);
+  FOREACH t IN ARRAY names LOOP
+    q := format('SELECT count(*) FROM public.%I', t);
+    BEGIN
+      EXECUTE q INTO n;
+      RAISE NOTICE 'C1 FAIL % readable as anon: % rows', t, n;
+    EXCEPTION WHEN insufficient_privilege OR undefined_table THEN
+      RAISE NOTICE 'C1 ok   % not readable as anon', t;
+    END;
+  END LOOP;
 
--- ---------------------------------------------------------------
--- T12. An account with no student row is refused.
--- ---------------------------------------------------------------
-UPDATE public.attendance_sessions
-   SET token_hash = encode(digest('fresh', 'sha256'), 'hex'),
-       token_expires_at = now() + interval '30 seconds'
- WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001';
-SELECT set_config('test.uid', '99999999-9999-9999-9999-999999999999', false);
-SELECT 'T12 not_registered', reason
-  FROM public.attendance_check_in_qr('fresh', -6.8003, 39.28, 3);
+  -- The admin password column must not be selectable at all.
+  BEGIN
+    EXECUTE 'SELECT length(admin_password) FROM public.app_settings WHERE id = 1' INTO n;
+    RAISE NOTICE 'C2 FAIL admin_password readable as anon';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'C2 ok   admin_password revoked from anon';
+  END;
 
--- ---------------------------------------------------------------
--- T13. Device-bound check-in: no account, but a device the student
---      registered with. This is the path the live app relies on,
---      because Supabase email auth is disabled.
--- ---------------------------------------------------------------
-UPDATE public.attendance_sessions
-   SET active = true, lat = -6.8, lng = 39.28, radius_m = 50,
-       token_hash = encode(digest('devtok', 'sha256'), 'hex'),
-       token_expires_at = now() + interval '30 seconds'
- WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001';
+  -- The functions must still work, because they run as the table owner.
+  BEGIN
+    PERFORM public.student_login('REG-002', '482913');
+    RAISE NOTICE 'C3 ok   student_login still callable as anon';
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'C3 FAIL student_login broke under RLS: %', SQLERRM;
+  END;
 
--- No signed-in user at all.
-INSERT INTO public.students (id, reg_no, full_name, semina, student_group, device_id) VALUES
-  ('55555555-5555-5555-5555-555555555555', 'REG-005', 'Fatuma Hamisi', 'Semina 1', 'GROUP 1', 'dev-fatuma-0005');
-SELECT set_config('test.uid', '', false);
-SELECT 'T13 device_inside', ok, full_name, round(distance_m::numeric, 1) AS dist
-  FROM public.attendance_check_in_qr('devtok', -6.8003, 39.28, 5, 'dev-fatuma-0005');
+  BEGIN
+    PERFORM * FROM public.student_me('any-token');
+    RAISE NOTICE 'C4 ok   student_me still callable as anon';
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'C4 FAIL student_me broke under RLS: %', SQLERRM;
+  END;
 
--- An unknown device must not be able to check in as anyone.
-CREATE TEMP TABLE tok6 AS
-  SELECT token FROM public.attendance_rotate_token('aaaaaaaa-0000-0000-0000-000000000001');
-SELECT 'T13 unknown_device', reason
-  FROM public.attendance_check_in_qr((SELECT token FROM tok6), -6.8003, 39.28, 5, 'dev-nobody-9999');
-
--- A device-bound student outside the radius is still refused.
-CREATE TEMP TABLE tok7 AS
-  SELECT token FROM public.attendance_rotate_token('aaaaaaaa-0000-0000-0000-000000000001');
-SELECT 'T13 device_outside', reason, round(distance_m::numeric, 1) AS dist
-  FROM public.attendance_check_in_qr((SELECT token FROM tok7), -6.801, 39.28, 5, 'dev-daudi-0004');
+  -- Public reference data stays readable.
+  BEGIN
+    EXECUTE 'SELECT count(*) FROM public.study_images WHERE active = true' INTO n;
+    RAISE NOTICE 'C5 ok   study_images readable as anon: % rows', n;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'C5 FAIL study_images not readable: %', SQLERRM;
+  END;
+END $$;

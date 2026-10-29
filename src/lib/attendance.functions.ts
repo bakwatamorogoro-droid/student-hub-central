@@ -6,7 +6,7 @@ import { z } from "zod";
  * valid: it only collects a scanned token and the phone's GPS fix, and the
  * server recomputes the distance, the QR window and the session state.
  *
- * Run supabase/APPLY_ATTENDANCE_QR.sql before using this. Until it is applied the
+ * Run supabase/APPLY_STUDENT_PIN_AUTH.sql before using this. Until it is applied the
  * functions return a `not_ready` reason so the UI can explain what is missing.
  */
 
@@ -14,11 +14,13 @@ const secretSchema = z.object({
   token: z.string().min(1).max(4000),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
-  accuracy: z.number().nonnegative().max(100000).optional(),
-  /** Present when the student is signed in; the RPC reads auth.uid() from it. */
-  accessToken: z.string().min(10).max(4000).optional(),
-  /** Present when the student has no account; matches students.device_id. */
-  deviceId: z.string().min(8).max(200).optional(),
+  /**
+   * The sign-in token from student_login(). Required: the student's identity
+   * must come from a session the server issued, never from anything the
+   * browser can choose. `students.device_id` is world-readable, so it is not
+   * an acceptable substitute.
+   */
+  studentToken: z.string().trim().min(32).max(200).optional(),
 });
 
 export type AttendanceFailure =
@@ -82,10 +84,9 @@ export const checkInWithQr = createServerFn({ method: "POST" })
     const { createClient } = await import("@supabase/supabase-js");
 
     // The RPC is SECURITY DEFINER and granted to anon/authenticated, so it can
-    // read tables the caller cannot. Call it with the public key: with a student
-    // session attached it resolves the student from auth.uid(), and without one
-    // it falls back to the device bound at registration. Either way the database
-    // decides, so no service key is needed for a normal check-in.
+    // read tables the caller cannot. It resolves the student from the session
+    // token, so no service key is needed and nothing the browser sends is
+    // trusted for identity.
     const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
     const publicKey =
       process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -93,16 +94,12 @@ export const checkInWithQr = createServerFn({ method: "POST" })
     if (url && publicKey) {
       const client = createClient(url, publicKey, {
         auth: { persistSession: false, autoRefreshToken: false },
-        ...(data.accessToken
-          ? { global: { headers: { Authorization: `Bearer ${data.accessToken}` } } }
-          : {}),
       });
       const { data: r, error } = await client.rpc("attendance_check_in_qr", {
         p_token: data.token,
         p_lat: data.lat,
         p_lng: data.lng,
-        p_accuracy: data.accuracy ?? null,
-        p_device_id: data.deviceId ?? null,
+        p_student_token: data.studentToken ?? null,
       });
       // A missing function means the SQL has not been applied yet; anything else
       // is a real answer the student should see.
@@ -114,7 +111,10 @@ export const checkInWithQr = createServerFn({ method: "POST" })
     return { ok: false, reason: "not_ready" };
   });
 
-const rotateSchema = z.object({ sessionId: z.string().uuid() });
+const rotateSchema = z.object({
+  sessionId: z.string().uuid(),
+  adminToken: z.string().trim().min(32).max(200),
+});
 
 export type RotateResult = { ok: true; token: string; expiresAt: string } | { ok: false };
 
@@ -124,14 +124,18 @@ export const rotateSessionToken = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<RotateResult> => {
     const { createClient } = await import("@supabase/supabase-js");
     const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!url || !serviceKey) return { ok: false };
+    const publicKey =
+      process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    if (!url || !publicKey) return { ok: false };
 
-    const admin = createClient(url, serviceKey, {
+    // Called with the public key plus the admin's session token; the database
+    // checks the token, so no service key is needed.
+    const client = createClient(url, publicKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    const { data: row, error } = await admin.rpc("attendance_rotate_token", {
+    const { data: row, error } = await client.rpc("attendance_rotate_token", {
       p_session_id: data.sessionId,
+      p_admin_token: data.adminToken,
     });
     if (error) return { ok: false };
     const r = Array.isArray(row) ? row[0] : row;

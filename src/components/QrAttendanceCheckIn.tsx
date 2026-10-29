@@ -6,8 +6,7 @@ import { decodeQrToken } from "@/components/AttendanceSessionPanel";
 import { checkInWithQr, type AttendanceFailure } from "@/lib/attendance.functions";
 import { CheckCircle2, Loader2, MapPin, QrCode, ShieldAlert, XCircle } from "lucide-react";
 import { toast } from "@/lib/toast";
-import { getDeviceId } from "@/lib/device-id";
-import { supabase } from "@/integrations/supabase/client";
+import { getStudentToken } from "@/lib/student-session";
 
 /** Messages the student sees when a check-in is refused. */
 const FAILURE_TEXT: Record<AttendanceFailure, string> = {
@@ -64,17 +63,21 @@ export function QrAttendanceCheckIn() {
         return;
       }
 
-      // Pass whichever identity we have: a signed-in session, else the device
-      // bound to this student at registration. The server re-checks both.
-      const { data: sess } = await supabase.auth.getSession();
+      // Identity comes from the PIN sign-in session. Without it the server has
+      // no trustworthy way to tell who is scanning, so ask the student to sign
+      // in rather than sending anything the browser could choose.
+      const studentToken = getStudentToken();
+      if (!studentToken) {
+        toast.error("Ingia kwenye akaunti yako kwanza (/account), kisha skani QR.");
+        return;
+      }
+
       const res = await checkInWithQr({
         data: {
           token,
           lat: fix.lat,
           lng: fix.lng,
-          accuracy: fix.accuracy,
-          accessToken: sess.session?.access_token,
-          deviceId: getDeviceId(),
+          studentToken,
         },
       });
 

@@ -1,85 +1,67 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { registerStudentAccount, regNoToEmail, getMyStudentProfile } from "@/lib/studentAccount.functions";
-import { GraduationCap, Loader2, LogIn, LogOut, ShieldCheck, UserPlus } from "lucide-react";
+import { getMyProfile, loginStudent, logoutStudent, type StudentProfile } from "@/lib/studentAccount.functions";
+import { getStudentToken, setStudentToken, clearStudentToken } from "@/lib/student-session";
+import { GraduationCap, Loader2, LogIn, LogOut, ShieldCheck } from "lucide-react";
 import { toast } from "@/lib/toast";
 
 export const Route = createFileRoute("/account")({ component: Page });
 
-type Profile = Awaited<ReturnType<typeof getMyStudentProfile>>;
-
 function Page() {
-  const [mode, setMode] = useState<"login" | "register">("login");
   const [regNo, setRegNo] = useState("");
-  const [password, setPassword] = useState("");
+  const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
-  const [profile, setProfile] = useState<Profile>(null);
+  const [profile, setProfile] = useState<StudentProfile | null>(null);
 
-  const loadProfile = async () => {
-    const { data: sess } = await supabase.auth.getSession();
-    if (!sess.session?.access_token) return null;
-    const p = await getMyStudentProfile({ data: { accessToken: sess.session.access_token } });
-    setProfile(p);
-    return p;
-  };
+  // Restore a previous session so a refresh does not sign the student out.
+  useEffect(() => {
+    const token = getStudentToken();
+    if (!token) return;
+    getMyProfile({ data: { token } })
+      .then((p) => {
+        if (p) setProfile(p);
+        else clearStudentToken();
+      })
+      .catch(() => clearStudentToken());
+  }, []);
 
   const signIn = async () => {
-    if (!regNo.trim() || !password) return toast.error("Weka Reg Namba na nenosiri");
-    setBusy(true);
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: regNoToEmail(regNo),
-        password,
-      });
-      if (error) {
-        toast.error(
-          error.message.toLowerCase().includes("invalid")
-            ? "Reg Namba au nenosiri si sahihi"
-            : "Imeshindikana kuingia: " + error.message,
-        );
-        return;
-      }
-      const p = await loadProfile();
-      toast.success(p?.student.full_name ? `Karibu ${p.student.full_name}` : "Umeingia");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const createAccount = async () => {
     if (!regNo.trim()) return toast.error("Weka Reg Namba yako");
-    if (password.length < 6) return toast.error("Nenosiri lihitaji herufi 6 au zaidi");
+    if (!/^[0-9]{4,10}$/.test(pin)) return toast.error("PIN inatakiwa tarakimu 4 hadi 10");
     setBusy(true);
     try {
-      const res = await registerStudentAccount({ data: { regNo: regNo.trim(), password } });
+      const res = await loginStudent({ data: { regNo: regNo.trim(), pin } });
       if (!res.ok) {
-        const msg: Record<string, string> = {
-          not_ready: "Mfumo wa akaunti haujawashwa. Mwambie msimamizi aendeshe supabase/APPLY_ATTENDANCE_QR.sql.",
-          not_registered: "Reg Namba hii haipo kwenye orodha ya wanafunzi walioidhinishwa.",
-          already_registered: "Reg Namba hii tayari ina akaunti. Ingia badala yake.",
-          weak_password: "Nenosiri ni dhaifu mno. Tumia herufi 6 au zaidi.",
-        };
-        toast.error(msg[res.reason] || "Imeshindikana kusajili akaunti");
+        if (res.reason === "locked") {
+          toast.error("Akaunti imefungwa kwa muda kwa sababu ya PIN zisizo sahihi. Jaribu baada ya dakika 15.");
+        } else if (res.reason === "not_ready") {
+          toast.error("Mfumo wa akaunti haujawashwa. Mwambie msimamizi aendeshe supabase/APPLY_STUDENT_PIN_AUTH.sql.");
+        } else {
+          toast.error("Reg Namba au PIN si sahihi");
+        }
         return;
       }
-      toast.success(`Akaunti imefunguliwa kwa ${res.fullName}. Ingia sasa.`);
-      setMode("login");
-      await signIn();
+      setStudentToken(res.token);
+      const p = await getMyProfile({ data: { token: res.token } });
+      setProfile(p);
+      setPin("");
+      toast.success(`Karibu ${res.fullName}`);
     } finally {
       setBusy(false);
     }
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    const token = getStudentToken();
+    if (token) await logoutStudent({ data: { token } }).catch(() => undefined);
+    clearStudentToken();
     setProfile(null);
-    setPassword("");
+    setPin("");
     toast.success("Umetoka");
   };
 
@@ -98,10 +80,10 @@ function Page() {
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
-                { label: "Reg Namba", value: profile.student.reg_no },
-                { label: "Semina", value: profile.student.semina },
-                { label: "Group", value: profile.student.student_group },
-                { label: "Kozi", value: profile.student.course },
+                { label: "Reg Namba", value: profile.regNo },
+                { label: "Semina", value: profile.semina },
+                { label: "Group", value: profile.studentGroup },
+                { label: "Kozi", value: profile.course },
               ].map((f) => (
                 <div key={f.label} className="rounded-xl border border-primary/15 bg-primary/5 p-2.5">
                   <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{f.label}</div>
@@ -109,9 +91,9 @@ function Page() {
                 </div>
               ))}
             </div>
-            <p className="text-sm font-semibold">{profile.student.full_name}</p>
+            <p className="text-sm font-semibold">{profile.fullName}</p>
             <Badge variant="outline" className="gap-1">
-              <ShieldCheck className="h-3 w-3" /> Akaunti imethibitishwa
+              <ShieldCheck className="h-3 w-3" /> Umeingia kwa PIN
             </Badge>
           </CardContent>
         </Card>
@@ -121,15 +103,15 @@ function Page() {
             <CardTitle className="text-base">Historia ya Mahudhurio</CardTitle>
           </CardHeader>
           <CardContent>
-            {profile.history.length === 0 ? (
+            {profile.attendance.length === 0 ? (
               <p className="text-sm text-muted-foreground">Bado hujahudhuria kipindi chochote.</p>
             ) : (
               <div className="space-y-1.5">
-                {profile.history.map((h) => (
+                {profile.attendance.map((h) => (
                   <div key={h.id} className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2 text-sm">
                     <span className="truncate">
                       {h.semina || "—"}
-                      {h.method === "qr" && <Badge variant="secondary" className="ml-2 text-[10px]">QR</Badge>}
+                      {h.status === "present" && <Badge variant="secondary" className="ml-2 text-[10px]">Alikuwepo</Badge>}
                     </span>
                     <span className="ml-2 shrink-0 text-xs text-muted-foreground">
                       {new Date(h.created_at).toLocaleDateString("sw-TZ")}
@@ -150,11 +132,10 @@ function Page() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            {mode === "login" ? <LogIn className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
-            {mode === "login" ? "Ingia kwenye akaunti yako" : "Fungua akaunti ya mwanafunzi"}
+            <LogIn className="h-4 w-4" /> Ingia kwenye akaunti yako
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            Tumia Reg Namba uliyopewa na taasisi. Namba isiyotambulika haitakubaliwa.
+            Tumia Reg Namba na PIN uliyopewa na msimamizi wa shule.
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -169,26 +150,25 @@ function Page() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Nenosiri</Label>
+            <Label>PIN</Label>
             <Input
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") mode === "login" ? signIn() : createAccount(); }}
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              inputMode="numeric"
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+              onKeyDown={(e) => { if (e.key === "Enter") signIn(); }}
+              placeholder="Tarakimu 4-10"
+              className="font-mono tracking-widest"
+              autoComplete="current-password"
             />
           </div>
-          <Button onClick={mode === "login" ? signIn : createAccount} disabled={busy} className="w-full">
+          <Button onClick={signIn} disabled={busy} className="w-full">
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-            {mode === "login" ? "Ingia" : "Fungua akaunti"}
+            Ingia
           </Button>
-          <button
-            type="button"
-            className="w-full text-center text-xs text-muted-foreground underline"
-            onClick={() => setMode(mode === "login" ? "register" : "login")}
-          >
-            {mode === "login" ? "Huna akaunti? Fungua hapa" : "Una akaunti? Ingia hapa"}
-          </button>
+          <p className="text-center text-xs text-muted-foreground">
+            Huna PIN? Mwone msimamizi wa shule.
+          </p>
         </CardContent>
       </Card>
     </div>

@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { QrCodeDisplay } from "@/components/QrCodeDisplay";
 import { rotateSessionToken } from "@/lib/attendance.functions";
+import { getAdminToken } from "@/lib/admin-session";
 import { GROUPS } from "@/lib/academicTargeting";
 import { toast } from "@/lib/toast";
 import { Crosshair, Loader2, Play, Square, Users } from "lucide-react";
@@ -103,9 +104,11 @@ export function AttendanceSessionPanel() {
   // Issue a new token every ROTATE_MS so a shared screenshot goes stale quickly.
   const refreshToken = useCallback(
     async (sessionId: string) => {
-      const res = await rotateSessionToken({ data: { sessionId } });
+      const adminToken = getAdminToken();
+      if (!adminToken) return { token: null, expiresAt: null };
+      const res = await rotateSessionToken({ data: { sessionId, adminToken } });
       if (!res.ok) {
-        toast.error("Imeshindikana kutengeneza QR. Endesha supabase/APPLY_ATTENDANCE_QR.sql na uweke SUPABASE_SERVICE_ROLE_KEY.");
+        toast.error("Imeshindikana kutengeneza QR. Endesha supabase/APPLY_STUDENT_PIN_AUTH.sql kwenye SQL Editor.");
         return false;
       }
       setToken(encodeQrToken(res.token));
@@ -149,7 +152,7 @@ export function AttendanceSessionPanel() {
       if (error) {
         toast.error(
           error.message.includes("does not exist")
-            ? "Jedwali la vipindi halipo — endesha supabase/APPLY_ATTENDANCE_QR.sql"
+            ? "Jedwali la vipindi halipo — endesha supabase/APPLY_STUDENT_PIN_AUTH.sql"
             : "Imeshindikana kuanzisha kipindi: " + error.message,
         );
         return;

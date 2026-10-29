@@ -95,7 +95,14 @@ $$;
 -- ------------------------------------------------------------
 -- 5. Issue a fresh short-lived token for a session
 -- ------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.attendance_rotate_token(p_session_id uuid)
+-- Replaced below by a version that requires an admin session. Drop the older
+-- signature so a call cannot resolve to a copy that mints tokens for anyone.
+DROP FUNCTION IF EXISTS public.attendance_rotate_token(uuid);
+
+CREATE OR REPLACE FUNCTION public.attendance_rotate_token(
+  p_session_id uuid,
+  p_admin_token text
+)
 RETURNS TABLE (token text, expires_at timestamptz)
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -104,7 +111,21 @@ AS $$
 DECLARE
   v_token text;
   v_expires timestamptz;
+  v_admin boolean;
 BEGIN
+  -- Minting a QR token is a teacher action, so it is checked here rather than
+  -- trusted from the browser. Without this anyone could mint a valid token and
+  -- hand it to students who are not in the room.
+  SELECT EXISTS (
+    SELECT 1 FROM public.admin_sessions s
+     WHERE s.token_hash = encode(digest(coalesce(p_admin_token, ''), 'sha256'), 'hex')
+       AND s.expires_at > now()
+  ) INTO v_admin;
+
+  IF NOT v_admin THEN
+    RAISE EXCEPTION 'not_admin';
+  END IF;
+
   v_token := encode(gen_random_bytes(24), 'hex');
   v_expires := now() + interval '30 seconds';
 
@@ -121,23 +142,24 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.attendance_rotate_token(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.attendance_rotate_token(uuid) TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.attendance_rotate_token(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.attendance_rotate_token(uuid, text) TO anon, authenticated;
 
 -- ------------------------------------------------------------
 -- 6. Verify a scanned token and record attendance
 --    All gates are checked here, in order, server-side.
 -- ------------------------------------------------------------
--- Replaced below with a 5-argument version; drop the 4-argument one so a
--- 4-argument call cannot resolve to a stale copy that ignores the device id.
+-- Replaced below by a version that identifies the student from a sign-in
+-- session. Drop the older overloads so a call cannot resolve to a copy that
+-- trusts a caller-supplied device id.
 DROP FUNCTION IF EXISTS public.attendance_check_in_qr(text, double precision, double precision, double precision);
+DROP FUNCTION IF EXISTS public.attendance_check_in_qr(text, double precision, double precision, double precision, text);
 
 CREATE OR REPLACE FUNCTION public.attendance_check_in_qr(
   p_token text,
   p_lat double precision,
   p_lng double precision,
-  p_accuracy double precision DEFAULT NULL,
-  p_device_id text DEFAULT NULL
+  p_student_token text DEFAULT NULL
 )
 RETURNS TABLE (
   ok boolean,
@@ -155,6 +177,7 @@ AS $$
 DECLARE
   v_session public.attendance_sessions%ROWTYPE;
   v_student public.students%ROWTYPE;
+  v_student_id uuid;
   v_hash text;
   v_distance double precision;
   v_inserted integer;
@@ -184,26 +207,17 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Identify the student. A signed-in account is the strongest signal, so try
-  -- that first; otherwise fall back to the device bound to the student during
-  -- registration, which is the same trust anchor the exam flow already uses.
-  -- Both branches are gated on v_student.id rather than FOUND: FOUND keeps the
-  -- value from the previous statement when a branch is skipped, which would let
-  -- an unidentified caller through with a NULL student row.
-  v_student := NULL;
+  -- Identify the student from a live sign-in session. The session token is
+  -- issued by student_login() and only its hash is stored, so this cannot be
+  -- forged by sending someone else's registration number.
+  SELECT s.student_id INTO v_student_id
+    FROM public.student_sessions s
+   WHERE s.token_hash = encode(digest(coalesce(p_student_token, ''), 'sha256'), 'hex')
+     AND s.expires_at > now()
+   LIMIT 1;
 
-  IF auth.uid() IS NOT NULL THEN
-    SELECT * INTO v_student
-      FROM public.students st
-     WHERE st.auth_user_id = auth.uid()
-     LIMIT 1;
-  END IF;
-
-  IF v_student.id IS NULL AND p_device_id IS NOT NULL AND length(p_device_id) >= 8 THEN
-    SELECT * INTO v_student
-      FROM public.students st
-     WHERE st.device_id = p_device_id
-     LIMIT 1;
+  IF v_student_id IS NOT NULL THEN
+    SELECT * INTO v_student FROM public.students st WHERE st.id = v_student_id;
   END IF;
 
   IF v_student.id IS NULL THEN
@@ -224,32 +238,65 @@ BEGIN
     RETURN;
   END IF;
 
-  INSERT INTO public.attendance (
-    student_id, reg_no, full_name, semina, student_group,
-    gps_lat, gps_lng, distance_m, session_id, gps_accuracy, method
-  ) VALUES (
-    v_student.id, v_student.reg_no, v_student.full_name,
-    coalesce(v_session.semina, v_student.semina),
-    coalesce(v_session.student_group, v_student.student_group),
-    p_lat, p_lng, v_distance, v_session.id, p_accuracy, 'qr'
-  )
-  ON CONFLICT DO NOTHING;
-
-  GET DIAGNOSTICS v_inserted = ROW_COUNT;
-
-  IF v_inserted = 0 THEN
+  -- Already marked today? Checked explicitly rather than with ON CONFLICT:
+  -- the live attendance table has no unique constraint on
+  -- (student_id, check_in_date), so ON CONFLICT DO NOTHING never fired and a
+  -- student could check in repeatedly (verified by test B5).
+  IF EXISTS (
+    SELECT 1 FROM public.attendance a
+     WHERE a.student_id = v_student.id
+       AND a.check_in_date = (now() AT TIME ZONE 'Africa/Dar_es_Salaam')::date
+  ) THEN
     RETURN QUERY SELECT false, 'already_marked', v_student.full_name,
                         v_session.semina, v_distance, v_session.radius_m::double precision, NULL::timestamptz;
     RETURN;
   END IF;
+
+  INSERT INTO public.attendance (
+    student_id, reg_no, full_name, semina, student_group,
+    check_in_date, gps_lat, gps_lng, distance_m, status
+  ) VALUES (
+    v_student.id, v_student.reg_no, v_student.full_name,
+    coalesce(v_session.semina, v_student.semina),
+    coalesce(v_session.student_group, v_student.student_group),
+    (now() AT TIME ZONE 'Africa/Dar_es_Salaam')::date,
+    p_lat, p_lng, v_distance, 'present'
+  );
 
   RETURN QUERY SELECT true, NULL::text, v_student.full_name, v_session.semina,
                       v_distance, v_session.radius_m::double precision, now();
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.attendance_check_in_qr(text, double precision, double precision, double precision, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.attendance_check_in_qr(text, double precision, double precision, double precision, text) TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.attendance_check_in_qr(text, double precision, double precision, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.attendance_check_in_qr(text, double precision, double precision, text) TO anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 6b. Backstop against a double check-in.
+--
+--     The EXISTS test above is the friendly path; this index makes a
+--     duplicate physically impossible even if two scans race, or if some
+--     other code path inserts into attendance directly.
+--
+--     Created CONCURRENTLY is not possible inside a migration transaction, so
+--     this is a plain CREATE INDEX. It is written to tolerate pre-existing
+--     duplicates so the file stays safe to run on a live table.
+-- ------------------------------------------------------------
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+     WHERE schemaname = 'public'
+       AND indexname = 'attendance_one_per_student_per_day'
+  ) THEN
+    BEGIN
+      CREATE UNIQUE INDEX attendance_one_per_student_per_day
+        ON public.attendance (student_id, check_in_date);
+    EXCEPTION WHEN unique_violation THEN
+      RAISE NOTICE 'attendance_one_per_student_per_day not created: existing duplicate rows must be cleared first';
+    END;
+  END IF;
+END $$;
 
 -- ------------------------------------------------------------
 -- 7. Link a freshly created auth user to its student row

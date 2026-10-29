@@ -202,30 +202,79 @@ clips loop, are muted, and are served from `public/media/` rather than a host-sp
 path. Give the `study_images` rows a `title` when the owner wants a caption — it doubles as the
 `alt` text.
 
-## QR + geolocation attendance
+## Sign-in without email, and QR + geolocation attendance
 
-`supabase/APPLY_ATTENDANCE_QR.sql` (identical to `drizzle/migrations/0006_attendance_qr.sql`)
-creates `attendance_sessions` and the RPCs behind the QR attendance feature. It is written to be
-safe to run more than once. Until the owner applies it, `/student` and `/admin/attendance` render
-the feature but every check-in returns `not_ready`, and the UI says so in Swahili. The owner is the
-only account with DDL rights, so this cannot be applied from the agent environment.
+Supabase email auth is disabled on this project (`/auth/v1/settings` reports `"email": false`), and
+no service-role key is set on Vercel. Sign-in therefore does not use `auth.users` at all. Students
+sign in with a registration number and a PIN an admin issued, and the PIN is exchanged for a session
+token. Everything is enforced in SQL, so the browser is never trusted for identity.
 
-Design points worth keeping:
+Apply `supabase/APPLY_STUDENT_PIN_AUTH.sql` in the SQL Editor. It is the four files below
+concatenated in the order they must run, and it is written to be safe to run more than once:
 
-* Only the SHA-256 hash of a session token is stored. Reading `attendance_sessions` never yields a
-  usable QR payload.
+1. `drizzle/migrations/0006_attendance_qr.sql` — `attendance_sessions`, the distance helper, and
+   `attendance_check_in_qr()`
+2. `drizzle/migrations/0007_student_pin_auth.sql` — `student_pins`, `student_sessions`,
+   `admin_sessions`, and the sign-in functions
+3. `supabase/HARDEN_ADMIN_PASSWORD.sql` — `admin_login()`, so the app never reads the password
+4. `supabase/HARDEN_RLS.sql` — turns RLS on and revokes the admin password column
+
+Until the owner applies it, the UI renders and every action returns `not_ready` with a Swahili
+explanation. The owner is the only account with DDL rights, so this cannot be applied from the agent
+environment.
+
+### How identity is proved
+
+* A PIN is stored only as a bcrypt hash (`crypt(pin, gen_salt('bf', 10))`), so reading `student_pins`
+  never yields a usable PIN.
+* A session token is 32 random bytes as hex. Only its SHA-256 hash is stored in `student_sessions`,
+  so the table cannot be used to impersonate a session.
+* **A student cannot choose their own PIN.** `admin_set_student_pin()` requires a live admin session
+  token. Without that rule, anyone who knew a registration number could claim the account. This is
+  the single most important property of the design.
+* Five wrong PINs lock the account for 15 minutes. An unknown registration and a wrong PIN return the
+  same `bad_credentials` answer, so the response cannot be used to enumerate registration numbers.
+* `attendance_check_in_qr()` resolves the student from the session token. It deliberately does **not**
+  use `students.device_id`: that column is world-readable, so it cannot prove anything. (An earlier
+  revision used it as a fallback, which was only as safe as the RLS that did not exist yet.)
+* Minting a QR token (`attendance_rotate_token`) and issuing a PIN are both admin-gated in SQL, so a
+  tampered client cannot hand out tokens.
+
+### Why `HARDEN_RLS.sql` matters
+
+The publishable key ships inside the JavaScript bundle, so every visitor already has it. Before RLS
+was enabled, that key could read all 1561 students, 2602 submissions, and `app_settings.admin_password`
+— verified from outside the app with nothing but the key from the bundle.
+
+Two details that are easy to get wrong:
+
+* Use `ENABLE ROW LEVEL SECURITY`, never `FORCE`. `FORCE` also applies RLS to the table owner, and
+  the `SECURITY DEFINER` functions run as the owner, so `FORCE` silently makes every one of them
+  return NULL (verified).
+* A table-wide `GRANT SELECT` covers every column, so `REVOKE SELECT (admin_password)` does nothing
+  on its own. The table grant has to be withdrawn first, then SELECT re-granted on the remaining
+  columns.
+
+No policy is created for `students`, `attendance`, `submissions`, `issue_reports`,
+`profile_update_requests`, `daily_visits`, `attendance_sessions`, `student_pins`, `student_sessions`
+or `admin_sessions`. Reads the app needs go through the `SECURITY DEFINER` functions. Consequence:
+**a page that reads those tables straight from the browser returns nothing.** `students`, `attendance`
+and `submissions` are read directly in several admin routes, so those routes need moving to server
+functions before this file is applied.
+
+### Other design points
+
+* Only the SHA-256 hash of a rotating QR token is stored. Reading `attendance_sessions` never yields a
+  usable QR payload. Tokens rotate every 25 s (`ROTATE_MS`).
 * Every gate (token, expiry, session window, identity, geofence, duplicate) is enforced inside
-  `attendance_check_in_qr()`. The browser only supplies a token and a GPS fix, so a tampered client
-  cannot widen the 50 m radius.
-* Student identity is resolved from `auth.uid()` first, then from `students.device_id`. The device
-  fallback exists because **Supabase email auth is disabled on this project**
-  (`/auth/v1/settings` reports `"email": false`), so `supabase.auth.signInWithPassword` cannot
-  succeed until the owner turns email auth on. Every one of the 1561 student rows already carries a
-  `device_id`, which is the same trust anchor the exam flow uses.
-* `attendance_check_in_qr()` is `SECURITY DEFINER` and granted to `anon`/`authenticated`, so a
-  check-in needs no service-role key. `SUPABASE_SERVICE_ROLE_KEY` is **not** set on Vercel; only the
-  student-account registration path (`studentAccount.functions.ts`) needs it, and that path is
-  inert until email auth is enabled.
+  `attendance_check_in_qr()`. The browser supplies only a token and a GPS fix.
+* The duplicate check is an explicit `EXISTS`, not `ON CONFLICT`. The live `attendance` table has no
+  unique constraint on `(student_id, check_in_date)`, so `ON CONFLICT DO NOTHING` never fired and a
+  student could check in repeatedly (caught by test B5). A unique index is created as a backstop.
+* The real `attendance` columns are `student_id, reg_no, full_name, semina, student_group,
+  check_in_date, gps_lat, gps_lng, distance_m, status`. There is no `session_id`, `gps_accuracy` or
+  `method`. The real `students` columns do **not** include `auth_user_id` or `semester` — an earlier
+  revision of this feature selected both and was broken.
 
 ### Testing SQL before shipping it
 
@@ -234,16 +283,19 @@ The SQL is verified against a real Postgres, not by reading it. Start one and ru
 ```sh
 sudo dockerd >/tmp/dockerd.log 2>&1 &
 sudo docker run -d --name attpg -e POSTGRES_PASSWORD=pg -e POSTGRES_DB=test postgres:16-alpine
-# harness lives in /tmp/att_test: 00_setup.sql (tables + auth.uid() + Supabase roles),
-# 0006_attendance_qr.sql, 01_tests.sql (19 assertions), run.sh
+supabase/tests/attendance_qr/run.sh
 ```
 
-Two classes of bug the harness caught that a code read would not:
+`run.sh` drops and rebuilds the schema, then applies `00_setup.sql` (tables using the **real**
+production column names, plus Supabase's roles and `auth.uid()`), both migrations, `HARDEN_RLS.sql`,
+and `01_tests.sql` (35 assertions). It exits non-zero on any SQL error.
 
-1. **Uncast NULLs in `RETURN QUERY`.** Postgres types a bare `NULL` as `text`, which does not match
-   a `double precision` or `timestamptz` output column, and the whole function aborts at runtime.
-   Every NULL in a `RETURN QUERY` needs an explicit cast.
-2. **`FOUND` is sticky.** `FOUND` keeps its value from the *previous* statement when an `IF` branch
-   does not run, so `IF NOT FOUND AND ...` silently skips the device lookup and can insert a row
-   with a NULL `student_id`. Gate on a real value (`v_student.id IS NULL`), never on `FOUND`, after
-   a conditional `SELECT ... INTO`.
+The harness catches what reading the code cannot: it found the `ON CONFLICT` duplicate hole, the
+`FORCE ROW LEVEL SECURITY` trap, the ineffective column-level revoke, and the `students.semester`
+column that does not exist. Anything that touches these tables should be added here first.
+
+Assertions are grouped: `A*` sign-in, `B*` check-in and geofence, `C*` RLS. `C*` runs as `anon`, the
+role PostgREST uses for a request carrying the publishable key.
+
+A note on the container: `docker exec -i` with a redirected stdin can hang depending on how the
+caller's shell handles the pipe, so `run.sh` uses `docker cp` instead.

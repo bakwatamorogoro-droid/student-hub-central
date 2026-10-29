@@ -1,6 +1,6 @@
 #!/bin/sh
-# Applies the attendance migration to a throwaway Postgres and runs the
-# assertions in 01_tests.sql. See AGENTS.md ("Testing SQL before shipping it").
+# Applies the attendance and PIN-auth migrations to a throwaway Postgres, then
+# runs the assertions in 01_tests.sql.
 #
 #   sudo docker run -d --name attpg -e POSTGRES_PASSWORD=pg -e POSTGRES_DB=test postgres:16-alpine
 #   supabase/tests/attendance_qr/run.sh
@@ -10,14 +10,20 @@
 set -e
 C=${C:-attpg}
 DIR=$(cd "$(dirname "$0")" && pwd)
-MIG="$DIR/../../../drizzle/migrations/0006_attendance_qr.sql"
-cp "$MIG" "$DIR/.migration.sql"
-for f in 00_setup.sql .migration.sql 01_tests.sql; do
-  sudo docker cp "$DIR/$f" "$C:/tmp/$f" >/dev/null
-done
-rm -f "$DIR/.migration.sql"
+ROOT=$(cd "$DIR/../../.." && pwd)
+
 sudo docker exec "$C" psql -U postgres -d test -q \
-  -c "DROP SCHEMA IF EXISTS auth CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null
-for f in 00_setup.sql .migration.sql 01_tests.sql; do
-  sudo docker exec "$C" psql -U postgres -d test -q -v ON_ERROR_STOP=1 -f "/tmp/$f"
+  -c "DROP SCHEMA IF EXISTS auth CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;" >/dev/null
+
+for f in \
+  "$DIR/00_setup.sql" \
+  "$ROOT/drizzle/migrations/0006_attendance_qr.sql" \
+  "$ROOT/drizzle/migrations/0007_student_pin_auth.sql" \
+  "$ROOT/supabase/HARDEN_RLS.sql" \
+  "$DIR/01_tests.sql"
+do
+  b=$(basename "$f")
+  sudo docker cp "$f" "$C:/tmp/$b" >/dev/null
+  echo "--- $b"
+  sudo docker exec "$C" psql -U postgres -d test -q -v ON_ERROR_STOP=1 -f "/tmp/$b"
 done
