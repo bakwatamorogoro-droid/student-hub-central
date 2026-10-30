@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { QrCodeDisplay } from "@/components/QrCodeDisplay";
-import { rotateSessionToken } from "@/lib/attendance.functions";
+import { rotateSessionToken } from "@/lib/attendance";
 import { getAdminToken } from "@/lib/admin-session";
 import { GROUPS } from "@/lib/academicTargeting";
 import { toast } from "@/lib/toast";
@@ -106,7 +106,7 @@ export function AttendanceSessionPanel() {
     async (sessionId: string) => {
       const adminToken = getAdminToken();
       if (!adminToken) return { token: null, expiresAt: null };
-      const res = await rotateSessionToken({ data: { sessionId, adminToken } });
+      const res = await rotateSessionToken({ sessionId, adminToken });
       if (!res.ok) {
         toast.error("Imeshindikana kutengeneza QR. Endesha supabase/APPLY_STUDENT_PIN_AUTH.sql kwenye SQL Editor.");
         return false;
