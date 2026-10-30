@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { adminSetStudentPin } from "@/lib/studentAccount";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,6 @@ import * as XLSX from "xlsx";
 import { toast } from "@/lib/toast";
 import { confirmAction } from "@/lib/alerts";
 import { Pencil, Trash2, Download, CheckCircle2, XCircle, KeyRound, Loader2 } from "lucide-react";
-import { getAdminToken } from "@/lib/admin-session";
 import {
   ACADEMIC_YEARS,
   GROUPS,
@@ -53,21 +53,20 @@ type Student = {
 };
 
 /**
- * Issues a sign-in PIN for one student. The PIN is chosen by the admin, not the
- * student, so a registration number alone cannot claim an account. The server
- * verifies the admin session token before writing anything.
+ * Issues a sign-in PIN for one student, and clears any device binding.
+ *
+ * The PIN is chosen by the admin here, never by the student, so a registration
+ * number alone cannot claim an account. This is also the recovery path when a
+ * student changes phone.
  */
-async function issuePin(regNo: string, pin: string): Promise<{ ok: boolean; reason?: string; fullName?: string }> {
-  const adminToken = getAdminToken();
-  if (!adminToken) return { ok: false, reason: "not_admin" };
-  const { data, error } = await supabase.rpc("admin_set_student_pin", {
-    p_admin_token: adminToken,
-    p_reg_no: regNo,
-    p_pin: pin,
-  });
-  if (error) return { ok: false, reason: "not_ready" };
-  const row = Array.isArray(data) ? data[0] : data;
-  return { ok: !!row?.ok, reason: row?.reason ?? undefined, fullName: row?.full_name ?? undefined };
+async function issuePin(
+  regNo: string,
+  pin: string,
+): Promise<{ ok: boolean; reason?: string; fullName?: string }> {
+  const res = await adminSetStudentPin(regNo, pin);
+  return res.ok
+    ? { ok: true, fullName: res.fullName }
+    : { ok: false, reason: "failed", fullName: undefined };
 }
 
 function Page() {
@@ -255,8 +254,17 @@ function Page() {
       ))
     )
       return;
+    // The delete is verified by reading the row back. RLS currently refuses
+    // deletes on `students`, and a bare PostgREST delete answers 204 whether or
+    // not it matched anything, so reporting success without checking would lie.
     const { error } = await supabase.from("students").delete().eq("id", s.id);
     if (error) return toast.error(error.message);
+
+    const { data: still } = await supabase.from("students").select("id").eq("id", s.id).limit(1);
+    if (still && still.length > 0) {
+      toast.error("Imeshindikana kufuta. Mwambie msimamizi afute kwenye hifadhidata.");
+      return;
+    }
     toast.success("Mwanafunzi amefutwa");
     load();
   };
@@ -371,7 +379,10 @@ function Page() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => { setPinFor(r); setPinValue(""); }}
+                          onClick={() => {
+                            setPinFor(r);
+                            setPinValue("");
+                          }}
                           title="Weka PIN ya kuingia"
                         >
                           <KeyRound className="h-3 w-3" />
@@ -597,7 +608,12 @@ function Page() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={!!pinFor} onOpenChange={(o) => { if (!o) setPinFor(null); }}>
+        <Dialog
+          open={!!pinFor}
+          onOpenChange={(o) => {
+            if (!o) setPinFor(null);
+          }}
+        >
           <DialogContent className="max-w-sm">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-base">
@@ -620,8 +636,8 @@ function Page() {
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Mwanafunzi atatumia Reg Namba na PIN hii kuingia. Mwambie PIN moja kwa moja,
-                  na aweke mpya kila muhula.
+                  Mwanafunzi atatumia Reg Namba na PIN hii kuingia. Mwambie PIN moja kwa moja, na
+                  aweke mpya kila muhula.
                 </p>
               </div>
             )}
@@ -641,12 +657,8 @@ function Page() {
                       setPinFor(null);
                     } else if (res.reason === "not_admin") {
                       toast.error("Kipindi chako cha msimamizi kimeisha. Ingia tena.");
-                    } else if (res.reason === "weak_pin") {
-                      toast.error("PIN inatakiwa tarakimu 4 hadi 10");
-                    } else if (res.reason === "not_registered") {
-                      toast.error("Reg Namba hii haipo kwenye orodha");
                     } else {
-                      toast.error("Imeshindikana. Mwambie msimamizi aendeshe supabase/APPLY_STUDENT_PIN_AUTH.sql.");
+                      toast.error("Imeshindikana kuweka PIN. Jaribu tena.");
                     }
                   } finally {
                     setPinBusy(false);

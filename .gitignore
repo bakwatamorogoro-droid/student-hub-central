@@ -33,3 +33,6 @@ dist-ssr
 
 # Vercel CLI local link
 .vercel
+tests/e2e/.build/
+tests/e2e/.mk*/
+tests/e2e/_mk*.ts

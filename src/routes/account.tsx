@@ -6,7 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { claimStudentPin, getMyProfile, loginStudent, logoutStudent, type StudentProfile } from "@/lib/studentAccount";
+import {
+  claimStudentPin,
+  getMyProfile,
+  loginStudent,
+  logoutStudent,
+  type StudentProfile,
+} from "@/lib/studentAccount";
 import { getStudentToken, setStudentToken, clearStudentToken } from "@/lib/student-session";
 import { Copy, GraduationCap, KeyRound, Loader2, LogIn, LogOut, ShieldCheck } from "lucide-react";
 import { toast } from "@/lib/toast";
@@ -45,9 +51,11 @@ function Page() {
       const res = await loginStudent(regNo.trim(), pin);
       if (!res.ok) {
         if (res.reason === "locked") {
-          toast.error("Akaunti imefungwa kwa muda kwa sababu ya PIN zisizo sahihi. Jaribu baada ya dakika 15.");
+          toast.error(
+            "Akaunti imefungwa kwa muda kwa sababu ya PIN zisizo sahihi. Jaribu baada ya dakika 15.",
+          );
         } else if (res.reason === "not_ready") {
-          toast.error("Mfumo wa akaunti haujawashwa. Mwambie msimamizi aendeshe supabase/APPLY_STUDENT_PIN_AUTH.sql.");
+          toast.error("Imeshindikana kuwasiliana na hifadhidata. Jaribu tena.");
         } else {
           toast.error("Reg Namba au PIN si sahihi");
         }
@@ -71,11 +79,13 @@ function Page() {
       const res = await claimStudentPin(claimReg.trim(), claimPhone.trim());
       if (!res.ok) {
         if (res.reason === "already_claimed") {
-          toast.error("Reg Namba hii imekwisha chukua PIN kwenye simu nyingine. Mwone msimamizi wa shule.");
+          toast.error(
+            "Reg Namba hii imekwisha chukua PIN kwenye simu nyingine. Mwone msimamizi wa shule.",
+          );
         } else if (res.reason === "disabled") {
           toast.error("Huduma hii imezimwa. Mwone msimamizi wa shule kupata PIN.");
         } else if (res.reason === "not_ready") {
-          toast.error("Mfumo wa akaunti haujawashwa. Mwambie msimamizi aendeshe supabase/APPLY_STUDENT_PIN_AUTH.sql.");
+          toast.error("Imeshindikana kuwasiliana na hifadhidata. Jaribu tena.");
         } else {
           toast.error("Reg Namba au namba ya simu haitambuliki");
         }
@@ -128,8 +138,13 @@ function Page() {
                 { label: "Group", value: profile.studentGroup },
                 { label: "Kozi", value: profile.course },
               ].map((f) => (
-                <div key={f.label} className="rounded-xl border border-primary/15 bg-primary/5 p-2.5">
-                  <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{f.label}</div>
+                <div
+                  key={f.label}
+                  className="rounded-xl border border-primary/15 bg-primary/5 p-2.5"
+                >
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                    {f.label}
+                  </div>
                   <div className="truncate text-sm font-semibold">{f.value || "—"}</div>
                 </div>
               ))}
@@ -151,10 +166,17 @@ function Page() {
             ) : (
               <div className="space-y-1.5">
                 {profile.attendance.map((h) => (
-                  <div key={h.id} className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2 text-sm">
+                  <div
+                    key={h.id}
+                    className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2 text-sm"
+                  >
                     <span className="truncate">
                       {h.semina || "—"}
-                      {h.status === "present" && <Badge variant="secondary" className="ml-2 text-[10px]">Alikuwepo</Badge>}
+                      {h.status === "present" && (
+                        <Badge variant="secondary" className="ml-2 text-[10px]">
+                          Alikuwepo
+                        </Badge>
+                      )}
                     </span>
                     <span className="ml-2 shrink-0 text-xs text-muted-foreground">
                       {new Date(h.created_at).toLocaleDateString("sw-TZ")}

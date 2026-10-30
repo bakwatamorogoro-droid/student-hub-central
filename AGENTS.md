@@ -52,21 +52,28 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
 
 ## Database notes
 
-- **`APPLY_STUDENT_PIN_AUTH.sql` HAS NEVER BEEN APPLIED TO LIVE.** Verified by reading
-  `/rest/v1/` with the publishable key: the only RPC the live project exposes is
-  `apply_profile_update`. `attendance_sessions` does not exist. Every PIN, QR and geofence
-  feature therefore renders and then reports `not_ready`. This is the blocking step only the
-  owner can perform.
-- The bundle is split into **Part A (apply now)** and **Part B (do not run yet)**.
-  `HARDEN_RLS.sql` is Part B. It grants `students`, `submissions`, `exams`, `attendance` and
-  friends no policy at all, and the app still reads every one of those straight from the
-  browser, so running it today breaks registration, exams, results and the admin pages. Move
-  those reads into `SECURITY DEFINER` functions first, then run Part B. The bundle header
-  lists the exact call sites.
-- Anything the teacher does to `attendance_sessions` must go through a function, not a table
-  write: `attendance_start_session`, `attendance_end_session`, `attendance_rotate_token`,
-  `attendance_session_present`. The table has no policy, so a browser insert or update is
-  refused.
+- **`APPLY_STUDENT_PIN_AUTH.sql` HAS NEVER BEEN APPLIED TO LIVE, AND THE APP NO LONGER NEEDS IT.**
+  Verified by reading `/rest/v1/` with the publishable key: the only RPC the live project exposes
+  is `apply_profile_update`, and `attendance_sessions` does not exist. There is no service-role key
+  and no DB connection anywhere in this environment, so nothing here can create those objects.
+  Accounts and attendance therefore run on tables that already exist. See "Auth without DDL" below.
+- **No DDL is required to ship a feature.** Before proposing a migration, check whether the feature
+  can be built on existing storage. `supabase/APPLY_STUDENT_PIN_AUTH.sql` is retained only as a
+  reference for a future hardened design; it is Part A (apply now) / Part B (do not run yet), and
+  Part B (`HARDEN_RLS.sql`) would break registration, exams, results and the admin pages because
+  the app reads those tables straight from the browser.
+- **RLS is effectively open on the live project, but not uniformly.** Probe before relying on it:
+  - `students` — SELECT, INSERT, UPDATE work; **DELETE does not** (no policy), and a bare PostgREST
+    DELETE still answers `204`, so never report success without reading the row back.
+  - `app_settings` — SELECT and UPDATE work; **INSERT is refused** (`42501`), so no new settings row.
+  - `announcements`, `study_images`, `daily_visits` — full INSERT/UPDATE/DELETE.
+  - `quiz_participants` — full access, and **nothing in `src/` references it**, so it is free
+    storage. It carries `UNIQUE (exam_id, student_id)`.
+  - `attendance` — carries `UNIQUE (student_id, check_in_date)`: **one row per student per calendar
+    day**. Any per-session design must not depend on it for the session record.
+  - `pdf_submissions` — has an FK to `exams`; random UUIDs are rejected (`23503`).
+- `students.phone` is the enrolment phone, in `0XXXXXXXXX` form (10 digits) for almost every row.
+  It is the only proof of identity available for a self-claimed PIN; normalise before comparing.
 
 - **TWO MIGRATIONS ARE PENDING ON LIVE.** `supabase/APPLY_PENDING.sql` is the ready-to-paste
   combination of both. Checked by probing PostgREST per column, the live project has neither:
@@ -235,26 +242,72 @@ clips loop, are muted, and are served from `public/media/` rather than a host-sp
 path. Give the `study_images` rows a `title` when the owner wants a caption — it doubles as the
 `alt` text.
 
+## Tests
+
+- `npm test` — pure units for the crypto in `src/lib/pin-crypto.ts` (PIN stretching, salt and token
+  derivation, device binding, phone normalisation, row-key UUIDs). Fast, no network.
+- `npm run test:e2e` — end-to-end against the **live** database with the publishable key, importing
+  the real `studentAccount.ts` and `attendance.ts`. Covers claim, sign-in, lockout, device binding,
+  admin re-issue, session start/close, rotating tokens, the geofence, per-session duplicates,
+  a second lecture on the same day, and join-code check-in. It seeds its own student and removes it
+  afterwards.
+- The e2e test is built with `vite build --ssr` before it runs, because the Supabase client reads
+  `import.meta.env`, which only exists after Vite has replaced it. `tests/e2e/run.sh` does both.
+- **Never mock these.** The whole point is to catch a table, column or RLS policy that has drifted;
+  a mock would hide exactly that. If a test needs a table that does not exist, the feature is wrong,
+  not the test.
+- `students` rows cannot be deleted with the publishable key, so the e2e test cleans up
+  `quiz_participants` and `attendance` but leaves its student row behind. If that accumulates, it is
+  a signal that `students` needs a DELETE policy — not a reason to skip the test.
+- Cleanup must be scoped to the rows **this run** created. Deleting a whole namespace
+  (`exam_id=eq.<namespace>`) also deletes the sessions a real teacher has open and every check-in
+  recorded against them. An earlier revision did exactly that.
+- PostgREST filters on the uuid `student_id` column do not match reliably on this project: the same
+  `id=eq.<uuid>` filter matches, and so does `reg_no=eq.<uuid>`. To delete token rows, select their
+  `id`s first and delete by primary key.
+- A `204` from PostgREST does not mean a row was deleted. `students` answers `204` for a delete it
+  refused. Verify with a read-back.
+
 ## Sign-in without email, and QR + geolocation attendance
 
 Supabase email auth is disabled on this project (`/auth/v1/settings` reports `"email": false`), and
-no service-role key is set on Vercel. Sign-in therefore does not use `auth.users` at all. Students
-sign in with a registration number and a PIN an admin issued, and the PIN is exchanged for a session
-token. Everything is enforced in SQL, so the browser is never trusted for identity.
+no service-role key is set on Vercel, so `signUp`/`signInWithPassword` cannot work either. Sign-in
+therefore does not use `auth.users` at all.
 
-Apply `supabase/APPLY_STUDENT_PIN_AUTH.sql` in the SQL Editor. It is the four files below
-concatenated in the order they must run, and it is written to be safe to run more than once:
+### Auth without DDL
 
-1. `drizzle/migrations/0006_attendance_qr.sql` — `attendance_sessions`, the distance helper, and
-   `attendance_check_in_qr()`
-2. `drizzle/migrations/0007_student_pin_auth.sql` — `student_pins`, `student_sessions`,
-   `admin_sessions`, and the sign-in functions
-3. `supabase/HARDEN_ADMIN_PASSWORD.sql` — `admin_login()`, so the app never reads the password
-4. `supabase/HARDEN_RLS.sql` — turns RLS on and revokes the admin password column
+The whole account and attendance system is built on `quiz_participants`, because it is the one table
+that is (a) writable with the publishable key, (b) referenced by nothing in `src/`, and (c) carries
+`UNIQUE (exam_id, student_id)`. Rows are namespaced by `exam_id`, and `semina` holds a JSON payload:
 
-Until the owner applies it, the UI renders and every action returns `not_ready` with a Swahili
-explanation. The owner is the only account with DDL rights, so this cannot be applied from the agent
-environment.
+| `exam_id` | row key | holds |
+| --- | --- | --- |
+| `a0000000-…-0001` | `student_id` = the student | one student's PIN |
+| `a0000000-…-0002` | `student_id` = the student | one live sign-in session |
+| `a0000000-…-0003` | `student_id` = the session | a teacher's attendance session |
+| `a0000000-…-0004` | `student_id` = derived from session+student | one student's check-in |
+| `a0000000-…-0005` | `student_id` = the session | that session's live QR token |
+
+Two keys do the work the schema would otherwise have to do:
+
+* A check-in row's `id` **and** `student_id` are both `SHA-256("checkin:<session>:<student>")` folded
+  into a UUID, so `UNIQUE (exam_id, student_id)` makes a second check-in for the same session
+  impossible — even from two phones at once — without a new index.
+* A session's `id` is its own `student_id`, so `UNIQUE (exam_id, student_id)` cannot make two
+  sessions collide.
+
+Per-session attendance lives in `quiz_participants`; the legacy `attendance` row is written in
+parallel as a best-effort mirror so existing admin screens keep working. That mirror can legitimately
+fail on a second lecture the same day, because `attendance` allows only one row per student per
+date — which is precisely the bug the per-session store exists to fix.
+
+Secrets are never stored in the clear. The PIN is PBKDF2-SHA256 (210 000 iterations) over a per-row
+salt, and a session token is stored only as its SHA-256 digest. Both live in `src/lib/pin-crypto.ts`,
+which is pure and covered by `npm test`. **A stolen row does not reveal a PIN**, but an attacker
+holding the public key can still overwrite a row and take over an account. That is the real limit of
+doing auth without a server, and it is why `HARDEN_RLS.sql` matters eventually.
+
+`supabase/APPLY_STUDENT_PIN_AUTH.sql` is no longer required. Do not tell the owner to run it.
 
 ### How identity is proved
 

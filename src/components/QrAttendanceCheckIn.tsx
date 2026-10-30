@@ -5,7 +5,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { QrScanner } from "@/components/QrScanner";
 import { decodeQrToken } from "@/components/AttendanceSessionPanel";
-import { checkInWithCode, checkInWithQr, getPosition, listOpenSessions, type AttendanceFailure, type OpenSession } from "@/lib/attendance";
+import {
+  checkIn,
+  getPosition,
+  listOpenSessions,
+  type AttendanceFailure,
+  type OpenSession,
+} from "@/lib/attendance";
 import { CheckCircle2, Loader2, MapPin, QrCode, ShieldAlert, XCircle } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { getStudentToken } from "@/lib/student-session";
@@ -30,7 +36,11 @@ export function QrAttendanceCheckIn() {
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Done | null>(null);
-  const [failure, setFailure] = useState<{ reason: AttendanceFailure; distanceM?: number; radiusM?: number } | null>(null);
+  const [failure, setFailure] = useState<{
+    reason: AttendanceFailure;
+    distanceM?: number;
+    radiusM?: number;
+  } | null>(null);
   const [code, setCode] = useState("");
   const [sessions, setSessions] = useState<OpenSession[]>([]);
 
@@ -50,18 +60,26 @@ export function QrAttendanceCheckIn() {
   }, [refreshSessions, done]);
 
   const record = useCallback(
-    async (run: (fix: { lat: number; lng: number }) => Promise<Awaited<ReturnType<typeof checkInWithQr>>>) => {
+    async (
+      run: (fix: {
+        lat: number | null;
+        lng: number | null;
+      }) => Promise<Awaited<ReturnType<typeof checkIn>>>,
+    ) => {
       setBusy(true);
       setFailure(null);
       try {
+        // A missing fix is not fatal here: only a session with a geofence needs
+        // it, and the library is the side that knows which sessions those are.
         const fix = await getPosition();
-        if (!fix) {
-          toast.error("Lazima uruhusu GPS ili kuthibitisha kuwa uko darasani.");
-          return;
-        }
-        const res = await run({ lat: fix.lat, lng: fix.lng });
+        const res = await run({ lat: fix?.lat ?? null, lng: fix?.lng ?? null });
         if (res.ok) {
-          setDone({ fullName: res.fullName, distanceM: res.distanceM, checkInAt: res.checkInAt, semina: res.semina });
+          setDone({
+            fullName: res.fullName,
+            distanceM: res.distanceM,
+            checkInAt: res.checkInAt,
+            semina: res.semina,
+          });
           toast.success("Mahudhurio yamekamilika ✓");
         } else {
           setFailure({ reason: res.reason, distanceM: res.distanceM, radiusM: res.radiusM });
@@ -89,7 +107,7 @@ export function QrAttendanceCheckIn() {
         toast.error("Ingia kwenye akaunti yako kwanza (/account), kisha skani QR.");
         return;
       }
-      await record((fix) => checkInWithQr({ token, lat: fix.lat, lng: fix.lng, studentToken: st }));
+      await record((fix) => checkIn({ studentToken: st, token, lat: fix.lat, lng: fix.lng }));
     },
     [record],
   );
@@ -104,7 +122,9 @@ export function QrAttendanceCheckIn() {
       toast.error("Andika msimbo wa kipindi");
       return;
     }
-    await record(() => checkInWithCode(code.trim(), st));
+    await record((fix) =>
+      checkIn({ studentToken: st, joinCode: code.trim(), lat: fix.lat, lng: fix.lng }),
+    );
   }, [code, record]);
 
   if (done) {
@@ -118,9 +138,13 @@ export function QrAttendanceCheckIn() {
               Umehudhuria • {new Date(done.checkInAt).toLocaleTimeString("sw-TZ")}
               {done.semina ? ` • ${done.semina}` : ""}
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">Umbali uliothibitishwa: {Math.round(done.distanceM)}m</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Umbali uliothibitishwa: {Math.round(done.distanceM)}m
+            </p>
           </div>
-          <Button variant="outline" onClick={() => setDone(null)}>Sajili kipindi kingine</Button>
+          <Button variant="outline" onClick={() => setDone(null)}>
+            Sajili kipindi kingine
+          </Button>
         </CardContent>
       </Card>
     );
@@ -152,9 +176,15 @@ export function QrAttendanceCheckIn() {
             <XCircle className="h-5 w-5 shrink-0 text-destructive" />
             <div className="min-w-0 text-sm">
               <p className="font-medium text-destructive">{FAILURE_TEXT[failure.reason]}</p>
+              {failure.reason === "gps_required" && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Kipindi hiki kina eneo. Ruhusu GPS kwenye simu yako, kisha ujaribu tena.
+                </p>
+              )}
               {failure.reason === "outside_area" && failure.distanceM != null && (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Uko mita {Math.round(failure.distanceM)} kutoka darasani; ruhusa ni mita {failure.radiusM ?? 50}.
+                  Uko mita {Math.round(failure.distanceM)} kutoka darasani; ruhusa ni mita{" "}
+                  {failure.radiusM ?? 50}.
                 </p>
               )}
             </div>
@@ -165,7 +195,10 @@ export function QrAttendanceCheckIn() {
           <div className="space-y-1.5">
             <p className="text-xs font-medium text-muted-foreground">Vipindi vinavyoendelea sasa</p>
             {sessions.map((s) => (
-              <div key={s.id} className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2 text-sm">
+              <div
+                key={s.id}
+                className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2 text-sm"
+              >
                 <span className="truncate font-medium">{s.title}</span>
                 <span className="ml-2 shrink-0 text-xs text-muted-foreground">
                   {s.studentGroup || "Wote"} • {s.radiusM}m
@@ -181,7 +214,13 @@ export function QrAttendanceCheckIn() {
             <p className="text-sm">Inathibitisha eneo lako…</p>
           </div>
         ) : scanning ? (
-          <QrScanner onResult={handleToken} onError={(m) => { setScanning(false); toast.error(m); }} />
+          <QrScanner
+            onResult={handleToken}
+            onError={(m) => {
+              setScanning(false);
+              toast.error(m);
+            }}
+          />
         ) : (
           <>
             <Button onClick={() => setScanning(true)} className="w-full" disabled={!studentToken}>
@@ -189,7 +228,9 @@ export function QrAttendanceCheckIn() {
             </Button>
 
             <div className="space-y-2 rounded-xl border border-border p-3">
-              <Label htmlFor="join-code" className="text-xs">Huna kamera? Andika msimbo wa kipindi</Label>
+              <Label htmlFor="join-code" className="text-xs">
+                Huna kamera? Andika msimbo wa kipindi
+              </Label>
               <div className="flex gap-2">
                 <Input
                   id="join-code"
@@ -200,7 +241,11 @@ export function QrAttendanceCheckIn() {
                   maxLength={12}
                   disabled={!studentToken}
                 />
-                <Button variant="outline" onClick={handleCode} disabled={!studentToken || code.trim().length < 4}>
+                <Button
+                  variant="outline"
+                  onClick={handleCode}
+                  disabled={!studentToken || code.trim().length < 4}
+                >
                   Hudhuria
                 </Button>
               </div>

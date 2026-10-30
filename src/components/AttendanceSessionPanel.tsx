@@ -5,40 +5,36 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { QrCodeDisplay } from "@/components/QrCodeDisplay";
 import { Badge } from "@/components/ui/badge";
-import { endAttendanceSession, fetchSessionPresent, makeJoinCode, rotateSessionToken, startAttendanceSession } from "@/lib/attendance";
-import { getAdminToken } from "@/lib/admin-session";
+import {
+  decodeQrToken as decodeAttendanceToken,
+  encodeQrToken as encodeAttendanceToken,
+  endAttendanceSession,
+  fetchSessionPresent,
+  type Session as AttendanceSession,
+  makeJoinCode,
+  rotateSessionToken,
+  startAttendanceSession,
+} from "@/lib/attendance";
 import { GROUPS } from "@/lib/academicTargeting";
 import { toast } from "@/lib/toast";
 import { Crosshair, Loader2, Play, Square, Users } from "lucide-react";
 
 const ROTATE_MS = 25_000;
 
-/** QR payload. Versioned so the reader can reject anything it does not understand. */
-export function encodeQrToken(token: string): string {
-  return JSON.stringify({ v: 1, t: token });
-}
+/** Re-exported so the scanner and the display share one payload format. */
+export const encodeQrToken = encodeAttendanceToken;
+export const decodeQrToken = decodeAttendanceToken;
 
-export function decodeQrToken(text: string): string | null {
-  try {
-    const parsed = JSON.parse(text);
-    if (parsed && parsed.v === 1 && typeof parsed.t === "string") return parsed.t;
-  } catch {
-    /* not our payload */
-  }
-  return null;
-}
-
-type Session = {
-  id: string;
-  title: string;
-  semina: string | null;
-  student_group: string | null;
-  radius_m: number;
-  join_code: string | null;
-};
+type PanelSession = AttendanceSession;
 
 export function AttendanceSessionPanel() {
   const [title, setTitle] = useState("");
@@ -50,11 +46,17 @@ export function AttendanceSessionPanel() {
   const [seminaList, setSeminaList] = useState<string[]>([]);
   const [useFixed, setUseFixed] = useState(true);
 
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<PanelSession | null>(null);
   const [token, setToken] = useState("");
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [present, setPresent] = useState<
-    { full_name: string; created_at: string; distance_m: number | null; method: string | null }[]
+    {
+      full_name: string;
+      reg_no: string;
+      created_at: string;
+      distance_m: number | null;
+      method: string | null;
+    }[]
   >([]);
   const [joinCode, setJoinCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -100,33 +102,29 @@ export function AttendanceSessionPanel() {
   // Read through an RPC: HARDEN_RLS leaves `attendance` with no policy, so a
   // table select from the browser returns no rows and the list looked empty.
   const loadPresent = useCallback(async (sessionId: string) => {
-    const adminToken = getAdminToken();
-    if (!adminToken) return;
-    const rows = await fetchSessionPresent(sessionId, adminToken);
-    setPresent(rows.map((r) => ({
-      full_name: r.fullName,
-      created_at: r.createdAt,
-      distance_m: r.distanceM,
-      method: r.method,
-    })));
+    const rows = await fetchSessionPresent(sessionId);
+    setPresent(
+      rows.map((r) => ({
+        full_name: r.fullName,
+        reg_no: r.regNo,
+        created_at: r.createdAt,
+        distance_m: r.distanceM,
+        method: r.method,
+      })),
+    );
   }, []);
 
   // Issue a new token every ROTATE_MS so a shared screenshot goes stale quickly.
-  const refreshToken = useCallback(
-    async (sessionId: string) => {
-      const adminToken = getAdminToken();
-      if (!adminToken) return { token: null, expiresAt: null };
-      const res = await rotateSessionToken({ sessionId, adminToken });
-      if (!res.ok) {
-        toast.error("Imeshindikana kutengeneza QR. Endesha supabase/APPLY_STUDENT_PIN_AUTH.sql kwenye SQL Editor.");
-        return false;
-      }
-      setToken(encodeQrToken(res.token));
-      setExpiresAt(res.expiresAt);
-      return true;
-    },
-    [],
-  );
+  const refreshToken = useCallback(async (sessionId: string) => {
+    const res = await rotateSessionToken(sessionId);
+    if (!res.ok) {
+      toast.error("Imeshindikana kutengeneza QR. Jaribu tena.");
+      return false;
+    }
+    setToken(encodeQrToken(res.token));
+    setExpiresAt(res.expiresAt);
+    return true;
+  }, []);
 
   useEffect(() => {
     if (!session) return;
@@ -145,13 +143,7 @@ export function AttendanceSessionPanel() {
     }
     setBusy(true);
     try {
-      const adminToken = getAdminToken();
-      if (!adminToken) {
-        toast.error("Kipindi cha msimamizi kimeisha. Ingia tena.");
-        return;
-      }
       const res = await startAttendanceSession({
-        adminToken,
         title: title.trim(),
         semina: semina || null,
         studentGroup: group === "all" ? null : group,
@@ -162,24 +154,13 @@ export function AttendanceSessionPanel() {
       });
 
       if (!res.ok) {
-        toast.error(
-          res.message.includes("does not exist")
-            ? "Jedwali la vipindi halipo — endesha supabase/APPLY_STUDENT_PIN_AUTH.sql"
-            : "Imeshindikana kuanzisha kipindi: " + res.message,
-        );
+        toast.error("Imeshindikana kuanzisha kipindi: " + res.message);
         return;
       }
 
-      const created: Session = {
-        id: res.id,
-        title: res.title,
-        semina: res.semina,
-        student_group: res.studentGroup,
-        radius_m: res.radiusM,
-        join_code: res.joinCode,
-      };
+      const created = res.session;
       setSession(created);
-      setJoinCode(res.joinCode);
+      setJoinCode(created.joinCode || "");
       const ok = await refreshToken(created.id);
       if (ok) toast.success("Kipindi kimeanza — wanafunzi wanaweza kuscan");
     } finally {
@@ -190,10 +171,7 @@ export function AttendanceSessionPanel() {
   const endSession = async () => {
     if (!session) return;
     setBusy(true);
-    const adminToken = getAdminToken();
-    // Close through the function: attendance_sessions has no RLS policy, so a
-    // browser update is refused and the session would stay open.
-    if (adminToken) await endAttendanceSession(session.id, adminToken);
+    await endAttendanceSession(session.id);
     setSession(null);
     setToken("");
     setJoinCode("");
@@ -214,31 +192,52 @@ export function AttendanceSessionPanel() {
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Jina la kipindi</Label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Mfano: Fiqh — Somo la 4" />
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Mfano: Fiqh — Somo la 4"
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Semina</Label>
               <Select value={semina} onValueChange={setSemina}>
-                <SelectTrigger><SelectValue placeholder="Chagua semina" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Chagua semina" />
+                </SelectTrigger>
                 <SelectContent>
-                  {seminaList.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  {seminaList.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
               <Label>Group</Label>
               <Select value={group} onValueChange={setGroup}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Wote</SelectItem>
-                  {GROUPS.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                  {GROUPS.map((g) => (
+                    <SelectItem key={g} value={g}>
+                      {g}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
               <Label>Umbali wa ruhusa (mita)</Label>
-              <Input type="number" value={radius} min={5} max={5000}
-                onChange={(e) => setRadius(Number(e.target.value) || 50)} />
+              <Input
+                type="number"
+                value={radius}
+                min={5}
+                max={5000}
+                onChange={(e) => setRadius(Number(e.target.value) || 50)}
+              />
             </div>
           </div>
 
@@ -246,7 +245,9 @@ export function AttendanceSessionPanel() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium">Tumia eneo maalum la darasa</p>
-                <p className="text-xs text-muted-foreground">Zima kama kipindi hakina eneo maalum</p>
+                <p className="text-xs text-muted-foreground">
+                  Zima kama kipindi hakina eneo maalum
+                </p>
               </div>
               <Switch checked={useFixed} onCheckedChange={setUseFixed} />
             </div>
@@ -255,15 +256,33 @@ export function AttendanceSessionPanel() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label>Latitude</Label>
-                    <Input type="number" step="any" value={lat ?? ""} onChange={(e) => setLat(e.target.value === "" ? null : Number(e.target.value))} />
+                    <Input
+                      type="number"
+                      step="any"
+                      value={lat ?? ""}
+                      onChange={(e) =>
+                        setLat(e.target.value === "" ? null : Number(e.target.value))
+                      }
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Longitude</Label>
-                    <Input type="number" step="any" value={lng ?? ""} onChange={(e) => setLng(e.target.value === "" ? null : Number(e.target.value))} />
+                    <Input
+                      type="number"
+                      step="any"
+                      value={lng ?? ""}
+                      onChange={(e) =>
+                        setLng(e.target.value === "" ? null : Number(e.target.value))
+                      }
+                    />
                   </div>
                 </div>
                 <Button variant="outline" size="sm" onClick={captureLocation} disabled={busy}>
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Crosshair className="h-4 w-4" />}
+                  {busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Crosshair className="h-4 w-4" />
+                  )}
                   Chukua eneo langu la sasa
                 </Button>
               </>
@@ -289,12 +308,17 @@ export function AttendanceSessionPanel() {
           </Button>
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          {session.semina || "Semina yoyote"} • {session.student_group || "Wote"} • {session.radius_m}m
+          {session.semina || "Semina yoyote"} • {session.studentGroup || "Wote"} • {session.radiusM}
+          m
         </p>
       </CardHeader>
       <CardContent className="grid gap-5 md:grid-cols-2">
         <div className="flex flex-col items-center gap-3">
-          {token ? <QrCodeDisplay value={token} /> : <div className="aspect-square w-full animate-pulse rounded-xl bg-muted" />}
+          {token ? (
+            <QrCodeDisplay value={token} />
+          ) : (
+            <div className="aspect-square w-full animate-pulse rounded-xl bg-muted" />
+          )}
           <p className="text-center text-xs text-muted-foreground">
             QR inabadilika kila sekunde 25.
             {expiresAt && <> Inaisha {new Date(expiresAt).toLocaleTimeString("sw-TZ")}.</>}
@@ -302,7 +326,9 @@ export function AttendanceSessionPanel() {
           {joinCode && (
             <div className="w-full rounded-xl border border-primary/25 bg-primary/5 p-3 text-center">
               <p className="text-xs text-muted-foreground">Msimbo wa kujiunga bila kamera</p>
-              <p className="font-mono text-2xl font-extrabold tracking-[0.3em] text-primary">{joinCode}</p>
+              <p className="font-mono text-2xl font-extrabold tracking-[0.3em] text-primary">
+                {joinCode}
+              </p>
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Sema kwa wanafunzi waliopo darasani. Umbali unahitajika sawa na QR.
               </p>
@@ -313,20 +339,31 @@ export function AttendanceSessionPanel() {
           <div className="mb-2 flex items-center gap-2">
             <Users className="h-4 w-4" />
             <span className="font-semibold">Waliohudhuria</span>
-            <span className="ml-auto text-lg font-extrabold tabular-nums text-emerald-600 dark:text-emerald-400">{present.length}</span>
+            <span className="ml-auto text-lg font-extrabold tabular-nums text-emerald-600 dark:text-emerald-400">
+              {present.length}
+            </span>
           </div>
           <div className="max-h-72 space-y-1.5 overflow-y-auto">
             {present.length === 0 && <p className="text-sm text-muted-foreground">Bado hakuna.</p>}
             {present.map((p, i) => (
-              <div key={i} className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2 text-sm">
-                <span className="truncate font-medium">{p.full_name}</span>
+              <div
+                key={i}
+                className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2 text-sm"
+              >
+                <span className="min-w-0 truncate font-medium">
+                  {p.full_name}
+                  {p.reg_no && (
+                    <span className="ml-1.5 text-xs text-muted-foreground">{p.reg_no}</span>
+                  )}
+                </span>
                 <span className="ml-2 flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
                   {p.method && (
                     <Badge variant="secondary" className="text-[10px] uppercase">
                       {p.method === "qr" ? "QR" : "Msimbo"}
                     </Badge>
                   )}
-                  {p.distance_m != null ? `${Math.round(p.distance_m)}m` : ""} · {new Date(p.created_at).toLocaleTimeString("sw-TZ")}
+                  {p.distance_m != null ? `${Math.round(p.distance_m)}m` : ""} ·{" "}
+                  {new Date(p.created_at).toLocaleTimeString("sw-TZ")}
                 </span>
               </div>
             ))}

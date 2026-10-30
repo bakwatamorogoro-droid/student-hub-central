@@ -9,7 +9,9 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test": "node --test src/lib/*.test.ts",
+    "test:e2e": "bash tests/e2e/run.sh"
   },
   "dependencies": {
     "@fontsource/figtree": "^5.3.0",
