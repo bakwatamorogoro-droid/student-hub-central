@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { QrScanner } from "@/components/QrScanner";
 import { decodeQrToken } from "@/components/AttendanceSessionPanel";
-import { checkInWithQr, type AttendanceFailure } from "@/lib/attendance.functions";
+import { checkInWithQr, type AttendanceFailure } from "@/lib/attendance";
 import { CheckCircle2, Loader2, MapPin, QrCode, ShieldAlert, XCircle } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { getStudentToken } from "@/lib/student-session";
@@ -73,12 +73,10 @@ export function QrAttendanceCheckIn() {
       }
 
       const res = await checkInWithQr({
-        data: {
-          token,
-          lat: fix.lat,
-          lng: fix.lng,
-          studentToken,
-        },
+        token,
+        lat: fix.lat,
+        lng: fix.lng,
+        studentToken,
       });
 
       if (res.ok) {

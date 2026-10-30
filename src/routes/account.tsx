@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { getMyProfile, loginStudent, logoutStudent, type StudentProfile } from "@/lib/studentAccount.functions";
+import { getMyProfile, loginStudent, logoutStudent, type StudentProfile } from "@/lib/studentAccount";
 import { getStudentToken, setStudentToken, clearStudentToken } from "@/lib/student-session";
 import { GraduationCap, Loader2, LogIn, LogOut, ShieldCheck } from "lucide-react";
 import { toast } from "@/lib/toast";
@@ -22,7 +22,7 @@ function Page() {
   useEffect(() => {
     const token = getStudentToken();
     if (!token) return;
-    getMyProfile({ data: { token } })
+    getMyProfile(token)
       .then((p) => {
         if (p) setProfile(p);
         else clearStudentToken();
@@ -35,7 +35,7 @@ function Page() {
     if (!/^[0-9]{4,10}$/.test(pin)) return toast.error("PIN inatakiwa tarakimu 4 hadi 10");
     setBusy(true);
     try {
-      const res = await loginStudent({ data: { regNo: regNo.trim(), pin } });
+      const res = await loginStudent(regNo.trim(), pin);
       if (!res.ok) {
         if (res.reason === "locked") {
           toast.error("Akaunti imefungwa kwa muda kwa sababu ya PIN zisizo sahihi. Jaribu baada ya dakika 15.");
@@ -47,7 +47,7 @@ function Page() {
         return;
       }
       setStudentToken(res.token);
-      const p = await getMyProfile({ data: { token: res.token } });
+      const p = await getMyProfile(res.token);
       setProfile(p);
       setPin("");
       toast.success(`Karibu ${res.fullName}`);
@@ -58,7 +58,7 @@ function Page() {
 
   const signOut = async () => {
     const token = getStudentToken();
-    if (token) await logoutStudent({ data: { token } }).catch(() => undefined);
+    if (token) await logoutStudent(token).catch(() => undefined);
     clearStudentToken();
     setProfile(null);
     setPin("");
