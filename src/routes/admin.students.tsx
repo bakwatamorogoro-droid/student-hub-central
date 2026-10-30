@@ -20,9 +20,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import * as XLSX from "xlsx";
-import { toast } from "sonner";
-import { Pencil, Trash2, Download, CheckCircle2, XCircle } from "lucide-react";
-import { ACADEMIC_YEARS, GROUPS, SEMESTERS, studyYearsFor } from "@/lib/academicTargeting";
+import { toast } from "@/lib/toast";
+import { confirmAction } from "@/lib/alerts";
+import { Pencil, Trash2, Download, CheckCircle2, XCircle, KeyRound, Loader2 } from "lucide-react";
+import { getAdminToken } from "@/lib/admin-session";
+import {
+  ACADEMIC_YEARS,
+  GROUPS,
+  SEMESTERS,
+  isSemesterActive,
+  studyYearsFor,
+} from "@/lib/academicTargeting";
 import { updateStudentProfile, isMissingColumnError } from "@/lib/studentProfile";
 
 export const Route = createFileRoute("/admin/students")({ component: Page });
@@ -44,10 +52,31 @@ type Student = {
   academic_year: string | null;
 };
 
+/**
+ * Issues a sign-in PIN for one student. The PIN is chosen by the admin, not the
+ * student, so a registration number alone cannot claim an account. The server
+ * verifies the admin session token before writing anything.
+ */
+async function issuePin(regNo: string, pin: string): Promise<{ ok: boolean; reason?: string; fullName?: string }> {
+  const adminToken = getAdminToken();
+  if (!adminToken) return { ok: false, reason: "not_admin" };
+  const { data, error } = await supabase.rpc("admin_set_student_pin", {
+    p_admin_token: adminToken,
+    p_reg_no: regNo,
+    p_pin: pin,
+  });
+  if (error) return { ok: false, reason: "not_ready" };
+  const row = Array.isArray(data) ? data[0] : data;
+  return { ok: !!row?.ok, reason: row?.reason ?? undefined, fullName: row?.full_name ?? undefined };
+}
+
 function Page() {
   const [rows, setRows] = useState<Student[]>([]);
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<Student | null>(null);
+  const [pinFor, setPinFor] = useState<Student | null>(null);
+  const [pinValue, setPinValue] = useState("");
+  const [pinBusy, setPinBusy] = useState(false);
   const [seminaList, setSeminaList] = useState<string[]>([]);
   const [groupList, setGroupList] = useState<string[]>([]);
   const [courseList, setCourseList] = useState<string[]>([]);
@@ -167,7 +196,13 @@ function Page() {
       const parsed = JSON.parse(await file.text());
       const list: any[] = Array.isArray(parsed) ? parsed : parsed.students;
       if (!Array.isArray(list) || !list.length) return toast.error("Faili halina wanafunzi");
-      if (!confirm(`Rejesha wanafunzi ${list.length}? Waliopo (reg no ile ile) watasasishwa.`))
+      if (
+        !(await confirmAction(
+          `Rejesha wanafunzi ${list.length}?`,
+          "Waliopo (reg no ile ile) watasasishwa.",
+          "Ndiyo, rejesha",
+        ))
+      )
         return;
       for (let i = 0; i < list.length; i += 500) {
         const { error } = await supabase
@@ -214,9 +249,10 @@ function Page() {
 
   const del = async (s: Student) => {
     if (
-      !confirm(
-        `Una uhakika kufuta usajili wa "${s.full_name}" (${s.reg_no})?\n\nMajibu yote ya mtihani yake pia yatafutwa.`,
-      )
+      !(await confirmAction(
+        `Futa usajili wa "${s.full_name}" (${s.reg_no})?`,
+        "Majibu yote ya mtihani yake pia yatafutwa. Haitarudishwa.",
+      ))
     )
       return;
     const { error } = await supabase.from("students").delete().eq("id", s.id);
@@ -331,6 +367,14 @@ function Page() {
                           title="Hariri"
                         >
                           <Pencil className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => { setPinFor(r); setPinValue(""); }}
+                          title="Weka PIN ya kuingia"
+                        >
+                          <KeyRound className="h-3 w-3" />
                         </Button>
                         <Button size="sm" variant="destructive" onClick={() => del(r)} title="Futa">
                           <Trash2 className="h-3 w-3" />
@@ -512,8 +556,9 @@ function Page() {
                       <SelectContent>
                         <SelectItem value="none">Haujawekwa</SelectItem>
                         {SEMESTERS.map((s) => (
-                          <SelectItem key={s} value={s}>
+                          <SelectItem key={s} value={s} disabled={!isSemesterActive(s)}>
                             {s}
+                            {!isSemesterActive(s) && " (bado)"}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -548,6 +593,69 @@ function Page() {
                 Ghairi
               </Button>
               <Button onClick={saveEdit}>Hifadhi</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!pinFor} onOpenChange={(o) => { if (!o) setPinFor(null); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <KeyRound className="h-4 w-4" /> PIN ya kuingia
+              </DialogTitle>
+            </DialogHeader>
+            {pinFor && (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  {pinFor.full_name} · <span className="font-mono">{pinFor.reg_no}</span>
+                </p>
+                <div className="space-y-1.5">
+                  <Label>Tarakimu 4 hadi 10</Label>
+                  <Input
+                    inputMode="numeric"
+                    value={pinValue}
+                    onChange={(e) => setPinValue(e.target.value.replace(/\D/g, ""))}
+                    placeholder="Mfano 482913"
+                    className="font-mono tracking-widest"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Mwanafunzi atatumia Reg Namba na PIN hii kuingia. Mwambie PIN moja kwa moja,
+                  na aweke mpya kila muhula.
+                </p>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPinFor(null)}>
+                Ghairi
+              </Button>
+              <Button
+                disabled={pinBusy || !/^[0-9]{4,10}$/.test(pinValue)}
+                onClick={async () => {
+                  if (!pinFor) return;
+                  setPinBusy(true);
+                  try {
+                    const res = await issuePin(pinFor.reg_no, pinValue);
+                    if (res.ok) {
+                      toast.success(`PIN imewekwa kwa ${res.fullName || pinFor.full_name}`);
+                      setPinFor(null);
+                    } else if (res.reason === "not_admin") {
+                      toast.error("Kipindi chako cha msimamizi kimeisha. Ingia tena.");
+                    } else if (res.reason === "weak_pin") {
+                      toast.error("PIN inatakiwa tarakimu 4 hadi 10");
+                    } else if (res.reason === "not_registered") {
+                      toast.error("Reg Namba hii haipo kwenye orodha");
+                    } else {
+                      toast.error("Imeshindikana. Mwambie msimamizi aendeshe supabase/APPLY_STUDENT_PIN_AUTH.sql.");
+                    }
+                  } finally {
+                    setPinBusy(false);
+                  }
+                }}
+              >
+                {pinBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+                Weka PIN
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

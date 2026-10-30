@@ -1,10 +1,19 @@
 export const STUDY_YEARS = [1, 2, 3, 4] as const;
 
-/** Fixed group range: GROUP 1 … GROUP 25. */
-export const GROUPS = Array.from({ length: 25 }, (_, i) => `GROUP ${i + 1}`);
+/** Fixed group range: GROUP 1 … GROUP 20. */
+export const GROUPS = Array.from({ length: 20 }, (_, i) => `GROUP ${i + 1}`);
 
-/** Fixed semester range: SEMESTER 1 … SEMESTER 25. */
-export const SEMESTERS = Array.from({ length: 25 }, (_, i) => `SEMESTER ${i + 1}`);
+/**
+ * Only SEMESTER 1 is active. SEMESTER 2 is still listed so the owner can see
+ * it is coming, but no form lets anyone pick it until it is switched on.
+ */
+export const SEMESTER_1 = "SEMESTER 1";
+export const SEMESTER_2 = "SEMESTER 2";
+export const SEMESTERS = [SEMESTER_1, SEMESTER_2];
+export const ACTIVE_SEMESTERS: string[] = [SEMESTER_1];
+
+export const isSemesterActive = (value?: string | null): boolean =>
+  !!value && ACTIVE_SEMESTERS.includes(value);
 
 /** Fixed for the whole system, so no form ever asks the student for it. */
 export const CURRENT_ACADEMIC_YEAR = "2026/2027";

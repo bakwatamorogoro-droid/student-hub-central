@@ -3,10 +3,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Search, User, X } from "lucide-react";
 
-type Student = {
+export type Student = {
   id: string;
   reg_no: string;
   full_name: string;
+  study_year?: number | string | null;
   semina?: string;
   student_group?: string;
   phone?: string | null;

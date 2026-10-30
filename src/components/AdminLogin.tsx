@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { adminLogin } from "@/lib/admin-session";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 export function AdminLogin({ onLogin }: { onLogin: () => void }) {
   const [u, setU] = useState("");

@@ -10,12 +10,14 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AccountRouteImport } from './routes/account'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as ExamsRouteImport } from './routes/exams'
 import { Route as PdfQuizRouteImport } from './routes/pdf-quiz'
 import { Route as QuizRouteImport } from './routes/quiz'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ResultsRouteImport } from './routes/results'
+import { Route as SemesterQuestionsRouteImport } from './routes/semester-questions'
 import { Route as StudentRouteImport } from './routes/student'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminAttendanceRouteImport } from './routes/admin.attendance'
@@ -32,6 +34,11 @@ import { Route as RSlugRouteImport } from './routes/r.$slug'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountRoute = AccountRouteImport.update({
+  id: '/account',
+  path: '/account',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -62,6 +69,11 @@ const RegisterRoute = RegisterRouteImport.update({
 const ResultsRoute = ResultsRouteImport.update({
   id: '/results',
   path: '/results',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SemesterQuestionsRoute = SemesterQuestionsRouteImport.update({
+  id: '/semester-questions',
+  path: '/semester-questions',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StudentRoute = StudentRouteImport.update({
@@ -127,12 +139,14 @@ const RSlugRoute = RSlugRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/admin': typeof AdminRouteWithChildren
   '/exams': typeof ExamsRoute
   '/pdf-quiz': typeof PdfQuizRoute
   '/quiz': typeof QuizRoute
   '/register': typeof RegisterRoute
   '/results': typeof ResultsRoute
+  '/semester-questions': typeof SemesterQuestionsRoute
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/exams': typeof AdminExamsRoute
@@ -148,11 +162,13 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/exams': typeof ExamsRoute
   '/pdf-quiz': typeof PdfQuizRoute
   '/quiz': typeof QuizRoute
   '/register': typeof RegisterRoute
   '/results': typeof ResultsRoute
+  '/semester-questions': typeof SemesterQuestionsRoute
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/exams': typeof AdminExamsRoute
@@ -169,12 +185,14 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/admin': typeof AdminRouteWithChildren
   '/exams': typeof ExamsRoute
   '/pdf-quiz': typeof PdfQuizRoute
   '/quiz': typeof QuizRoute
   '/register': typeof RegisterRoute
   '/results': typeof ResultsRoute
+  '/semester-questions': typeof SemesterQuestionsRoute
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/exams': typeof AdminExamsRoute
@@ -192,12 +210,14 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/account'
     | '/admin'
     | '/exams'
     | '/pdf-quiz'
     | '/quiz'
     | '/register'
     | '/results'
+    | '/semester-questions'
     | '/student'
     | '/admin/attendance'
     | '/admin/exams'
@@ -213,11 +233,13 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/account'
     | '/exams'
     | '/pdf-quiz'
     | '/quiz'
     | '/register'
     | '/results'
+    | '/semester-questions'
     | '/student'
     | '/admin/attendance'
     | '/admin/exams'
@@ -233,12 +255,14 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/account'
     | '/admin'
     | '/exams'
     | '/pdf-quiz'
     | '/quiz'
     | '/register'
     | '/results'
+    | '/semester-questions'
     | '/student'
     | '/admin/attendance'
     | '/admin/exams'
@@ -255,12 +279,14 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccountRoute: typeof AccountRoute
   AdminRoute: typeof AdminRouteWithChildren
   ExamsRoute: typeof ExamsRoute
   PdfQuizRoute: typeof PdfQuizRoute
   QuizRoute: typeof QuizRoute
   RegisterRoute: typeof RegisterRoute
   ResultsRoute: typeof ResultsRoute
+  SemesterQuestionsRoute: typeof SemesterQuestionsRoute
   StudentRoute: typeof StudentRoute
   ExamExamIdRoute: typeof ExamExamIdRoute
   RSlugRoute: typeof RSlugRoute
@@ -273,6 +299,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -315,6 +348,13 @@ declare module '@tanstack/react-router' {
       path: '/results'
       fullPath: '/results'
       preLoaderRoute: typeof ResultsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/semester-questions': {
+      id: '/semester-questions'
+      path: '/semester-questions'
+      fullPath: '/semester-questions'
+      preLoaderRoute: typeof SemesterQuestionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/student': {
@@ -432,12 +472,14 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccountRoute: AccountRoute,
   AdminRoute: AdminRouteWithChildren,
   ExamsRoute: ExamsRoute,
   PdfQuizRoute: PdfQuizRoute,
   QuizRoute: QuizRoute,
   RegisterRoute: RegisterRoute,
   ResultsRoute: ResultsRoute,
+  SemesterQuestionsRoute: SemesterQuestionsRoute,
   StudentRoute: StudentRoute,
   ExamExamIdRoute: ExamExamIdRoute,
   RSlugRoute: RSlugRoute,

@@ -53,3 +53,23 @@ export async function confirmAction(title: string, text?: string, confirmText = 
   });
   return res.isConfirmed;
 }
+
+/** Single-field input dialog; resolves the trimmed value or null when cancelled. */
+export async function promptText(
+  title: string,
+  placeholder?: string,
+  inputValue = "",
+): Promise<string | null> {
+  const res = await themed.fire({
+    title,
+    input: "text",
+    inputValue,
+    inputPlaceholder: placeholder,
+    showCancelButton: true,
+    confirmButtonText: "Sawa",
+    cancelButtonText: "Ghairi",
+    reverseButtons: true,
+  });
+  const value = typeof res.value === "string" ? res.value.trim() : "";
+  return res.isConfirmed && value ? value : null;
+}

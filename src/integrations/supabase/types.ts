@@ -805,6 +805,82 @@ export type Database = {
         }
         Returns: undefined
       }
+      // Added by supabase/HARDEN_ADMIN_PASSWORD.sql. Verifies the admin password
+      // server-side so the app never selects app_settings.admin_password.
+      admin_login: {
+        Args: {
+          p_username: string
+          p_password: string
+        }
+        Returns: boolean
+      }
+      // Added by supabase/APPLY_STUDENT_PIN_AUTH.sql. Minting a token is an admin
+      // action, so the admin's session token is required and checked in SQL.
+      attendance_rotate_token: {
+        Args: { p_session_id: string; p_admin_token: string }
+        Returns: { token: string; expires_at: string }[]
+      }
+      // The student is identified by the sign-in token from student_login(),
+      // never by anything the browser can choose.
+      attendance_check_in_qr: {
+        Args: {
+          p_token: string
+          p_lat: number
+          p_lng: number
+          p_student_token: string | null
+        }
+        Returns: {
+          ok: boolean
+          reason: string | null
+          full_name: string | null
+          semina: string | null
+          distance_m: number | null
+          radius_m: number | null
+          check_in_at: string | null
+        }[]
+      }
+      student_link_account: {
+        Args: { p_reg_no: string; p_user_id: string }
+        Returns: { ok: boolean; reason: string | null; full_name: string | null }[]
+      }
+      // Added by supabase/APPLY_STUDENT_PIN_AUTH.sql. Student sign-in without
+      // email: a PIN the admin issued, exchanged for a session token.
+      admin_login_token: {
+        Args: { p_username: string; p_password: string }
+        Returns: { ok: boolean; token: string | null; expires_at: string | null }[]
+      }
+      admin_set_student_pin: {
+        Args: { p_admin_token: string; p_reg_no: string; p_pin: string }
+        Returns: { ok: boolean; reason: string | null; full_name: string | null }[]
+      }
+      student_login: {
+        Args: { p_reg_no: string; p_pin: string }
+        Returns: {
+          ok: boolean
+          reason: string | null
+          token: string | null
+          full_name: string | null
+          expires_at: string | null
+        }[]
+      }
+      student_me: {
+        Args: { p_token: string }
+        Returns: {
+          ok: boolean
+          full_name: string | null
+          reg_no: string | null
+          semina: string | null
+          student_group: string | null
+          course: string | null
+          study_year: number | null
+          academic_year: string | null
+          attendance: Json | null
+        }[]
+      }
+      student_logout: {
+        Args: { p_token: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

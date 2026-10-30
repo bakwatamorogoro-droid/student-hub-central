@@ -22,24 +22,31 @@ import { HomeAnimationHero } from "@/components/HomeAnimationHero";
 import { RealPhotoHero } from "@/components/RealPhotoHero";
 import { UpdateTaarifaCard } from "@/components/UpdateTaarifaCard";
 import { AnnouncementBanner } from "@/components/AnnouncementBanner";
+import { Odometer } from "@/components/Odometer";
 
 export const Route = createFileRoute("/")({
   component: Index,
   head: () => ({
     meta: [
-      { title: "Islamic Studies Test — Mwanzo" },
+      { title: "Islamic Studies Test Online" },
       {
         name: "description",
         content:
-          "Karibu kwenye Mfumo wa Mtihani wa Islamic Studies. Fanya mitihani, quiz, na angalia matokeo.",
+          "Islamic Studies Test Online — fanya mitihani, angalia maswali ya semester, na fuatilia matokeo yako.",
       },
-      { property: "og:title", content: "Islamic Studies Test — Mwanzo" },
-      { property: "og:description", content: "Karibu kwenye Mfumo wa Mtihani wa Islamic Studies." },
+      { property: "og:title", content: "Islamic Studies Test Online" },
+      {
+        property: "og:description",
+        content: "Islamic Studies Test Online — mitihani na maswali ya semester.",
+      },
     ],
   }),
 });
 
 type TestStat = { key: string; labelKey: string; count: number };
+
+/** Read by the home stats so the admin can hide a counter without a rebuild. */
+type StatVisibility = { showSubmissions: boolean; showTest1: boolean; hiddenSince: string | null };
 
 function categorize(title: string): string {
   const t = (title || "").toLowerCase();
@@ -53,6 +60,11 @@ function Index() {
   const { t } = useI18n();
   const [stats, setStats] = useState({ students: 0, submissions: 0, visitsToday: 0 });
   const [testStats, setTestStats] = useState<TestStat[]>([]);
+  const [vis, setVis] = useState<StatVisibility>({
+    showSubmissions: true,
+    showTest1: true,
+    hiddenSince: null,
+  });
 
   useEffect(() => {
     (async () => {
@@ -65,15 +77,35 @@ function Index() {
         /* duplicate per day is fine */
       }
 
+      const { data: settings } = await supabase
+        .from("app_settings")
+        .select("show_submissions_stat, show_test1_stat, stats_hidden_at")
+        .eq("id", 1)
+        .single();
+      const s0 = settings as any;
+      const visibility: StatVisibility = {
+        showSubmissions: s0?.show_submissions_stat !== false,
+        showTest1: s0?.show_test1_stat !== false,
+        hiddenSince: s0?.stats_hidden_at ?? null,
+      };
+      setVis(visibility);
+
       const today = new Date();
       const tzOffset = today.getTimezoneOffset() * 60000;
       const localDate = new Date(today.getTime() - tzOffset).toISOString().slice(0, 10);
+      // Once a counter has been hidden, only takers after that moment are
+      // counted, so switching it back on shows fresh activity rather than the
+      // old total the admin asked to hide.
+      let submissionsQuery = supabase
+        .from("submissions")
+        .select("id", { count: "exact", head: true })
+        .not("submitted_at", "is", null);
+      if (visibility.hiddenSince) {
+        submissionsQuery = submissionsQuery.gt("submitted_at", visibility.hiddenSince);
+      }
       const [s, sub, v, ex] = await Promise.all([
         supabase.from("students").select("id", { count: "exact", head: true }),
-        supabase
-          .from("submissions")
-          .select("id", { count: "exact", head: true })
-          .not("submitted_at", "is", null),
+        submissionsQuery,
         supabase
           .from("daily_visits")
           .select("id", { count: "exact", head: true })
@@ -95,11 +127,13 @@ function Index() {
         groups.map(async (g) => {
           const ids = exams.filter((e) => categorize(e.title) === g.key).map((e) => e.id);
           if (ids.length === 0) return { ...g, count: 0 };
-          const { count } = await supabase
+          let q = supabase
             .from("submissions")
             .select("id", { count: "exact", head: true })
             .in("exam_id", ids)
             .not("submitted_at", "is", null);
+          if (visibility.hiddenSince) q = q.gt("submitted_at", visibility.hiddenSince);
+          const { count } = await q;
           return { ...g, count: count || 0 };
         }),
       );
@@ -178,25 +212,33 @@ function Index() {
             <Card className="bg-gradient-to-br from-primary/15 to-transparent border-primary/20">
               <CardContent className="p-4">
                 <Users className="h-6 w-6 text-primary mb-3" />
-                <div className="text-2xl font-extrabold tabular-nums">
-                  {stats.students.toLocaleString()}
-                </div>
+                <Odometer value={stats.students} className="text-2xl font-extrabold" />
                 <div className="text-[10px] uppercase text-muted-foreground">
                   {t("stat_registered")}
                 </div>
               </CardContent>
             </Card>
-            <Card className="bg-gradient-to-br from-secondary/40 to-transparent border-secondary/30">
-              <CardContent className="p-4">
-                <ClipboardCheck className="h-6 w-6 text-primary mb-3" />
-                <div className="text-2xl font-extrabold tabular-nums">
-                  {stats.submissions.toLocaleString()}
-                </div>
-                <div className="text-[10px] uppercase text-muted-foreground">
-                  {t("stat_took_exam")}
-                </div>
-              </CardContent>
-            </Card>
+            {vis.showSubmissions ? (
+              <Card className="bg-gradient-to-br from-secondary/40 to-transparent border-secondary/30">
+                <CardContent className="p-4">
+                  <ClipboardCheck className="h-6 w-6 text-primary mb-3" />
+                  <Odometer value={stats.submissions} className="text-2xl font-extrabold" />
+                  <div className="text-[10px] uppercase text-muted-foreground">
+                    {t("stat_took_exam")}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="border-dashed border-secondary/30 bg-transparent">
+                <CardContent className="p-4">
+                  <ClipboardCheck className="h-6 w-6 text-muted-foreground/50 mb-3" />
+                  <div className="text-2xl font-extrabold text-muted-foreground/50">—</div>
+                  <div className="text-[10px] uppercase text-muted-foreground">
+                    {t("stat_took_exam")}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
             <Card className="bg-gradient-to-br from-emerald-500/15 to-transparent border-emerald-500/30">
               <CardContent className="p-4">
                 <div className="relative w-fit mb-3">
@@ -204,9 +246,7 @@ function Index() {
                   <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
                   <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-500" />
                 </div>
-                <div className="text-2xl font-extrabold tabular-nums">
-                  {stats.visitsToday.toLocaleString()}
-                </div>
+                <Odometer value={stats.visitsToday} className="text-2xl font-extrabold" />
                 <div className="text-[10px] uppercase text-muted-foreground">
                   {t("stat_visits_today")}
                 </div>
@@ -227,22 +267,27 @@ function Index() {
             {t("per_test_title")}
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-            {testStats.map((ts) => (
-              <Card
-                key={ts.key}
-                className="border-primary/20 bg-gradient-to-br from-primary/10 to-transparent"
-              >
-                <CardContent className="p-4">
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-primary">
-                    {t(ts.labelKey)}
-                  </div>
-                  <div className="text-3xl font-black tabular-nums mt-1">
-                    {ts.count.toLocaleString()}
-                  </div>
-                  <div className="text-[10px] uppercase text-muted-foreground">{t("took")}</div>
-                </CardContent>
-              </Card>
-            ))}
+            {testStats.map((ts) => {
+              const hidden = ts.key === "test1" && !vis.showTest1;
+              return (
+                <Card
+                  key={ts.key}
+                  className={`border-primary/20 bg-gradient-to-br from-primary/10 to-transparent ${hidden ? "border-dashed opacity-70" : ""}`}
+                >
+                  <CardContent className="p-4">
+                    <div className="text-[11px] font-bold uppercase tracking-wide text-primary">
+                      {t(ts.labelKey)}
+                    </div>
+                    {hidden ? (
+                      <div className="text-3xl font-black mt-1 text-muted-foreground/50">—</div>
+                    ) : (
+                      <Odometer value={ts.count} className="text-3xl font-black mt-1" />
+                    )}
+                    <div className="text-[10px] uppercase text-muted-foreground">{t("took")}</div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
 
           <div className="grid grid-cols-2 gap-3 md:gap-4 mt-4">

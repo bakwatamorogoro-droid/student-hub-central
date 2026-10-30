@@ -8,7 +8,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { CalendarDays, Download, Trash2, Users, MapPin, Crosshair, CheckCircle2, XCircle, ShieldCheck } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
+import { confirmAction } from "@/lib/alerts";
+import { AttendanceSessionPanel } from "@/components/AttendanceSessionPanel";
 
 export const Route = createFileRoute("/admin/attendance")({ component: Page });
 
@@ -71,7 +73,7 @@ function Page() {
   };
 
   const del = async (id: string) => {
-    if (!confirm("Futa rekodi hii?")) return;
+    if (!(await confirmAction("Futa rekodi hii?", "Haitarudishwa."))) return;
     await supabase.from("attendance" as any).delete().eq("id", id);
     load();
   };
@@ -86,7 +88,14 @@ function Page() {
   };
 
   const confirmAll = async () => {
-    if (!confirm(`Thibitisha wote (${rows.filter((r) => !r.confirmed_by_admin).length}) kuwa PRESENT?`)) return;
+    if (
+      !(await confirmAction(
+        `Thibitisha wote (${rows.filter((r) => !r.confirmed_by_admin).length}) kuwa PRESENT?`,
+        "Mahudhurio yote yaliyosubiri yatawekwa PRESENT.",
+        "Ndiyo, thibitisha",
+      ))
+    )
+      return;
     const ids = rows.filter((r) => !r.confirmed_by_admin).map((r) => r.id);
     if (ids.length === 0) return;
     await supabase.from("attendance" as any).update({
@@ -97,7 +106,7 @@ function Page() {
   };
 
   const delAll = async () => {
-    if (!confirm(`Futa rekodi zote za ${date}?`)) return;
+    if (!(await confirmAction(`Futa rekodi zote za ${date}?`, "Haitarudishwa.", "Ndiyo, futa zote"))) return;
     await supabase.from("attendance" as any).delete().eq("check_in_date", date);
     toast.success("Zimefutwa");
     load();
@@ -125,6 +134,9 @@ function Page() {
 
   return (
     <div className="space-y-4">
+      {/* Rotating-QR sessions: students scan this to check in within 50 m */}
+      <AttendanceSessionPanel />
+
       {/* GPS settings */}
       <Card className="bg-gradient-to-br from-primary/10 via-card to-emerald-500/10 border-2 border-primary/30">
         <CardHeader className="pb-3">

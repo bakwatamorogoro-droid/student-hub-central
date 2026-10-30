@@ -15,21 +15,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { alertSuccess, alertWarning } from "@/lib/alerts";
 import { UserCog, AlertTriangle, CheckCircle2, Mail, Clock } from "lucide-react";
-import { GroupSwitcher } from "@/components/GroupSwitcher";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
-import { updateStudentProfile } from "@/lib/studentProfile";
+import { updateStudentProfile, isMissingColumnError } from "@/lib/studentProfile";
 import {
   CURRENT_ACADEMIC_YEAR,
   GROUPS,
   SEMESTERS,
   formatAcademicSummary,
+  isSemesterActive,
   studyYearsFor,
 } from "@/lib/academicTargeting";
 import { useI18n } from "@/lib/i18n";
+import { QrAttendanceCheckIn } from "@/components/QrAttendanceCheckIn";
 import { loadDirectory } from "@/lib/directory";
 
 export const Route = createFileRoute("/student")({
@@ -66,7 +67,6 @@ function Page() {
     new_study_year: "",
     new_semester: "",
     new_academic_year: "",
-    reason: "",
   });
   const [wrongReg, setWrongReg] = useState(false);
   const [editStatus, setEditStatus] = useState<any[]>([]);
@@ -84,7 +84,9 @@ function Page() {
       .then(({ data }: { data: any }) => {
         setSettings(data);
         setSeminaList((data?.semina_list as string[]) || []);
-        setGroupList((data?.group_list as string[]) || []);
+        // Groups come from the fixed 1..20 range, never the stale app_settings
+        // seed, so a student can only ever be moved inside the real cohorts.
+        setGroupList([...GROUPS]);
         setCourseList((data?.course_list as string[]) || []);
         loadDirectory(data).then((dir) => {
           if (dir.semina.length) setSeminaList(dir.semina);
@@ -112,7 +114,6 @@ function Page() {
       new_study_year: data.study_year ? String(data.study_year) : "",
       new_semester: data.semester || "",
       new_academic_year: CURRENT_ACADEMIC_YEAR,
-      reason: "",
     });
     localStorage.setItem("student_reg", data.reg_no);
     const { data: reqs } = await (supabase as any)
@@ -150,6 +151,8 @@ function Page() {
   const submitEdit = async () => {
     if (!student) return;
     if (!settings?.profile_edits_enabled) return toast.error(t("edits_disabled"));
+    if (edit.new_semester && !isSemesterActive(edit.new_semester))
+      return toast.error(t("semester_inactive"));
     setSubmitting(true);
     const reasonPrefix = wrongReg
       ? "[NILIKOSEA REG KABISA] Tafadhali admin athibitishe matokeo yangu ya awali yahamishwe kwa Reg mpya. "
@@ -157,21 +160,55 @@ function Page() {
     const newRegUp = edit.new_reg_no?.toUpperCase() || null;
     // Auto-approval: tu kwa marekebisho ya kawaida (sio "nilikosea reg kabisa")
     const autoApprove = !wrongReg;
-    const { data: inserted, error } = await (supabase as any)
+    // Which fields actually differ from what the student has now. The admin view
+    // shows these, so a second edit still surfaces what changed even when the
+    // request's "current" snapshot already equals the new value.
+    const changed: string[] = [];
+    if (newRegUp && newRegUp !== student.reg_no) changed.push("reg_no");
+    if ((edit.new_full_name || "") !== (student.full_name || "")) changed.push("full_name");
+    if ((edit.new_semina || "") !== (student.semina || "")) changed.push("semina");
+    if ((edit.new_student_group || "") !== (student.student_group || "")) changed.push("group");
+    if ((edit.new_course || "") !== (student.course || "")) changed.push("course");
+    if (
+      (edit.new_study_year || "") !== (student.study_year == null ? "" : String(student.study_year))
+    )
+      changed.push("study_year");
+    if ((edit.new_semester || "") !== (student.semester || "")) changed.push("semester");
+    const basePayload: Record<string, unknown> = {
+      student_id: student.id,
+      current_reg_no: student.reg_no,
+      current_full_name: student.full_name,
+      new_reg_no: newRegUp,
+      new_full_name: edit.new_full_name || null,
+      new_semina: edit.new_semina || null,
+      new_student_group: edit.new_student_group || null,
+      reason: reasonPrefix.trim() || null,
+      status: autoApprove ? "approved" : "pending",
+    };
+    // The extra columns come from the stats/request-fields migration. Until it is
+    // applied, save the request without them so the edit still reaches the admin.
+    const detailPayload: Record<string, unknown> = {
+      ...basePayload,
+      new_course: edit.new_course || null,
+      new_study_year: edit.new_study_year ? Number(edit.new_study_year) : null,
+      new_semester: edit.new_semester || null,
+      new_academic_year: CURRENT_ACADEMIC_YEAR,
+      changed_fields: changed,
+    };
+    let { data: inserted, error } = await (supabase as any)
       .from("profile_update_requests")
-      .insert({
-        student_id: student.id,
-        current_reg_no: student.reg_no,
-        current_full_name: student.full_name,
-        new_reg_no: newRegUp,
-        new_full_name: edit.new_full_name || null,
-        new_semina: edit.new_semina || null,
-        new_student_group: edit.new_student_group || null,
-        reason: (reasonPrefix + (edit.reason || "")).trim() || null,
-        status: autoApprove ? "approved" : "pending",
-      })
+      .insert(detailPayload)
       .select()
       .single();
+    if (error && isMissingColumnError(error)) {
+      const retry = await (supabase as any)
+        .from("profile_update_requests")
+        .insert(basePayload)
+        .select()
+        .single();
+      inserted = retry.data;
+      error = retry.error;
+    }
     if (error) {
       setSubmitting(false);
       return toast.error(error.message);
@@ -198,12 +235,17 @@ function Page() {
       }
       // apply_profile_update only covers reg/name/semina/group, so write the
       // academic fields separately.
-      const { error: acadErr, semesterUnsupported } = await updateStudentProfile(student.id, {
-        course: edit.new_course,
-        study_year: edit.new_study_year,
-        semester: edit.new_semester,
-        academic_year: edit.new_academic_year,
-      });
+      // Only write the fields the student actually changed, so an untouched
+      // semester never trips the "column not migrated yet" warning.
+      const acad: Record<string, unknown> = {};
+      if ((edit.new_course || "") !== (student.course || "")) acad.course = edit.new_course;
+      const yearNow = student.study_year == null ? "" : String(student.study_year);
+      if ((edit.new_study_year || "") !== yearNow) acad.study_year = edit.new_study_year;
+      if ((edit.new_semester || "") !== (student.semester || "")) acad.semester = edit.new_semester;
+      const { error: acadErr, semesterUnsupported } = await updateStudentProfile(
+        student.id,
+        acad as Parameters<typeof updateStudentProfile>[1],
+      );
       await (supabase as any)
         .from("profile_update_requests")
         .update({ reviewed_at: new Date().toISOString() })
@@ -224,7 +266,7 @@ function Page() {
           "Semester bado haijawashwa kwenye mfumo (admin aendeshe migration 0004).",
         );
       } else {
-        await alertSuccess("Taarifa zimehifadhiwa", t("auto_approved"));
+        await alertSuccess(t("saved_title"), t("saved_body"));
       }
       lookup(newRef);
       return;
@@ -237,6 +279,7 @@ function Page() {
   };
 
   const submitIssue = async () => {
+    if (!settings?.issues_enabled) return toast.error(t("issues_disabled"));
     if (!issue.message.trim()) return toast.error(t("write_issue"));
     if (!student && (!reg || reg.length < 3)) return toast.error(t("enter_reg"));
     setSubmitting(true);
@@ -345,14 +388,14 @@ function Page() {
           </Card>
         )}
 
-        {student && <GroupSwitcher student={student} onChanged={() => lookup(student.reg_no)} />}
+        <QrAttendanceCheckIn />
 
         <Tabs defaultValue="edit" id="edit-taasrifa" className="scroll-mt-20">
           <TabsList className="grid grid-cols-2 w-full">
             <TabsTrigger value="edit" className="gap-1">
               <UserCog className="h-4 w-4" /> {t("update_title")}
             </TabsTrigger>
-            <TabsTrigger value="issue" className="gap-1">
+            <TabsTrigger value="issue" className="gap-1" disabled={!settings?.issues_enabled}>
               <AlertTriangle className="h-4 w-4" /> {t("tab_issue")}
             </TabsTrigger>
           </TabsList>
@@ -434,12 +477,6 @@ function Page() {
                                   {edit.new_student_group}
                                 </SelectItem>
                               )}
-                            {edit.new_student_group &&
-                              !groupList.includes(edit.new_student_group) && (
-                                <SelectItem value={edit.new_student_group}>
-                                  {edit.new_student_group}
-                                </SelectItem>
-                              )}
                           </SelectContent>
                         </Select>
                       </div>
@@ -497,8 +534,9 @@ function Page() {
                           </SelectTrigger>
                           <SelectContent>
                             {SEMESTERS.map((s) => (
-                              <SelectItem key={s} value={s}>
+                              <SelectItem key={s} value={s} disabled={!isSemesterActive(s)}>
                                 {s}
+                                {!isSemesterActive(s) && " (bado)"}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -513,14 +551,6 @@ function Page() {
                           Umewekwa kiotomatiki — hauwezi kubadilishwa.
                         </p>
                       </div>
-                    </div>
-                    <div>
-                      <Label>{t("reason")}</Label>
-                      <Textarea
-                        value={edit.reason}
-                        onChange={(e) => setEdit({ ...edit, reason: e.target.value })}
-                        placeholder={t("reason_placeholder")}
-                      />
                     </div>
                     <label className="flex items-start gap-2 p-3 rounded-lg border-2 border-amber-500/40 bg-amber-500/5 cursor-pointer hover:bg-amber-500/10 transition-colors">
                       <input
@@ -590,6 +620,11 @@ function Page() {
                   Kwa wasiofanya Test 1 / Test 2 au wenye matatizo yoyote — andika hapa, admin
                   atapokea.
                 </p>
+                {!settings?.issues_enabled && (
+                  <p className="flex items-center gap-1 text-xs text-amber-600">
+                    <Clock className="h-3 w-3" /> {t("issues_disabled")}
+                  </p>
+                )}
               </CardHeader>
               <CardContent className="space-y-3">
                 <div>
@@ -638,7 +673,11 @@ function Page() {
                     placeholder={t("issue_placeholder")}
                   />
                 </div>
-                <Button onClick={submitIssue} disabled={submitting} className="w-full font-bold">
+                <Button
+                  onClick={submitIssue}
+                  disabled={submitting || !settings?.issues_enabled}
+                  className="w-full font-bold"
+                >
                   {t("submit_issue")}
                 </Button>
 

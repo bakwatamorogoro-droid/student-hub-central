@@ -10,7 +10,7 @@ import { gradeShortAnswer } from "@/lib/grading.functions";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 import { formatAcademicSummary } from "@/lib/academicTargeting";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 type QA = { q: any; given: any; correct: boolean; partial?: number };
 

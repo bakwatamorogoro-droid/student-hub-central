@@ -35,9 +35,10 @@ function normalize(payload: ProfileUpdatePayload) {
   if (payload.gender !== undefined) out.gender = payload.gender || null;
   if (payload.course !== undefined) out.course = payload.course?.trim() || null;
   if (payload.study_year !== undefined) {
-    out.study_year = payload.study_year == null || payload.study_year === ("" as unknown as number)
-      ? null
-      : Number(payload.study_year);
+    out.study_year =
+      payload.study_year == null || payload.study_year === ("" as unknown as number)
+        ? null
+        : Number(payload.study_year);
   }
   if (payload.semester !== undefined) out.semester = payload.semester || null;
   if (payload.academic_year !== undefined) out.academic_year = payload.academic_year || null;
@@ -59,12 +60,18 @@ export async function updateStudentProfile(
   const body = normalize(payload);
   const withSemester = "semester" in body;
 
-  const first = await supabase.from("students").update(body as any).eq("id", studentId);
+  const first = await supabase
+    .from("students")
+    .update(body as any)
+    .eq("id", studentId);
   if (!first.error) return { error: null, semesterUnsupported: false };
 
   if (withSemester && isMissingColumnError(first.error)) {
     const { semester: _drop, ...withoutSemester } = body;
-    const retry = await supabase.from("students").update(withoutSemester as any).eq("id", studentId);
+    const retry = await supabase
+      .from("students")
+      .update(withoutSemester as any)
+      .eq("id", studentId);
     if (!retry.error) return { error: null, semesterUnsupported: true };
     return { error: retry.error as unknown as Error, semesterUnsupported: true };
   }

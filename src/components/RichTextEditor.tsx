@@ -1,10 +1,31 @@
 import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
+import { confirmAction, promptText } from "@/lib/alerts";
 import {
-  Bold, Italic, Underline, List, ListOrdered, Heading2, Heading3, Quote, Undo2, Redo2,
-  AlignLeft, AlignCenter, AlignRight, Link as LinkIcon, Strikethrough, Palette, Type, Eraser,
-  Copy, ClipboardPaste, CheckSquare, Trash2, Wand2,
+  Bold,
+  Italic,
+  Underline,
+  List,
+  ListOrdered,
+  Heading2,
+  Heading3,
+  Quote,
+  Undo2,
+  Redo2,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Link as LinkIcon,
+  Strikethrough,
+  Palette,
+  Type,
+  Eraser,
+  Copy,
+  ClipboardPaste,
+  CheckSquare,
+  Trash2,
+  Wand2,
 } from "lucide-react";
 
 type Props = {
@@ -14,7 +35,17 @@ type Props = {
   minHeight?: number;
 };
 
-const COLORS = ["#0f172a", "#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#0891b2", "#2563eb", "#7c3aed", "#db2777"];
+const COLORS = [
+  "#0f172a",
+  "#dc2626",
+  "#ea580c",
+  "#ca8a04",
+  "#16a34a",
+  "#0891b2",
+  "#2563eb",
+  "#7c3aed",
+  "#db2777",
+];
 const SIZES = [
   { label: "Ndogo", val: "2" },
   { label: "Kawaida", val: "3" },
@@ -57,8 +88,8 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 320 }
     }
   };
 
-  const insertLink = () => {
-    const url = prompt("Weka URL (mfano: https://...)");
+  const insertLink = async () => {
+    const url = await promptText("Weka URL", "https://...");
     if (url) exec("createLink", url);
   };
 
@@ -68,7 +99,8 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 320 }
     div.querySelectorAll("script,style,meta,link").forEach((n) => n.remove());
     div.querySelectorAll<HTMLElement>("*").forEach((el) => {
       [...el.attributes].forEach((a) => {
-        if (a.name.startsWith("on") || a.name === "class" || a.name === "id") el.removeAttribute(a.name);
+        if (a.name.startsWith("on") || a.name === "class" || a.name === "id")
+          el.removeAttribute(a.name);
         if (a.name === "style") {
           const safe = a.value.replace(/expression\([^)]*\)|javascript:/gi, "");
           el.setAttribute("style", safe);
@@ -84,7 +116,10 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 320 }
     const text = e.clipboardData.getData("text/plain");
     const clean = html ? sanitizePastedHtml(html) : text.replace(/\n/g, "<br>");
     document.execCommand("insertHTML", false, clean);
-    if (ref.current) { onChange(ref.current.innerHTML); setWc(countWords(ref.current.innerText || "")); }
+    if (ref.current) {
+      onChange(ref.current.innerHTML);
+      setWc(countWords(ref.current.innerText || ""));
+    }
   };
 
   const copyAll = async () => {
@@ -111,18 +146,23 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 320 }
   const pasteFromClipboard = async () => {
     try {
       ref.current?.focus();
-      let html = ""; let text = "";
+      let html = "";
+      let text = "";
       if ((navigator.clipboard as any).read) {
         const items = await (navigator.clipboard as any).read();
         for (const it of items) {
           if (it.types.includes("text/html")) html = await (await it.getType("text/html")).text();
-          else if (it.types.includes("text/plain")) text = await (await it.getType("text/plain")).text();
+          else if (it.types.includes("text/plain"))
+            text = await (await it.getType("text/plain")).text();
         }
       }
       if (!html && !text) text = await navigator.clipboard.readText();
       const clean = html ? sanitizePastedHtml(html) : text.replace(/\n/g, "<br>");
       document.execCommand("insertHTML", false, clean);
-      if (ref.current) { onChange(ref.current.innerHTML); setWc(countWords(ref.current.innerText || "")); }
+      if (ref.current) {
+        onChange(ref.current.innerHTML);
+        setWc(countWords(ref.current.innerText || ""));
+      }
       toast.success("Imebandikwa");
     } catch {
       toast.error("Ruhusu clipboard kwenye browser kisha jaribu tena (au tumia Ctrl+V).");
@@ -140,7 +180,9 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 320 }
         onChange(ref.current.innerHTML);
         setWc(countWords(ref.current.innerText || ""));
       }
-      toast.success(`Word imeingizwa (${countWords(result.value.replace(/<[^>]+>/g, " "))} maneno)`);
+      toast.success(
+        `Word imeingizwa (${countWords(result.value.replace(/<[^>]+>/g, " "))} maneno)`,
+      );
     } catch (err: any) {
       console.error(err);
       toast.error("Imeshindwa kusoma Word file. Hakikisha ni .docx");
@@ -150,53 +192,125 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 320 }
   return (
     <div className="rounded-xl border-2 border-primary/30 bg-card shadow-md overflow-hidden max-w-full">
       <div className="flex flex-wrap gap-1 p-2 border-b bg-gradient-to-r from-primary/5 to-emerald-500/5 sticky top-0 z-10">
-        <ToolBtn onClick={() => exec("bold")} title="Bold (Ctrl+B)" label="Bold"><Bold className="h-4 w-4" /></ToolBtn>
-        <ToolBtn onClick={() => exec("italic")} title="Italic" label="Italic"><Italic className="h-4 w-4" /></ToolBtn>
-        <ToolBtn onClick={() => exec("underline")} title="Underline" label="Pigia"><Underline className="h-4 w-4" /></ToolBtn>
-        <ToolBtn onClick={() => exec("strikeThrough")} title="Strike" label="Futia"><Strikethrough className="h-4 w-4" /></ToolBtn>
+        <ToolBtn onClick={() => exec("bold")} title="Bold (Ctrl+B)" label="Bold">
+          <Bold className="h-4 w-4" />
+        </ToolBtn>
+        <ToolBtn onClick={() => exec("italic")} title="Italic" label="Italic">
+          <Italic className="h-4 w-4" />
+        </ToolBtn>
+        <ToolBtn onClick={() => exec("underline")} title="Underline" label="Pigia">
+          <Underline className="h-4 w-4" />
+        </ToolBtn>
+        <ToolBtn onClick={() => exec("strikeThrough")} title="Strike" label="Futia">
+          <Strikethrough className="h-4 w-4" />
+        </ToolBtn>
         <Sep />
-        <ToolBtn onClick={() => exec("formatBlock", "<h2>")} title="Kichwa Kikubwa" label="H2"><Heading2 className="h-4 w-4" /></ToolBtn>
-        <ToolBtn onClick={() => exec("formatBlock", "<h3>")} title="Kichwa Kidogo" label="H3"><Heading3 className="h-4 w-4" /></ToolBtn>
-        <ToolBtn onClick={() => exec("formatBlock", "<blockquote>")} title="Nukuu" label="Nukuu"><Quote className="h-4 w-4" /></ToolBtn>
+        <ToolBtn onClick={() => exec("formatBlock", "<h2>")} title="Kichwa Kikubwa" label="H2">
+          <Heading2 className="h-4 w-4" />
+        </ToolBtn>
+        <ToolBtn onClick={() => exec("formatBlock", "<h3>")} title="Kichwa Kidogo" label="H3">
+          <Heading3 className="h-4 w-4" />
+        </ToolBtn>
+        <ToolBtn onClick={() => exec("formatBlock", "<blockquote>")} title="Nukuu" label="Nukuu">
+          <Quote className="h-4 w-4" />
+        </ToolBtn>
         <Sep />
-        <ToolBtn onClick={() => exec("insertUnorderedList")} title="Orodha" label="Orodha"><List className="h-4 w-4" /></ToolBtn>
-        <ToolBtn onClick={() => exec("insertOrderedList")} title="Orodha ya tarakimu" label="1,2,3"><ListOrdered className="h-4 w-4" /></ToolBtn>
+        <ToolBtn onClick={() => exec("insertUnorderedList")} title="Orodha" label="Orodha">
+          <List className="h-4 w-4" />
+        </ToolBtn>
+        <ToolBtn onClick={() => exec("insertOrderedList")} title="Orodha ya tarakimu" label="1,2,3">
+          <ListOrdered className="h-4 w-4" />
+        </ToolBtn>
         <Sep />
-        <ToolBtn onClick={() => exec("justifyLeft")} title="Kushoto" label="Kushoto"><AlignLeft className="h-4 w-4" /></ToolBtn>
-        <ToolBtn onClick={() => exec("justifyCenter")} title="Katikati" label="Kati"><AlignCenter className="h-4 w-4" /></ToolBtn>
-        <ToolBtn onClick={() => exec("justifyRight")} title="Kulia" label="Kulia"><AlignRight className="h-4 w-4" /></ToolBtn>
+        <ToolBtn onClick={() => exec("justifyLeft")} title="Kushoto" label="Kushoto">
+          <AlignLeft className="h-4 w-4" />
+        </ToolBtn>
+        <ToolBtn onClick={() => exec("justifyCenter")} title="Katikati" label="Kati">
+          <AlignCenter className="h-4 w-4" />
+        </ToolBtn>
+        <ToolBtn onClick={() => exec("justifyRight")} title="Kulia" label="Kulia">
+          <AlignRight className="h-4 w-4" />
+        </ToolBtn>
         <Sep />
         <div className="relative">
-          <ToolBtn onClick={() => { setShowColor((v) => !v); setShowSize(false); }} title="Rangi" label="Rangi"><Palette className="h-4 w-4" /></ToolBtn>
+          <ToolBtn
+            onClick={() => {
+              setShowColor((v) => !v);
+              setShowSize(false);
+            }}
+            title="Rangi"
+            label="Rangi"
+          >
+            <Palette className="h-4 w-4" />
+          </ToolBtn>
           {showColor && (
             <div className="absolute top-full left-0 mt-1 bg-popover border-2 rounded-lg p-2 shadow-xl z-20 grid grid-cols-5 gap-1">
               {COLORS.map((c) => (
-                <button key={c} type="button" onClick={() => { exec("foreColor", c); setShowColor(false); }}
-                  className="h-6 w-6 rounded border-2 border-white shadow hover:scale-110 transition" style={{ background: c }} />
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => {
+                    exec("foreColor", c);
+                    setShowColor(false);
+                  }}
+                  className="h-6 w-6 rounded border-2 border-white shadow hover:scale-110 transition"
+                  style={{ background: c }}
+                />
               ))}
             </div>
           )}
         </div>
         <div className="relative">
-          <ToolBtn onClick={() => { setShowSize((v) => !v); setShowColor(false); }} title="Saizi" label="Saizi"><Type className="h-4 w-4" /></ToolBtn>
+          <ToolBtn
+            onClick={() => {
+              setShowSize((v) => !v);
+              setShowColor(false);
+            }}
+            title="Saizi"
+            label="Saizi"
+          >
+            <Type className="h-4 w-4" />
+          </ToolBtn>
           {showSize && (
             <div className="absolute top-full left-0 mt-1 bg-popover border-2 rounded-lg p-1 shadow-xl z-20 min-w-[120px]">
               {SIZES.map((s) => (
-                <button key={s.val} type="button" onClick={() => { exec("fontSize", s.val); setShowSize(false); }}
-                  className="block w-full text-left px-3 py-1.5 text-sm hover:bg-muted rounded">{s.label}</button>
+                <button
+                  key={s.val}
+                  type="button"
+                  onClick={() => {
+                    exec("fontSize", s.val);
+                    setShowSize(false);
+                  }}
+                  className="block w-full text-left px-3 py-1.5 text-sm hover:bg-muted rounded"
+                >
+                  {s.label}
+                </button>
               ))}
             </div>
           )}
         </div>
-        <ToolBtn onClick={insertLink} title="Weka Link" label="Link"><LinkIcon className="h-4 w-4" /></ToolBtn>
-        <ToolBtn onClick={() => exec("removeFormat")} title="Futa Mpangilio" label="Futa"><Eraser className="h-4 w-4" /></ToolBtn>
+        <ToolBtn onClick={insertLink} title="Weka Link" label="Link">
+          <LinkIcon className="h-4 w-4" />
+        </ToolBtn>
+        <ToolBtn onClick={() => exec("removeFormat")} title="Futa Mpangilio" label="Futa">
+          <Eraser className="h-4 w-4" />
+        </ToolBtn>
         <Sep />
-        <ToolBtn onClick={copyAll} title="Nakili Yote" label="Nakili"><Copy className="h-4 w-4" /></ToolBtn>
-        <ToolBtn onClick={pasteFromClipboard} title="Bandika" label="Bandika"><ClipboardPaste className="h-4 w-4" /></ToolBtn>
+        <ToolBtn onClick={copyAll} title="Nakili Yote" label="Nakili">
+          <Copy className="h-4 w-4" />
+        </ToolBtn>
+        <ToolBtn onClick={pasteFromClipboard} title="Bandika" label="Bandika">
+          <ClipboardPaste className="h-4 w-4" />
+        </ToolBtn>
         <Sep />
-        <label className="inline-flex flex-col items-center justify-center h-auto min-h-8 px-2 py-1 gap-0.5 hover:bg-primary/10 rounded-md cursor-pointer text-foreground" title="Pakua Word file (.docx) — itasomwa kiotomatiki">
+        <label
+          className="inline-flex flex-col items-center justify-center h-auto min-h-8 px-2 py-1 gap-0.5 hover:bg-primary/10 rounded-md cursor-pointer text-foreground"
+          title="Pakua Word file (.docx) — itasomwa kiotomatiki"
+        >
           <span className="text-[11px] font-bold">📄 .docx</span>
-          <span className="text-[9px] font-medium text-muted-foreground leading-none">Pakia Word</span>
+          <span className="text-[9px] font-medium text-muted-foreground leading-none">
+            Pakia Word
+          </span>
           <input
             type="file"
             accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -216,11 +330,16 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 320 }
           }}
           title="Chagua yote (Ctrl+A)"
           label="Chagua"
-        ><CheckSquare className="h-4 w-4" /></ToolBtn>
+        >
+          <CheckSquare className="h-4 w-4" />
+        </ToolBtn>
         <ToolBtn
-          onClick={() => {
+          onClick={async () => {
             if (!ref.current) return;
-            if (!ref.current.innerText.trim() || confirm("Futa kazi yote uliyoandika?")) {
+            if (
+              !ref.current.innerText.trim() ||
+              (await confirmAction("Futa kazi yote uliyoandika?", "Haitarudishwa."))
+            ) {
               ref.current.innerHTML = "";
               onChange("");
               setWc(0);
@@ -229,7 +348,9 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 320 }
           }}
           title="Futa yote"
           label="Futa Yote"
-        ><Trash2 className="h-4 w-4" /></ToolBtn>
+        >
+          <Trash2 className="h-4 w-4" />
+        </ToolBtn>
         <ToolBtn
           onClick={() => {
             if (!ref.current) return;
@@ -247,10 +368,16 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 320 }
           }}
           title="Fomati kazi (safisha mpangilio)"
           label="Fomati"
-        ><Wand2 className="h-4 w-4" /></ToolBtn>
+        >
+          <Wand2 className="h-4 w-4" />
+        </ToolBtn>
         <Sep />
-        <ToolBtn onClick={() => exec("undo")} title="Tendua" label="Tendua"><Undo2 className="h-4 w-4" /></ToolBtn>
-        <ToolBtn onClick={() => exec("redo")} title="Rudia" label="Rudia"><Redo2 className="h-4 w-4" /></ToolBtn>
+        <ToolBtn onClick={() => exec("undo")} title="Tendua" label="Tendua">
+          <Undo2 className="h-4 w-4" />
+        </ToolBtn>
+        <ToolBtn onClick={() => exec("redo")} title="Rudia" label="Rudia">
+          <Redo2 className="h-4 w-4" />
+        </ToolBtn>
       </div>
       <div
         ref={ref}
@@ -264,7 +391,9 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 320 }
       />
       <div className="flex items-center justify-between gap-2 px-3 py-1.5 text-[11px] text-muted-foreground border-t bg-muted/30 flex-wrap">
         <span className="truncate">✨ Rich Text — tumia toolbar kupanga maandishi</span>
-        <span className="font-mono shrink-0">Maneno: <b className="text-primary">{wc}</b></span>
+        <span className="font-mono shrink-0">
+          Maneno: <b className="text-primary">{wc}</b>
+        </span>
       </div>
       <style>{`
         .rte-content:empty:before { content: attr(data-placeholder); color: hsl(var(--muted-foreground)); pointer-events: none; }
@@ -281,8 +410,20 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 320 }
   );
 }
 
-function Sep() { return <span className="w-px bg-border mx-1 self-stretch" />; }
-function ToolBtn({ children, onClick, title, label }: { children: React.ReactNode; onClick: () => void; title: string; label?: string }) {
+function Sep() {
+  return <span className="w-px bg-border mx-1 self-stretch" />;
+}
+function ToolBtn({
+  children,
+  onClick,
+  title,
+  label,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  title: string;
+  label?: string;
+}) {
   return (
     <Button
       type="button"
@@ -293,7 +434,9 @@ function ToolBtn({ children, onClick, title, label }: { children: React.ReactNod
       title={title}
     >
       {children}
-      {label && <span className="text-[9px] font-medium text-muted-foreground mt-0.5">{label}</span>}
+      {label && (
+        <span className="text-[9px] font-medium text-muted-foreground mt-0.5">{label}</span>
+      )}
     </Button>
   );
 }
