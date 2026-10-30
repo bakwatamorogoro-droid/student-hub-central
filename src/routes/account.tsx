@@ -14,6 +14,7 @@ import {
   type StudentProfile,
 } from "@/lib/studentAccount";
 import { getStudentToken, setStudentToken, clearStudentToken } from "@/lib/student-session";
+import { QrAttendanceCheckIn } from "@/components/QrAttendanceCheckIn";
 import { Copy, GraduationCap, KeyRound, Loader2, LogIn, LogOut, ShieldCheck } from "lucide-react";
 import { toast } from "@/lib/toast";
 
@@ -155,6 +156,10 @@ function Page() {
             </Badge>
           </CardContent>
         </Card>
+
+        {/* Straight after sign-in, so the student does not have to go hunting on
+            another page to find the QR they just logged in for. */}
+        <QrAttendanceCheckIn />
 
         <Card>
           <CardHeader className="pb-3">
