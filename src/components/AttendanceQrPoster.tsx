@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,19 +30,31 @@ export function AttendanceQrPoster({
 }) {
   const [png, setPng] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const built = useRef(false);
 
+  // Keyed on the join code: when the teacher ends one session and starts the
+  // next, the panel stays mounted, so the poster has to redraw for the new code
+  // rather than keep the old image next to the new code.
   useEffect(() => {
-    if (!joinCode || built.current) return;
-    built.current = true;
+    if (!joinCode) {
+      setPng(null);
+      return;
+    }
+    let cancelled = false;
     QRCode.toDataURL(encodeJoinQr(joinCode), {
       width: 900,
       margin: 2,
       errorCorrectionLevel: "M",
       color: { dark: "#0f172a", light: "#ffffff" },
     })
-      .then(setPng)
-      .catch(() => setPng(null));
+      .then((url) => {
+        if (!cancelled) setPng(url);
+      })
+      .catch(() => {
+        if (!cancelled) setPng(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [joinCode]);
 
   const fileName = `QR-mahudhurio-${joinCode || "kipindi"}.png`;
