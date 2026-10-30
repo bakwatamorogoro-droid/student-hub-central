@@ -426,3 +426,34 @@ role PostgREST uses for a request carrying the publishable key.
 
 A note on the container: `docker exec -i` with a redirected stdin can hang depending on how the
 caller's shell handles the pipe, so `run.sh` uses `docker cp` instead.
+
+### Where the QR panel lives
+
+`QrAttendanceCheckIn` is rendered on **two** pages, and it must stay on both:
+
+* `/account` — directly under the profile card, which is the first thing a signed-in
+  student sees. This is the page the student lands on after signing in, so it is the
+  one they will actually use.
+* `/student` — under the details card.
+
+It was originally on `/student` only, and there it only appears after a
+registration-number lookup. So a student who signed in on `/account` saw a profile and
+an attendance history and no way to check in, which is exactly what was reported.
+Adding it to `/account` is a two-line change; do not "tidy" it away.
+
+The panel reads the PIN session itself (`getStudentToken()`), so it needs no props and
+renders the sign-in prompt when the token is missing. That is why it can be dropped on
+any page without extra wiring.
+
+### Deleting rows with the publishable key
+
+`DELETE` on `students` (and the other tables `HARDEN_RLS.sql` leaves without a policy)
+returns **`204` and deletes nothing**, because RLS refuses the row and PostgREST reports
+the request, not the outcome. Never treat a `204` as proof of deletion. `admin.students`
+reads the row back for exactly this reason.
+
+The same trap applies to test cleanup: `quiz_participants` rows *are* deletable, but
+`students` rows are not, so a test that inserts a `students` row cannot clean it up and
+will leave it behind. Prefer namespaced `quiz_participants` rows for anything a test
+needs to create and remove. Leftover `OH-*` test students on production can only be
+removed through the Lovable SQL editor, which is the owner's account.
