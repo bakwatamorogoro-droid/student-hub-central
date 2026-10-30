@@ -9,7 +9,7 @@ const PHRASES = [
 ];
 
 export function PageLoader() {
-  const isLoading = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
+  const isLoading = useRouterState({ select: (s) => s.isLoading || (s as { isTransitioning?: boolean }).isTransitioning });
   const [show, setShow] = useState(false);
   const [phrase, setPhrase] = useState(PHRASES[0]);
 

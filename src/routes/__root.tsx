@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-router";
 
 import { Toaster } from "@/components/ui/sonner";
-import { I18nProvider } from "@/lib/i18n";
+import { I18nProvider, useI18n } from "@/lib/i18n";
 import { LockGate } from "@/components/LockGate";
 import { PageLoader } from "@/components/PageLoader";
 
@@ -33,7 +33,7 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
   console.error(error);
   const router = useRouter();
 
@@ -88,10 +88,11 @@ function RootComponent() {
 }
 
 function SiteFooter() {
+  const { t } = useI18n();
   return (
     <footer className="mt-12 border-t border-primary/10 bg-card/60 backdrop-blur-xl">
       <div className="container mx-auto px-4 py-6 text-center text-xs text-muted-foreground">
-        Kifaa chochote • Hakuna Copy/Paste • Muda wa EAT • Imeundwa na viwango stationary
+        {t("footer_note")}
       </div>
     </footer>
   );

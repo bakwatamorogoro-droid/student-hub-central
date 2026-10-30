@@ -8,8 +8,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Trash2, Upload, FileText, Lock, Copy, Unlock, Image as ImageIcon } from "lucide-react";
+import { Trash2, Upload, FileText, Lock, Copy, Unlock, AlertTriangle } from "lucide-react";
 import { eatLocalInputToUtcIso, utcIsoToEatLocalInput } from "@/lib/time";
+import { isMissingColumnError } from "@/lib/studentProfile";
+import { ACADEMIC_YEARS, SEMESTERS } from "@/lib/academicTargeting";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const Route = createFileRoute("/admin/settings")({ component: Page });
 
@@ -31,12 +34,37 @@ function Page() {
   useEffect(() => { loadAll(); }, []);
 
   const saveSettings = async () => {
-    const { error } = await supabase.from("app_settings").update({
-      semina_list: typeof s.semina_list === "string" ? s.semina_list.split("\n").map((x: string) => x.trim()).filter(Boolean) : s.semina_list,
-      group_list: typeof s.group_list === "string" ? s.group_list.split("\n").map((x: string) => x.trim()).filter(Boolean) : s.group_list,
+    const asList = (v: unknown) =>
+      typeof v === "string" ? v.split("\n").map((x) => x.trim()).filter(Boolean) : v;
+    const payload: Record<string, unknown> = {
+      semina_list: asList(s.semina_list),
+      group_list: asList(s.group_list),
+      course_list: asList(s.course_list),
+      academic_years_list: asList(s.academic_years_list),
+      program_years: Number(s.program_years) || 2,
+      current_academic_year: s.current_academic_year || null,
+      current_semester: s.current_semester || null,
       global_camera: s.global_camera, global_gps: s.global_gps, global_audio: s.global_audio,
       admin_username: s.admin_username, admin_password: s.admin_password,
-    }).eq("id", 1);
+    };
+    // course_list and the academic-calendar columns arrive with
+    // drizzle/migrations/0004_add_semester.sql. Until that migration is applied,
+    // keep saving whatever the database does accept instead of failing outright.
+    let { error } = await supabase.from("app_settings").update(payload as any).eq("id", 1);
+    if (error && isMissingColumnError(error)) {
+      const optional = ["course_list", "academic_years_list", "program_years", "current_academic_year", "current_semester"];
+      const missing = optional.filter((k) => String(error?.message || "").includes(k));
+      const drop = missing.length ? missing : ["course_list"];
+      const rest: Record<string, unknown> = { ...payload };
+      drop.forEach((k) => delete rest[k]);
+      const retry = await supabase.from("app_settings").update(rest as any).eq("id", 1);
+      error = retry.error;
+      if (!error) {
+        toast.warning(`Mipangilio imehifadhiwa, lakini ${drop.join(", ")} haijahifadhiwa — endesha migration 0004_add_semester.sql.`);
+        loadAll();
+        return;
+      }
+    }
     if (error) toast.error(error.message); else toast.success("Mipangilio imehifadhiwa");
     loadAll();
   };
@@ -59,12 +87,27 @@ function Page() {
 
   const addAnn = async () => {
     if (!newAnn.message && !newAnn.pdf_url && !newAnn.image_url) return toast.error("Andika tangazo au pakia PDF / picha");
-    const { error } = await supabase.from("announcements").insert({
+    const payload: Record<string, unknown> = {
       message: newAnn.message || (newAnn.title || "Angalia PDF"),
       title: newAnn.title || null,
       pdf_url: newAnn.pdf_url || null,
+      image_url: newAnn.image_url || null,
       expires_at: newAnn.expires_at || null,
-    });
+    };
+    let { error } = await supabase.from("announcements").insert(payload as any);
+    // image_url arrives with drizzle/migrations/0004_add_semester.sql; save the
+    // rest of the announcement rather than losing it entirely.
+    if (error && isMissingColumnError(error)) {
+      const { image_url: _drop, ...rest } = payload;
+      const retry = await supabase.from("announcements").insert(rest as any);
+      error = retry.error;
+      if (!error) {
+        toast.warning("Tangazo limeongezwa, lakini picha haijahifadhiwa — endesha migration 0004_add_semester.sql.");
+        setNewAnn({ message: "", title: "", expires_at: "", pdf_url: "", image_url: "" });
+        loadAll();
+        return;
+      }
+    }
     if (error) return toast.error(error.message);
     setNewAnn({ message: "", title: "", expires_at: "", pdf_url: "", image_url: "" });
     toast.success("Tangazo limeongezwa");
@@ -96,8 +139,41 @@ function Page() {
 
   if (!s) return <div>Inapakia...</div>;
 
+  // Columns added by drizzle/migrations/0004_add_semester.sql. Surfacing which
+  // ones are still absent tells the admin exactly what to run, instead of
+  // leaving them with silently unsaved fields.
+  const pendingColumns = (
+    [
+      ["course_list", s.course_list],
+      ["program_years", s.program_years],
+      ["academic_years_list", s.academic_years_list],
+      ["current_academic_year", s.current_academic_year],
+      ["current_semester", s.current_semester],
+    ] as const
+  ).filter(([, v]) => v === undefined).map(([k]) => k);
+
   return (
     <div className="grid lg:grid-cols-2 gap-4">
+      {pendingColumns.length > 0 && (
+        <Card className="lg:col-span-2 border-2 border-amber-500/50 bg-amber-500/10">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertTriangle className="h-5 w-5 text-amber-600" /> Migration Haijafanyika
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <p>
+              Safu zifuatazo hazipo kwenye hifadhidata bado: <b>{pendingColumns.join(", ")}</b>. Mfumo
+              unaendelea kufanya kazi, lakini sehemu hizo hazitahifadhiwa.
+            </p>
+            <p className="text-muted-foreground">
+              Endesha <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">supabase/migrations/20261027120000_add_semester.sql</code>{" "}
+              kwenye SQL Editor ya Supabase ili kuziwezesha.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="lg:col-span-2 border-2 border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -146,6 +222,64 @@ function Page() {
           <div><Label>Group (mstari mmoja kila moja)</Label>
             <Textarea rows={5} value={Array.isArray(s.group_list) ? s.group_list.join("\n") : s.group_list} onChange={(e) => setS({...s, group_list: e.target.value})} />
           </div>
+          <div><Label>Kozi (mstari mmoja kila moja)</Label>
+            <Textarea
+              rows={5}
+              placeholder={"BIOGRAPHY OF PROPHET MUHAMMAD [IS234]\nISLAMIC JURISPRUDENCE [IS221]"}
+              value={Array.isArray(s.course_list) ? s.course_list.join("\n") : (s.course_list || "")}
+              onChange={(e) => setS({...s, course_list: e.target.value})}
+            />
+            <p className="text-xs text-muted-foreground mt-1">Hizi zitaonekana kama chaguo wakati wa usajili na kwenye marekebisho ya wasifu.</p>
+          </div>
+          <div className="rounded-lg border-2 border-primary/25 bg-primary/5 p-3 space-y-3">
+            <div className="text-sm font-bold text-primary">Mwaka wa Kitaaluma</div>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <Label>Urefu wa Program (miaka)</Label>
+                <Select value={String(s.program_years ?? 2)} onValueChange={(v) => setS({ ...s, program_years: Number(v) })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 4, 5, 6].map((n) => <SelectItem key={n} value={String(n)}>Miaka {n}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">Program ya miaka 2 itatoa "Mwaka wa 1" na "Mwaka wa 2" pekee.</p>
+              </div>
+              <div>
+                <Label>Semester ya Sasa</Label>
+                <Select value={s.current_semester || "none"} onValueChange={(v) => setS({ ...s, current_semester: v === "none" ? null : v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Haujawekwa</SelectItem>
+                    {SEMESTERS.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label>Mwaka wa Kitaaluma wa Sasa</Label>
+              <Select value={s.current_academic_year || "none"} onValueChange={(v) => setS({ ...s, current_academic_year: v === "none" ? null : v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Haujawekwa</SelectItem>
+                  {(Array.isArray(s.academic_years_list) && s.academic_years_list.length ? s.academic_years_list : ACADEMIC_YEARS).map((y: string) => (
+                    <SelectItem key={y} value={y}>{y}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Mfano: {s.current_semester || "Semester ya Kwanza"} {s.current_academic_year || "2026/2027"}
+              </p>
+            </div>
+            <div>
+              <Label>Miaka ya Kitaaluma Inayopatikana (mstari mmoja kila moja)</Label>
+              <Textarea
+                rows={4}
+                placeholder={"2025/2026\n2026/2027\n2027/2028"}
+                value={Array.isArray(s.academic_years_list) ? s.academic_years_list.join("\n") : (s.academic_years_list || "")}
+                onChange={(e) => setS({ ...s, academic_years_list: e.target.value })}
+              />
+            </div>
+          </div>
           <div className="grid grid-cols-3 gap-2">
             <label className="flex items-center gap-2"><Switch checked={s.global_camera} onCheckedChange={(v) => setS({...s, global_camera: v})} />Kamera</label>
             <label className="flex items-center gap-2"><Switch checked={s.global_gps} onCheckedChange={(v) => setS({...s, global_gps: v})} />GPS</label>
@@ -193,7 +327,12 @@ function Page() {
                 <span className="flex-1">
                   {a.title && <strong>{a.title}: </strong>}{a.message}
                   {a.pdf_url && <a href={a.pdf_url} target="_blank" rel="noreferrer" className="text-primary underline ml-2">[PDF]</a>}
-                  {a.image_url && <a href={a.image_url} target="_blank" rel="noreferrer" className="text-primary underline ml-2 inline-flex items-center gap-1"><ImageIcon className="h-3 w-3" />Picha</a>}
+                  {a.image_url && (
+                    <a href={a.image_url} target="_blank" rel="noreferrer" className="ml-2 inline-flex items-center gap-1 align-middle text-primary underline">
+                      <img src={a.image_url} alt="" className="h-6 w-6 rounded object-cover" />
+                      Picha
+                    </a>
+                  )}
                 </span>
                 <Button size="sm" variant="ghost" onClick={() => delAnn(a.id)}><Trash2 className="h-3 w-3" /></Button>
               </div>

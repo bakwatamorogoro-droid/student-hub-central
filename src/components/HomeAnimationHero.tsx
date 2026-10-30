@@ -1,25 +1,66 @@
-import heroAnim from "@/assets/home-animation.mp4.asset.json";
+import { GraduationCap, Sparkles } from "lucide-react";
+import { HOME_ANIMATION } from "@/lib/mediaAssets";
+import { useI18n } from "@/lib/i18n";
 
 export function HomeAnimationHero() {
+  const { t } = useI18n();
   return (
-    <section className="group relative mb-6 min-h-[300px] overflow-hidden rounded-2xl border border-primary/25 bg-foreground shadow-float md:min-h-[430px]">
+    <section className="group relative mb-6 min-h-[320px] overflow-hidden rounded-3xl border border-primary/25 bg-foreground shadow-float md:min-h-[460px]">
       <video
-        src={(heroAnim as { url: string }).url}
+        src={HOME_ANIMATION}
         autoPlay
         muted
         loop
         playsInline
-        preload="metadata"
-        aria-label="Animation ya mfumo wa masomo"
-        className="absolute inset-0 h-full w-full object-cover transition-transform duration-[1400ms] group-hover:scale-[1.025]"
+        preload="auto"
+        aria-label={t("media_title")}
+        className="absolute inset-0 h-full w-full scale-105 object-cover transition-transform duration-[1600ms] ease-out group-hover:scale-110"
       />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-foreground/20 via-transparent to-foreground/80" />
-      <div className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/4 bg-primary-foreground/10 blur-xl animate-[sheen_7s_ease-in-out_infinite]" />
-      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 p-5 md:p-8">
-        <div className="glass-panel rounded-xl px-4 py-3 text-primary-foreground">
-          <p className="text-[10px] font-bold uppercase text-primary-foreground/70">Islamic Studies</p>
-          <p className="font-display text-lg font-bold md:text-2xl">Jifunze. Jipime. Fanikiwa.</p>
+
+      {/* Layered gradients keep the text legible over any frame of the video */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-black/10" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary/35 via-transparent to-secondary/25 mix-blend-soft-light" />
+
+      <div className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/4 bg-primary-foreground/10 blur-xl animate-[sheen_8s_ease-in-out_infinite]" />
+
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.07]"
+        style={{
+          backgroundImage:
+            "linear-gradient(to right, currentColor 1px, transparent 1px), linear-gradient(to bottom, currentColor 1px, transparent 1px)",
+          backgroundSize: "44px 44px",
+        }}
+      />
+
+      <div className="relative flex min-h-[320px] flex-col justify-between p-5 md:min-h-[460px] md:p-9">
+        <div className="inline-flex w-fit items-center gap-2 rounded-full border border-primary-foreground/25 bg-black/35 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-primary-foreground backdrop-blur-md">
+          <Sparkles className="h-3.5 w-3.5" /> {t("hero_kicker")}
         </div>
+
+        <div>
+          <h2 className="font-display text-2xl font-black leading-tight tracking-tight text-white drop-shadow-2xl md:text-5xl">
+            {t("hero_welcome")}
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm font-medium text-white/85 md:text-lg">
+            {t("hero_tagline")}
+          </p>
+
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <div className="glass-panel flex items-center gap-2 rounded-xl px-3.5 py-2 text-primary-foreground">
+              <GraduationCap className="h-4 w-4" />
+              <span className="text-xs font-semibold md:text-sm">{t("badge_islamic")}</span>
+            </div>
+            <div className="glass-panel rounded-xl px-3.5 py-2 text-primary-foreground">
+              <span className="text-xs font-semibold md:text-sm">{t("badge_security")}</span>
+            </div>
+            <div className="glass-panel hidden rounded-xl px-3.5 py-2 text-primary-foreground sm:block">
+              <span className="text-xs font-semibold md:text-sm">{t("badge_instant")}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-3">
         <div className="flex h-9 w-6 items-start justify-center rounded-full border border-primary-foreground/40 p-1.5">
           <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground animate-[scroll-cue_1.8s_ease-in-out_infinite]" />
         </div>

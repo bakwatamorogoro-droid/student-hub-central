@@ -18,6 +18,7 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Users } from "lucide-react";
+import { formatAcademicSummary } from "@/lib/academicTargeting";
 
 export const Route = createFileRoute("/exam/$examId")({
   component: ExamPage,
@@ -385,7 +386,7 @@ function ExamPage() {
   // Download helpers — Word (.doc as HTML) and PDF (print). ANSWERS ONLY (no questions).
   const buildAnswersHtml = () => {
     const css = `@page{size:A4;margin:18mm}body{font-family:'Times New Roman',serif;line-height:1.6;color:#111;margin:0}h1{font-size:20px;margin:0 0 6px}h2{font-size:15px;color:#0d9488;margin-top:14px}.cover{page-break-after:always;text-align:center}.cover .uni{font-size:24px;font-weight:bold;letter-spacing:1px;margin-bottom:8px}.cover .logo{display:block;margin:6px auto 10px;width:130px;height:auto}.cover .sub{font-size:13px;color:#555;margin-bottom:18px}.cover .row{font-size:14px;text-align:left;margin:6px 0}.cover .row b{display:inline-block;min-width:170px}.cover .qbox{margin-top:14px;padding:10px;border:1px solid #0d9488;border-radius:6px;background:#f0fdfa;text-align:left;font-size:13px}.members{margin:14px 0;padding:8px;border:1px solid #0d9488;border-radius:6px;text-align:left}.members table{width:100%;border-collapse:collapse;font-size:12px}.members th,.members td{border:1px solid #99f6e4;padding:4px 6px;text-align:left}.ans{margin:14px 0;padding:14px;background:#fff;border-left:4px solid #0d9488;border-radius:4px;page-break-inside:avoid}.ans h2,.ans h3{color:#0d9488}.ans blockquote{border-left:3px solid #0d9488;padding-left:8px;color:#555;font-style:italic}.qn-label{font-size:12px;color:#0d9488;font-weight:bold;margin-bottom:4px}.qn-text{font-size:13px;background:#f0fdfa;border:1px solid #99f6e4;border-radius:4px;padding:6px 8px;margin-bottom:8px;color:#111}`;
-    const logoUrl = `${window.location.origin}/__l5e/assets-v1/c98bae87-dc76-4ca0-97a1-fdd791f29c7a/mum-logo.png`;
+    const logoUrl = `${window.location.origin}/media/mum-logo.png`;
     const sharers: any[] = isAssignment
       ? groupMembers.filter((m) => selectedShareIds.has(m.student_id))
       : [{ full_name: student.full_name, reg_no: student.reg_no, phone: student.phone || "" }];
@@ -673,6 +674,14 @@ function ExamPage() {
             </DialogHeader>
             <div className="text-xs text-muted-foreground mb-2">
               <b>{student.full_name}</b> • {student.reg_no} • {student.semina} • {student.student_group}
+              {(student.course || student.study_year || student.academic_year) && (
+                <span className="block mt-0.5">
+                  {student.course}
+                  {formatAcademicSummary(student) && (
+                    <>{student.course ? " • " : ""}{formatAcademicSummary(student)}</>
+                  )}
+                </span>
+              )}
             </div>
             <div className="space-y-3">
               {questions.map((q, i) => {

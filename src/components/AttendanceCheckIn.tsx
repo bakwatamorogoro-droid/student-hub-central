@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, ClipboardCheck, Loader2, MapPin } from "lucide-react";
 import { toast } from "sonner";
+import { useI18n } from "@/lib/i18n";
 
 function todayEat(): string {
   // Africa/Dar_es_Salaam = UTC+3, no DST
@@ -23,6 +24,7 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number) {
 }
 
 export function AttendanceCheckIn() {
+  const { t } = useI18n();
   const [reg, setReg] = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState<{ name: string; date: string } | null>(null);
@@ -121,12 +123,12 @@ export function AttendanceCheckIn() {
             <ClipboardCheck className="h-5 w-5 text-primary-foreground" />
           </div>
           <div>
-            <h3 className="font-bold leading-tight">Mahudhurio ya Leo</h3>
-            <p className="text-[11px] text-muted-foreground">Jisajili kwa Reg Namba yako</p>
+            <h3 className="font-bold leading-tight">{t("attendance_today")}</h3>
+            <p className="text-[11px] text-muted-foreground">{t("attendance_sub")}</p>
           </div>
           <div className="ml-auto text-right">
             <div className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">{count}</div>
-            <div className="text-[10px] text-muted-foreground uppercase">waliohudhuria</div>
+            <div className="text-[10px] text-muted-foreground uppercase">{t("attendance_count")}</div>
           </div>
         </div>
         {done ? (
@@ -148,7 +150,7 @@ export function AttendanceCheckIn() {
               className="font-mono"
             />
             <Button onClick={checkIn} disabled={loading} className="bg-gradient-to-r from-emerald-500 to-primary">
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Niko"}
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t("here")}
             </Button>
           </div>
           {settings?.attendance_gps_required !== false && (
@@ -156,7 +158,7 @@ export function AttendanceCheckIn() {
               <MapPin className="h-3 w-3" />
               {settings?.attendance_lat != null
                 ? <>GPS lazima — umbali wa ruhusa: <b>{settings.attendance_radius_m || 200}m</b></>
-                : <>GPS itarekodiwa</>}
+                : <>{t("gps_recorded")}</>}
             </p>
           )}
           </>

@@ -2,20 +2,39 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Megaphone, FileText } from "lucide-react";
 
-type Item = { message: string; pdf_url: string | null; title: string | null };
+type Item = { message: string; pdf_url: string | null; image_url: string | null; title: string | null };
 
 export function AnnouncementBanner() {
   const [items, setItems] = useState<Item[]>([]);
   useEffect(() => {
-    const load = async () => {
-      const { data } = await supabase
-        .from("announcements")
-        .select("message, expires_at, active, pdf_url, title")
-        .eq("active", true)
-        .order("created_at", { ascending: false });
+    const base = "message, expires_at, active, pdf_url, title";
+    const apply = (data: any[] | null) => {
       const now = Date.now();
       const valid = (data || []).filter((a: any) => !a.expires_at || new Date(a.expires_at).getTime() > now);
-      setItems(valid.map((a: any) => ({ message: a.message, pdf_url: a.pdf_url, title: a.title })));
+      setItems(valid.map((a: any) => ({
+        message: a.message,
+        pdf_url: a.pdf_url,
+        image_url: a.image_url || null,
+        title: a.title,
+      })));
+    };
+    const load = async () => {
+      // image_url arrives with drizzle/migrations/0004_add_semester.sql.
+      const { data, error } = await supabase
+        .from("announcements")
+        .select(`${base}, image_url`)
+        .eq("active", true)
+        .order("created_at", { ascending: false });
+      if (error) {
+        const fallback = await supabase
+          .from("announcements")
+          .select(base)
+          .eq("active", true)
+          .order("created_at", { ascending: false });
+        apply(fallback.data as any[] | null);
+        return;
+      }
+      apply(data as any[] | null);
     };
     load();
     const t = setInterval(load, 30000);
@@ -28,6 +47,13 @@ export function AnnouncementBanner() {
       {items.map((it, i) => (
         <span key={i} className="mx-10 font-medium inline-flex items-center gap-3 align-middle">
           <span className="text-primary">★</span>
+          {it.image_url && (
+            <img
+              src={it.image_url}
+              alt={it.title || it.message}
+              className="h-8 w-auto max-w-32 rounded border border-primary/30 object-cover"
+            />
+          )}
           {it.title ? <strong className="text-primary">{it.title}:</strong> : null}
           <span>{it.message}</span>
           {it.pdf_url && (
