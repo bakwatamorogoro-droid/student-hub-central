@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { QrScanner } from "@/components/QrScanner";
-import { decodeQrToken } from "@/components/AttendanceSessionPanel";
+import { decodeJoinQr, decodeQrToken } from "@/lib/attendance-qr";
 import {
   checkIn,
   getPosition,
@@ -27,6 +27,7 @@ const FAILURE_TEXT: Record<AttendanceFailure, string> = {
   gps_required:
     "Umbali hauwezi kuthibitishwa. Ruhusu GPS, na hakikisha kipindi kina eneo la darasa.",
   outside_area: "Uko nje ya eneo lililoruhusiwa la darasa. Sogeza karibu na mwalimu.",
+  wrong_group: "Kipindi hiki ni cha group lingine. Hudhuria kipindi cha group lako.",
   already_marked: "Tayari umehudhuria kipindi hiki. Mahudhurio yanarekodiwa mara moja tu.",
 };
 
@@ -94,8 +95,11 @@ export function QrAttendanceCheckIn() {
   const handleToken = useCallback(
     async (raw: string) => {
       setScanning(false);
-      const token = decodeQrToken(raw);
-      if (!token) {
+      // A printed poster carries the session's join code, a live screen carries a
+      // rotating token. Accept both so one scanner serves either.
+      const joinCode = decodeJoinQr(raw);
+      const token = joinCode ? null : decodeQrToken(raw);
+      if (!joinCode && !token) {
         setFailure({ reason: "invalid_token" });
         return;
       }
@@ -107,7 +111,13 @@ export function QrAttendanceCheckIn() {
         toast.error("Ingia kwenye akaunti yako kwanza (/account), kisha skani QR.");
         return;
       }
-      await record((fix) => checkIn({ studentToken: st, token, lat: fix.lat, lng: fix.lng }));
+      await record((fix) =>
+        checkIn(
+          joinCode
+            ? { studentToken: st, joinCode, lat: fix.lat, lng: fix.lng }
+            : { studentToken: st, token, lat: fix.lat, lng: fix.lng },
+        ),
+      );
     },
     [record],
   );

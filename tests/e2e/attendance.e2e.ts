@@ -73,6 +73,7 @@ const {
 } = await import("@/lib/attendance");
 const { getStudentToken, setStudentToken, clearStudentToken } =
   await import("@/lib/student-session");
+const { decodeJoinQr, encodeJoinQr } = await import("@/lib/attendance-qr");
 
 let pass = 0,
   fail = 0;
@@ -359,6 +360,59 @@ check(
   JSON.stringify(openForStudent.map((s) => s.title)),
 );
 
+// --- B13b: scanning the poster of another group's session is refused
+// B13 covers the picker, which merely hides the session. The printed poster is a
+// join code, and a join code can be typed or scanned by anyone, so the group
+// rule has to hold on the check-in itself.
+const wrongGroup = start4.ok
+  ? await checkIn({
+      studentToken: login.token,
+      joinCode: start4.session.joinCode,
+      lat: LAT,
+      lng: LNG,
+    })
+  : { ok: false, reason: "setup failed" };
+check("B13b another group's join code is refused", !wrongGroup.ok, JSON.stringify(wrongGroup));
+
+// --- B15: the printable poster's payload drives a real check-in
+// The poster cannot carry a rotating token (it expires in 30 s), so it carries
+// the join code. This proves the sheet a teacher pins to the wall is accepted by
+// the same path a camera scan takes.
+const posterSession = await startAttendanceSession({
+  title: "E2E Poster",
+  semina: "Semina 2",
+  studentGroup: null,
+  lat: LAT,
+  lng: LNG,
+  radiusM: 50,
+  joinCode: makeJoinCode(),
+});
+check("B15a poster session started", posterSession.ok, JSON.stringify(posterSession));
+const posterRaw = posterSession.ok ? encodeJoinQr(posterSession.session.joinCode) : "";
+check(
+  "B15b the poster payload decodes back to the join code",
+  posterSession.ok && decodeJoinQr(posterRaw) === posterSession.session.joinCode,
+  posterRaw,
+);
+const viaPoster = posterSession.ok
+  ? await checkIn({
+      studentToken: login.token,
+      joinCode: decodeJoinQr(posterRaw),
+      lat: LAT,
+      lng: LNG,
+    })
+  : { ok: false, reason: "setup failed" };
+check("B15c a check-in from the printed poster succeeds", viaPoster.ok, JSON.stringify(viaPoster));
+const wrongFormat = posterSession.ok
+  ? await checkIn({ studentToken: login.token, joinCode: posterRaw, lat: LAT, lng: LNG })
+  : { ok: false, reason: "setup failed" };
+check(
+  "B15d the raw poster payload is not itself a join code",
+  !wrongFormat.ok,
+  JSON.stringify(wrongFormat),
+);
+if (posterSession.ok) await endAttendanceSession(posterSession.session.id);
+
 // --- B14: distance maths is sane
 check("B14 identical points are zero apart", distanceM(LAT, LNG, LAT, LNG) < 0.001);
 check(
@@ -388,7 +442,7 @@ clearStudentToken();
 // Delete only this run's rows. Namespace-wide deletes here would wipe the
 // sessions a real teacher has open, and the check-ins recorded against them.
 const NS = "a0000000-0000-4000-8000-0000000000";
-const sessionIds = [start, start2, start3, start3b, start3c, start4]
+const sessionIds = [start, start2, start3, start3b, start3c, start4, posterSession]
   .filter((r) => r.ok)
   .map((r) => r.session.id);
 for (const sid of sessionIds) {

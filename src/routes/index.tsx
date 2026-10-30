@@ -16,7 +16,6 @@ import {
 import { useI18n } from "@/lib/i18n";
 import { supabase } from "@/integrations/supabase/client";
 import { getDeviceId } from "@/lib/device-id";
-import { AttendanceCheckIn } from "@/components/AttendanceCheckIn";
 import { BigSystemTitle } from "@/components/ExamVideoHero";
 import { HomeAnimationHero } from "@/components/HomeAnimationHero";
 import { RealPhotoHero } from "@/components/RealPhotoHero";
@@ -160,8 +159,8 @@ function Index() {
           <UpdateTaarifaCard />
         </div>
 
-        {/* VITENDO VIKUU: Fanya Mtihani · Attendance · Quiz */}
-        <div className="grid gap-4 md:grid-cols-3">
+        {/* VITENDO VIKUU: Fanya Mtihani / Quiz */}
+        <div className="grid gap-4 md:grid-cols-2">
           <Link to="/exams" className="group animate-fade-in">
             <Card className="h-full min-h-[190px] border-2 hover:border-primary hover:shadow-2xl transition-all hover:-translate-y-1 bg-gradient-to-br from-primary via-primary/80 to-primary/40 text-primary-foreground overflow-hidden relative">
               <div className="absolute -right-10 -bottom-10 w-48 h-48 rounded-full bg-primary-foreground/10 blur-2xl" />
@@ -180,11 +179,7 @@ function Index() {
             </Card>
           </Link>
 
-          <div className="animate-fade-in" style={{ animationDelay: "80ms" }}>
-            <AttendanceCheckIn />
-          </div>
-
-          <Link to="/quiz" className="group animate-fade-in" style={{ animationDelay: "160ms" }}>
+          <Link to="/quiz" className="group animate-fade-in" style={{ animationDelay: "80ms" }}>
             <Card className="h-full min-h-[190px] border-2 hover:border-emerald-500 hover:shadow-2xl transition-all hover:-translate-y-1 bg-gradient-to-br from-emerald-500/20 via-card to-primary/10 overflow-hidden relative">
               <div className="absolute -right-6 -top-6 w-32 h-32 rounded-full bg-emerald-500/10 blur-2xl" />
               <CardContent className="p-6 h-full flex flex-col justify-between relative">

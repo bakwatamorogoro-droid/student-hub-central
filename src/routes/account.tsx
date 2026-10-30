@@ -15,7 +15,16 @@ import {
 } from "@/lib/studentAccount";
 import { getStudentToken, setStudentToken, clearStudentToken } from "@/lib/student-session";
 import { QrAttendanceCheckIn } from "@/components/QrAttendanceCheckIn";
-import { Copy, GraduationCap, KeyRound, Loader2, LogIn, LogOut, ShieldCheck } from "lucide-react";
+import {
+  CalendarCheck,
+  Copy,
+  GraduationCap,
+  KeyRound,
+  Loader2,
+  LogIn,
+  LogOut,
+  ShieldCheck,
+} from "lucide-react";
 import { toast } from "@/lib/toast";
 
 export const Route = createFileRoute("/account")({ component: Page });
@@ -157,42 +166,49 @@ function Page() {
           </CardContent>
         </Card>
 
-        {/* Straight after sign-in, so the student does not have to go hunting on
-            another page to find the QR they just logged in for. */}
-        <QrAttendanceCheckIn />
+        {/* One Mahudhurio section holds everything attendance: the QR to scan and
+            the record of what has been scanned. Keeping the two together means a
+            student who signs in sees where to check in without a second stop. */}
+        <section className="space-y-3">
+          <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-muted-foreground">
+            <CalendarCheck className="h-4 w-4" /> Mahudhurio
+          </h2>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Historia ya Mahudhurio</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {profile.attendance.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Bado hujahudhuria kipindi chochote.</p>
-            ) : (
-              <div className="space-y-1.5">
-                {profile.attendance.map((h) => (
-                  <div
-                    key={h.id}
-                    className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2 text-sm"
-                  >
-                    <span className="truncate">
-                      {h.semina || "—"}
-                      {h.status === "present" && (
-                        <Badge variant="secondary" className="ml-2 text-[10px]">
-                          Alikuwepo
-                        </Badge>
-                      )}
-                    </span>
-                    <span className="ml-2 shrink-0 text-xs text-muted-foreground">
-                      {new Date(h.created_at).toLocaleDateString("sw-TZ")}
-                      {h.distance_m != null ? ` · ${Math.round(h.distance_m)}m` : ""}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          <QrAttendanceCheckIn />
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Historia ya Mahudhurio</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {profile.attendance.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Bado hujahudhuria kipindi chochote.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {profile.attendance.map((h) => (
+                    <div
+                      key={h.id}
+                      className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2 text-sm"
+                    >
+                      <span className="truncate">
+                        {h.semina || "—"}
+                        {h.status === "present" && (
+                          <Badge variant="secondary" className="ml-2 text-[10px]">
+                            Alikuwepo
+                          </Badge>
+                        )}
+                      </span>
+                      <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                        {new Date(h.created_at).toLocaleDateString("sw-TZ")}
+                        {h.distance_m != null ? ` · ${Math.round(h.distance_m)}m` : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </section>
       </div>
     );
   }

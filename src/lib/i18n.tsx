@@ -75,10 +75,6 @@ const dict: Record<string, { sw: string; en: string }> = {
     en: "Group or individual — choose inside",
   },
   enter: { sw: "Ingia", en: "Enter" },
-  attendance_today: { sw: "Mahudhurio ya Leo", en: "Today's attendance" },
-  attendance_sub: { sw: "Jisajili kwa Reg Namba yako", en: "Check in with your Reg number" },
-  attendance_count: { sw: "waliohudhuria", en: "checked in" },
-  here: { sw: "Niko", en: "I'm here" },
   gps_recorded: { sw: "GPS itarekodiwa", en: "GPS will be recorded" },
 
   // --- stats --------------------------------------------------------------

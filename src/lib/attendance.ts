@@ -45,8 +45,6 @@ const TOKEN_NS = "a0000000-0000-4000-8000-000000000005";
 /** How long a single QR token stays valid. Short, so a photo goes stale. */
 const TOKEN_TTL_SECONDS = 30;
 
-const QR_PREFIX = "ISL-ATT1:";
-
 export type AttendanceFailure =
   | "not_ready"
   | "invalid_token"
@@ -54,6 +52,7 @@ export type AttendanceFailure =
   | "session_closed"
   | "not_registered"
   | "outside_area"
+  | "wrong_group"
   | "gps_required"
   | "already_marked";
 
@@ -147,18 +146,6 @@ export function distanceM(lat1: number, lng1: number, lat2: number, lng2: number
 /** EAT (UTC+3, no DST) calendar date, for the legacy `attendance` row. */
 function todayEat(): string {
   return new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
-}
-
-/** Wraps a raw token so a scan of an unrelated QR code is rejected outright. */
-export function encodeQrToken(token: string): string {
-  return QR_PREFIX + token;
-}
-
-export function decodeQrToken(raw: string): string | null {
-  const text = (raw || "").trim();
-  if (!text.startsWith(QR_PREFIX)) return null;
-  const token = text.slice(QR_PREFIX.length).trim();
-  return token.length >= 20 ? token : null;
 }
 
 // ---------------------------------------------------------------
@@ -447,6 +434,12 @@ export async function checkIn(input: {
   if (!payload.active) return { ok: false, reason: "session_closed" };
   if (payload.closes_at && new Date(payload.closes_at).getTime() <= Date.now()) {
     return { ok: false, reason: "session_closed" };
+  }
+
+  // A group-targeted session is only for that group. The picker hides the others,
+  // but a scanned join code bypasses the picker, so the rule is enforced here.
+  if (payload.student_group && payload.student_group !== student.studentGroup) {
+    return { ok: false, reason: "wrong_group" };
   }
 
   // Geofence. A session the teacher started without coordinates has no fence,

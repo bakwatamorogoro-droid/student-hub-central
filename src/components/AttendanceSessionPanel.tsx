@@ -13,10 +13,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { QrCodeDisplay } from "@/components/QrCodeDisplay";
+import { encodeQrToken } from "@/lib/attendance-qr";
+import { AttendanceQrPoster } from "@/components/AttendanceQrPoster";
 import { Badge } from "@/components/ui/badge";
 import {
-  decodeQrToken as decodeAttendanceToken,
-  encodeQrToken as encodeAttendanceToken,
   endAttendanceSession,
   fetchSessionPresent,
   type Session as AttendanceSession,
@@ -29,10 +29,6 @@ import { toast } from "@/lib/toast";
 import { Crosshair, Loader2, Play, Square, Users } from "lucide-react";
 
 const ROTATE_MS = 25_000;
-
-/** Re-exported so the scanner and the display share one payload format. */
-export const encodeQrToken = encodeAttendanceToken;
-export const decodeQrToken = decodeAttendanceToken;
 
 type PanelSession = AttendanceSession;
 
@@ -333,6 +329,17 @@ export function AttendanceSessionPanel() {
                 Sema kwa wanafunzi waliopo darasani. Umbali unahitajika sawa na QR.
               </p>
             </div>
+          )}
+          {joinCode && (
+            <AttendanceQrPoster
+              session={{
+                title: session.title,
+                semina: session.semina,
+                studentGroup: session.studentGroup,
+                radiusM: session.radiusM,
+              }}
+              joinCode={joinCode}
+            />
           )}
         </div>
         <div>
