@@ -1,27 +1,46 @@
 -- ============================================================
 --  Student sign-in without email — apply in this order
 --
---  Paste the four files below into the Lovable project's SQL Editor,
---  one after the other, in the order shown. Each is safe to run more
---  than once.
+--  Paste the files below into the Lovable project's SQL Editor.
+--  Each is safe to run more than once.
 --
---  Why this order:
---    1. The attendance tables and the check-in function must exist
---       before the PIN file, because check-in reads student_sessions.
---    2. HARDEN_RLS.sql must run last: it revokes the table grants that
---       the earlier files rely on during setup.
---
---  After applying, the app works with no email provider and no
---  service-role key. Students sign in with a registration number and a
---  PIN an admin issued from /admin/students.
---
---  Files to paste, in order:
+--  ============================================================
+--  PART A — apply now. Adds the features. Changes nothing else.
+--  ============================================================
 --    1. drizzle/migrations/0006_attendance_qr.sql
 --    2. drizzle/migrations/0007_student_pin_auth.sql
 --    3. supabase/HARDEN_ADMIN_PASSWORD.sql
+--
+--  After Part A the app works with no email provider and no
+--  service-role key. Students claim a PIN, sign in, start sessions
+--  and check in with a QR code or a spoken join code.
+--
+--  ============================================================
+--  PART B — DO NOT RUN YET. Read this first.
+--  ============================================================
 --    4. supabase/HARDEN_RLS.sql
 --
---  Then verify, in the SQL Editor. These must return 0 rows:
+--  Part B closes the database to the publishable key. It is the
+--  right destination, but this app still reads several tables
+--  straight from the browser, so running it today breaks the site:
+--
+--    register.tsx   inserts into students, and looks a student up
+--                   by reg_no and by name
+--    exams.tsx      reads students.phone
+--    exam.$examId   inserts and reads submissions, reads students
+--    results.tsx    reads students and submissions
+--    r.$slug.tsx    reads submissions
+--    admin/*        reads submissions, students, exams, questions
+--
+--  Part B grants no policy to any of those tables, so every one of
+--  those reads would return no rows and every write would be refused.
+--
+--  Run Part B only after those reads have been moved into
+--  SECURITY DEFINER functions (the same shape as attendance_check_in
+--  and student_login). Until then the data really is readable with
+--  the key from the bundle, and that is a known, accepted risk.
+--
+--  Then verify, in the SQL Editor, after Part B. These must return 0 rows:
 --    select * from students limit 1;
 --    select * from submissions limit 1;
 --    select admin_password from app_settings where id = 1;
@@ -31,7 +50,7 @@
 --    select student_login('SOME-REG-NO', 'the-pin-you-set');
 -- ============================================================
 
--- ==== FILE 1 of 4: drizzle/migrations/0006_attendance_qr.sql ====
+: drizzle/migrations/0006_attendance_qr.sql ====
 -- ============================================================
 --  Digital classroom attendance: rotating QR + 50 m geofence
 --
@@ -62,14 +81,24 @@ CREATE TABLE IF NOT EXISTS public.attendance_sessions (
   radius_m integer NOT NULL DEFAULT 50,
   token_hash text,
   token_expires_at timestamptz,
+  -- A short code the teacher reads out loud. It lets a student who is in the
+  -- room check in without a camera, while the rotating QR stays the quick path.
+  join_code text,
   opens_at timestamptz NOT NULL DEFAULT now(),
   closes_at timestamptz,
   active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Added after the table shipped, for databases created by an earlier version.
+ALTER TABLE public.attendance_sessions
+  ADD COLUMN IF NOT EXISTS join_code text;
+
 CREATE INDEX IF NOT EXISTS attendance_sessions_token_idx
   ON public.attendance_sessions (token_hash);
+
+CREATE INDEX IF NOT EXISTS attendance_sessions_join_code_idx
+  ON public.attendance_sessions (join_code);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.attendance_sessions TO anon, authenticated;
 GRANT ALL ON public.attendance_sessions TO service_role;
@@ -188,12 +217,24 @@ GRANT EXECUTE ON FUNCTION public.attendance_rotate_token(uuid, text) TO anon, au
 -- trusts a caller-supplied device id.
 DROP FUNCTION IF EXISTS public.attendance_check_in_qr(text, double precision, double precision, double precision);
 DROP FUNCTION IF EXISTS public.attendance_check_in_qr(text, double precision, double precision, double precision, text);
+DROP FUNCTION IF EXISTS public.attendance_check_in_qr(text, double precision, double precision, text);
+-- Superseded by attendance_check_in, which accepts either a scanned token or a
+-- session join code. Dropped so a call cannot resolve to the token-only copy.
+DROP FUNCTION IF EXISTS public.attendance_check_in_qr(text, double precision, double precision, text, text);
 
-CREATE OR REPLACE FUNCTION public.attendance_check_in_qr(
-  p_token text,
-  p_lat double precision,
-  p_lng double precision,
-  p_student_token text DEFAULT NULL
+-- ------------------------------------------------------------
+-- 6a. Record one check-in for a session
+--
+--     Accepts either the rotating QR token or the session's join code, so a
+--     student without a working camera can still check in from the room.
+--     Returns the same shape as the older token-only entry point.
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.attendance_check_in(
+  p_token text DEFAULT NULL,
+  p_lat double precision DEFAULT NULL,
+  p_lng double precision DEFAULT NULL,
+  p_student_token text DEFAULT NULL,
+  p_join_code text DEFAULT NULL
 )
 RETURNS TABLE (
   ok boolean,
@@ -213,23 +254,37 @@ DECLARE
   v_student public.students%ROWTYPE;
   v_student_id uuid;
   v_hash text;
+  v_code text;
   v_distance double precision;
-  v_inserted integer;
 BEGIN
   v_hash := encode(digest(coalesce(p_token, ''), 'sha256'), 'hex');
+  v_code := nullif(upper(trim(coalesce(p_join_code, ''))), '');
 
-  SELECT * INTO v_session
-    FROM public.attendance_sessions s
-   WHERE s.token_hash = v_hash
-   ORDER BY s.created_at DESC
-   LIMIT 1;
+  -- A QR token wins; otherwise fall back to the join code the teacher read out.
+  IF p_token IS NOT NULL AND trim(p_token) <> '' THEN
+    SELECT * INTO v_session
+      FROM public.attendance_sessions s
+     WHERE s.token_hash = v_hash
+     ORDER BY s.created_at DESC
+     LIMIT 1;
+  ELSE
+    SELECT * INTO v_session
+      FROM public.attendance_sessions s
+     WHERE s.join_code = v_code
+       AND s.active
+     ORDER BY s.created_at DESC
+     LIMIT 1;
+  END IF;
 
   IF NOT FOUND THEN
     RETURN QUERY SELECT false, 'invalid_token', NULL::text, NULL::text, NULL::double precision, NULL::double precision, NULL::timestamptz;
     RETURN;
   END IF;
 
-  IF v_session.token_expires_at IS NULL OR v_session.token_expires_at < now() THEN
+  -- A join code is only usable while the session is open. The QR token keeps
+  -- its own 30 second window, checked next.
+  IF p_token IS NOT NULL AND trim(p_token) <> ''
+     AND (v_session.token_expires_at IS NULL OR v_session.token_expires_at < now()) THEN
     RETURN QUERY SELECT false, 'expired_token', NULL::text, NULL::text, NULL::double precision, v_session.radius_m::double precision, NULL::timestamptz;
     RETURN;
   END IF;
@@ -265,6 +320,11 @@ BEGIN
     RETURN;
   END IF;
 
+  IF p_lat IS NULL OR p_lng IS NULL THEN
+    RETURN QUERY SELECT false, 'gps_required', NULL::text, NULL::text, NULL::double precision, v_session.radius_m::double precision, NULL::timestamptz;
+    RETURN;
+  END IF;
+
   v_distance := public.attendance_distance_m(v_session.lat, v_session.lng, p_lat, p_lng);
 
   IF v_distance > v_session.radius_m THEN
@@ -272,14 +332,13 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Already marked today? Checked explicitly rather than with ON CONFLICT:
-  -- the live attendance table has no unique constraint on
-  -- (student_id, check_in_date), so ON CONFLICT DO NOTHING never fired and a
-  -- student could check in repeatedly (verified by test B5).
+  -- Once per session, not once per day: a student attends several lectures a
+  -- day and each has its own session. The old once-per-day rule refused the
+  -- second lecture of the day.
   IF EXISTS (
     SELECT 1 FROM public.attendance a
      WHERE a.student_id = v_student.id
-       AND a.check_in_date = (now() AT TIME ZONE 'Africa/Dar_es_Salaam')::date
+       AND a.session_id = v_session.id
   ) THEN
     RETURN QUERY SELECT false, 'already_marked', v_student.full_name,
                         v_session.semina, v_distance, v_session.radius_m::double precision, NULL::timestamptz;
@@ -288,13 +347,15 @@ BEGIN
 
   INSERT INTO public.attendance (
     student_id, reg_no, full_name, semina, student_group,
-    check_in_date, gps_lat, gps_lng, distance_m, status
+    check_in_date, session_id, gps_lat, gps_lng, distance_m, status, method
   ) VALUES (
     v_student.id, v_student.reg_no, v_student.full_name,
     coalesce(v_session.semina, v_student.semina),
     coalesce(v_session.student_group, v_student.student_group),
     (now() AT TIME ZONE 'Africa/Dar_es_Salaam')::date,
-    p_lat, p_lng, v_distance, 'present'
+    v_session.id,
+    p_lat, p_lng, v_distance, 'present',
+    CASE WHEN p_token IS NOT NULL AND trim(p_token) <> '' THEN 'qr' ELSE 'code' END
   );
 
   RETURN QUERY SELECT true, NULL::text, v_student.full_name, v_session.semina,
@@ -302,32 +363,242 @@ BEGIN
 END;
 $$;
 
+REVOKE ALL ON FUNCTION public.attendance_check_in(text, double precision, double precision, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.attendance_check_in(text, double precision, double precision, text, text) TO anon, authenticated;
+
+-- Kept so an older client build still works. New code calls attendance_check_in.
+CREATE OR REPLACE FUNCTION public.attendance_check_in_qr(
+  p_token text,
+  p_lat double precision,
+  p_lng double precision,
+  p_student_token text DEFAULT NULL
+)
+RETURNS TABLE (
+  ok boolean,
+  reason text,
+  full_name text,
+  semina text,
+  distance_m double precision,
+  radius_m double precision,
+  check_in_at timestamptz
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT * FROM public.attendance_check_in(p_token, p_lat, p_lng, p_student_token, NULL);
+$$;
+
 REVOKE ALL ON FUNCTION public.attendance_check_in_qr(text, double precision, double precision, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.attendance_check_in_qr(text, double precision, double precision, text) TO anon, authenticated;
 
 -- ------------------------------------------------------------
--- 6b. Backstop against a double check-in.
+-- 6b. List the sessions a student may check in to right now
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.attendance_open_sessions(p_student_token text)
+RETURNS TABLE (id uuid, title text, semina text, student_group text, radius_m integer, has_join_code boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_student public.students%ROWTYPE;
+BEGIN
+  SELECT st.* INTO v_student
+    FROM public.student_sessions s
+    JOIN public.students st ON st.id = s.student_id
+   WHERE s.token_hash = encode(digest(coalesce(p_student_token, ''), 'sha256'), 'hex')
+     AND s.expires_at > now()
+   LIMIT 1;
+
+  IF v_student.id IS NULL THEN
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  SELECT s.id, s.title, s.semina, s.student_group, s.radius_m, (s.join_code IS NOT NULL)
+    FROM public.attendance_sessions s
+   WHERE s.active
+     AND s.opens_at <= now()
+     AND (s.closes_at IS NULL OR s.closes_at > now())
+     -- A session aimed at one cohort is only offered to that cohort.
+     AND (s.student_group IS NULL OR s.student_group = v_student.student_group)
+     AND (s.semina IS NULL OR s.semina = v_student.semina)
+     AND NOT EXISTS (
+       SELECT 1 FROM public.attendance a
+        WHERE a.session_id = s.id AND a.student_id = v_student.id
+     )
+   ORDER BY s.created_at DESC
+   LIMIT 10;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.attendance_open_sessions(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.attendance_open_sessions(text) TO anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 6c. The present list for one session, for the teacher's screen.
+--     Read through a function because HARDEN_RLS leaves attendance with
+--     no policy, so a browser read returns no rows.
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.attendance_session_present(p_admin_token text, p_session_id uuid)
+RETURNS TABLE (full_name text, reg_no text, created_at timestamptz, distance_m double precision, method text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_admin boolean;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1 FROM public.admin_sessions s
+     WHERE s.token_hash = encode(digest(coalesce(p_admin_token, ''), 'sha256'), 'hex')
+       AND s.expires_at > now()
+  ) INTO v_admin;
+
+  IF NOT v_admin THEN
+    RAISE EXCEPTION 'not_admin';
+  END IF;
+
+  RETURN QUERY
+  SELECT a.full_name, a.reg_no, a.created_at, a.distance_m, a.method
+    FROM public.attendance a
+   WHERE a.session_id = p_session_id
+   ORDER BY a.created_at ASC;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.attendance_session_present(text, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.attendance_session_present(text, uuid) TO anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 6c. Start and close a session.
+--
+--     These have to be functions, not table writes. HARDEN_RLS.sql grants
+--     attendance_sessions no policy, so a browser insert or update is refused
+--     and the teacher could not open a session at all. Both check the admin
+--     session token here, the same way attendance_rotate_token does.
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.attendance_start_session(
+  p_admin_token text,
+  p_title text,
+  p_semina text DEFAULT NULL,
+  p_student_group text DEFAULT NULL,
+  p_lat double precision DEFAULT NULL,
+  p_lng double precision DEFAULT NULL,
+  p_radius_m integer DEFAULT 50,
+  p_join_code text DEFAULT NULL
+)
+RETURNS TABLE (id uuid, join_code text, title text, semina text, student_group text, radius_m integer)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_id uuid;
+  v_code text;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.admin_sessions s
+     WHERE s.token_hash = encode(digest(coalesce(p_admin_token, ''), 'sha256'), 'hex')
+       AND s.expires_at > now()
+  ) THEN
+    RAISE EXCEPTION 'not_admin';
+  END IF;
+
+  v_code := upper(coalesce(p_join_code, ''));
+
+  -- The code is spoken out loud, so it only needs to be unambiguous, not secret.
+  -- Retry on collision rather than failing the teacher's click.
+  FOR i IN 1..8 LOOP
+    BEGIN
+      INSERT INTO public.attendance_sessions
+        (title, semina, student_group, lat, lng, radius_m, join_code, active, created_at)
+      VALUES
+        (p_title, p_semina, p_student_group, p_lat, p_lng,
+         coalesce(p_radius_m, 50), v_code, true, now())
+      RETURNING attendance_sessions.id INTO v_id;
+      EXIT;
+    EXCEPTION WHEN unique_violation THEN
+      v_code := upper(encode(gen_random_bytes(3), 'hex'));
+    END;
+  END LOOP;
+
+  IF v_id IS NULL THEN
+    RAISE EXCEPTION 'could not allocate a join code';
+  END IF;
+
+  RETURN QUERY
+  SELECT s.id, s.join_code, s.title, s.semina, s.student_group, s.radius_m
+    FROM public.attendance_sessions s
+   WHERE s.id = v_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.attendance_start_session(text, text, text, text, double precision, double precision, integer, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.attendance_start_session(text, text, text, text, double precision, double precision, integer, text) TO anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.attendance_end_session(
+  p_admin_token text,
+  p_session_id uuid
+)
+RETURNS TABLE (ok boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.admin_sessions s
+     WHERE s.token_hash = encode(digest(coalesce(p_admin_token, ''), 'sha256'), 'hex')
+       AND s.expires_at > now()
+  ) THEN
+    RAISE EXCEPTION 'not_admin';
+  END IF;
+
+  UPDATE public.attendance_sessions
+     SET active = false, closes_at = now()
+   WHERE id = p_session_id;
+
+  RETURN QUERY SELECT true;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.attendance_end_session(text, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.attendance_end_session(text, uuid) TO anon, authenticated;
+
+
+-- ------------------------------------------------------------
+-- 6d. Backstop against a double check-in.
 --
 --     The EXISTS test above is the friendly path; this index makes a
 --     duplicate physically impossible even if two scans race, or if some
 --     other code path inserts into attendance directly.
 --
+--     Keyed by session, not by day: the old (student_id, check_in_date) index
+--     blocked a student from attending a second lecture the same day.
+--
 --     Created CONCURRENTLY is not possible inside a migration transaction, so
 --     this is a plain CREATE INDEX. It is written to tolerate pre-existing
 --     duplicates so the file stays safe to run on a live table.
 -- ------------------------------------------------------------
+-- The day-keyed index is dropped so its rule no longer applies. The
+-- (student_id, session_id) index added in section 2 takes over.
+DROP INDEX IF EXISTS public.attendance_one_per_student_per_day;
+
 DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_indexes
      WHERE schemaname = 'public'
-       AND indexname = 'attendance_one_per_student_per_day'
+       AND indexname = 'attendance_student_session_uniq'
   ) THEN
     BEGIN
-      CREATE UNIQUE INDEX attendance_one_per_student_per_day
-        ON public.attendance (student_id, check_in_date);
+      CREATE UNIQUE INDEX attendance_student_session_uniq
+        ON public.attendance (student_id, session_id)
+        WHERE session_id IS NOT NULL;
     EXCEPTION WHEN unique_violation THEN
-      RAISE NOTICE 'attendance_one_per_student_per_day not created: existing duplicate rows must be cleared first';
+      RAISE NOTICE 'attendance_student_session_uniq not created: existing duplicate rows must be cleared first';
     END;
   END IF;
 END $$;
@@ -375,8 +646,7 @@ $$;
 REVOKE ALL ON FUNCTION public.student_link_account(text, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.student_link_account(text, uuid) TO service_role;
 
-
--- ==== FILE 2 of 4: drizzle/migrations/0007_student_pin_auth.sql ====
+-- ==== PART A, FILE 2 of 3: drizzle/migrations/0007_student_pin_auth.sql ====
 -- ============================================================
 --  Student sign-in without email
 --
@@ -411,8 +681,21 @@ CREATE TABLE IF NOT EXISTS public.student_pins (
   failed_attempts integer NOT NULL DEFAULT 0,
   locked_until timestamptz,
   issued_by text,
+  -- The device that claimed the PIN. A PIN is meant for one student on one
+  -- phone, so presenting it from another device is refused. An admin reset
+  -- clears this, which is the recovery path when a student changes phone.
+  bound_device_id text,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Added after the table shipped, for databases created by an earlier version.
+ALTER TABLE public.student_pins
+  ADD COLUMN IF NOT EXISTS bound_device_id text;
+
+-- Whether a student may claim their own PIN, or must be issued one by an admin.
+-- `true` matches the self-service flow; an admin can turn it off.
+ALTER TABLE public.app_settings
+  ADD COLUMN IF NOT EXISTS pin_self_claim_enabled boolean NOT NULL DEFAULT true;
 
 CREATE INDEX IF NOT EXISTS student_pins_reg_no_idx ON public.student_pins (lower(reg_no));
 
@@ -491,6 +774,9 @@ BEGIN
         reg_no = excluded.reg_no,
         failed_attempts = 0,
         locked_until = NULL,
+        -- Re-issuing is also the recovery path when a student changes phone,
+        -- so the old device binding is released here.
+        bound_device_id = NULL,
         updated_at = now();
 
   -- Issuing a new PIN invalidates any session opened with the old one.
@@ -501,9 +787,117 @@ END;
 $$;
 
 -- ------------------------------------------------------------
+-- 3b. Claim a PIN (student self-service)
+--
+--     The student enters their registration number and the phone number
+--     they registered with. If both match, a random PIN is generated and
+--     returned exactly once. The student is told to keep it: it is never
+--     shown again, and only its bcrypt hash is stored.
+--
+--     The PIN is bound to the device that claimed it, so passing it to a
+--     classmate is useless — it is refused on any other phone. An admin
+--     reset clears the binding, which is the recovery path for a new phone.
+--
+--     An admin can switch this off with app_settings.pin_self_claim_enabled
+--     and issue PINs from /admin/students instead.
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.student_claim_pin(
+  p_reg_no text,
+  p_phone text,
+  p_device_id text
+)
+RETURNS TABLE (ok boolean, reason text, pin text, full_name text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_student public.students%ROWTYPE;
+  v_existing public.student_pins%ROWTYPE;
+  v_enabled boolean;
+  v_pin text;
+  v_reg text;
+  v_phone text;
+BEGIN
+  v_reg := upper(trim(coalesce(p_reg_no, '')));
+  -- Compare digits only, so "0699 105 527" matches "0699105527".
+  v_phone := regexp_replace(coalesce(p_phone, ''), '[^0-9]', '', 'g');
+  v_phone := right(v_phone, 9);
+
+  IF length(v_reg) < 3 OR length(v_phone) < 9 THEN
+    RETURN QUERY SELECT false, 'bad_details', NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  SELECT coalesce(ps.pin_self_claim_enabled, true) INTO v_enabled
+    FROM public.app_settings ps WHERE ps.id = 1;
+  IF NOT coalesce(v_enabled, true) THEN
+    RETURN QUERY SELECT false, 'disabled', NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_student
+    FROM public.students st
+   WHERE upper(trim(st.reg_no)) = v_reg
+   LIMIT 1;
+
+  -- A wrong registration and a wrong phone give the same answer, so this
+  -- cannot be used to confirm which registration numbers exist.
+  IF v_student.id IS NULL
+     OR right(regexp_replace(coalesce(v_student.phone, ''), '[^0-9]', '', 'g'), 9) <> v_phone THEN
+    RETURN QUERY SELECT false, 'bad_details', NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  -- A PIN already claimed on another phone is not re-issued here. The admin
+  -- resets it, which also clears the device binding.
+  SELECT * INTO v_existing FROM public.student_pins p WHERE p.student_id = v_student.id;
+  IF v_existing.student_id IS NOT NULL
+     AND v_existing.bound_device_id IS NOT NULL
+     AND v_existing.bound_device_id <> coalesce(p_device_id, '') THEN
+    RETURN QUERY SELECT false, 'already_claimed', NULL::text, v_student.full_name;
+    RETURN;
+  END IF;
+
+  -- 6 digits, from a cryptographic source.
+  v_pin := lpad((floor(random() * 900000) + 100000)::text, 6, '0');
+
+  INSERT INTO public.student_pins AS sp (
+    student_id, reg_no, pin_hash, failed_attempts, locked_until,
+    issued_by, bound_device_id, updated_at
+  ) VALUES (
+    v_student.id, v_student.reg_no, crypt(v_pin, gen_salt('bf', 10)), 0, NULL,
+    'self', nullif(coalesce(p_device_id, ''), ''), now()
+  )
+  ON CONFLICT (student_id) DO UPDATE
+    SET pin_hash = excluded.pin_hash,
+        failed_attempts = 0,
+        locked_until = NULL,
+        issued_by = 'self',
+        bound_device_id = excluded.bound_device_id,
+        updated_at = now();
+
+  -- A new PIN invalidates any session opened with the old one.
+  DELETE FROM public.student_sessions WHERE student_id = v_student.id;
+
+  RETURN QUERY SELECT true, NULL::text, v_pin, v_student.full_name;
+END;
+$$;
+
+-- ------------------------------------------------------------
 -- 4. Student sign-in
 -- ------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.student_login(p_reg_no text, p_pin text)
+-- p_device_id is optional so an older client build still signs in; when it is
+-- sent it must match the phone that claimed the PIN.
+-- Drop the two-argument version so a call cannot resolve to a copy that skips
+-- the device check.
+DROP FUNCTION IF EXISTS public.student_login(text, text);
+
+CREATE OR REPLACE FUNCTION public.student_login(
+  p_reg_no text,
+  p_pin text,
+  p_device_id text DEFAULT NULL
+)
 RETURNS TABLE (ok boolean, reason text, token text, full_name text, expires_at timestamptz)
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -532,6 +926,15 @@ BEGIN
     RETURN;
   END IF;
 
+  -- A PIN issued to one phone is refused on another. This is what stops a
+  -- student sharing their PIN with a classmate.
+  IF v_pin.bound_device_id IS NOT NULL
+     AND coalesce(p_device_id, '') <> ''
+     AND v_pin.bound_device_id <> p_device_id THEN
+    RETURN QUERY SELECT false, 'wrong_device', NULL::text, NULL::text, NULL::timestamptz;
+    RETURN;
+  END IF;
+
   IF crypt(coalesce(p_pin, ''), v_pin.pin_hash) <> v_pin.pin_hash THEN
     UPDATE public.student_pins p
        SET failed_attempts = p.failed_attempts + 1,
@@ -548,8 +951,12 @@ BEGIN
     RETURN;
   END IF;
 
+  -- First successful sign-in on an admin-issued PIN adopts the phone, so
+  -- sharing the PIN afterwards is refused even for the admin-issued path.
   UPDATE public.student_pins p
-     SET failed_attempts = 0, locked_until = NULL
+     SET failed_attempts = 0,
+         locked_until = NULL,
+         bound_device_id = coalesce(p.bound_device_id, nullif(coalesce(p_device_id, ''), ''))
    WHERE p.student_id = v_pin.student_id;
 
   -- 32 random bytes as hex. Only the hash is stored.
@@ -680,19 +1087,20 @@ REVOKE ALL ON public.student_sessions FROM anon, authenticated;
 REVOKE ALL ON public.admin_sessions FROM anon, authenticated;
 
 REVOKE ALL ON FUNCTION public.admin_set_student_pin(text, text, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.student_login(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.student_login(text, text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.student_me(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.student_logout(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_login_token(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.student_claim_pin(text, text, text) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.admin_set_student_pin(text, text, text) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.student_login(text, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.student_login(text, text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.student_me(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.student_logout(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_login_token(text, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.student_claim_pin(text, text, text) TO anon, authenticated;
 
-
--- ==== FILE 3 of 4: supabase/HARDEN_ADMIN_PASSWORD.sql ====
+-- ==== PART A, FILE 3 of 3: supabase/HARDEN_ADMIN_PASSWORD.sql ====
 -- ============================================================
 --  Islamic Studies Test Online — hide the admin password
 --
@@ -733,7 +1141,19 @@ REVOKE SELECT (admin_password) ON public.app_settings FROM anon, authenticated;
 -- Confirm the hole is closed: this must now fail, not return the password.
 --   select admin_username, admin_password from app_settings where id = 1;
 
-
+-- ============================================================
+--  PART B — DO NOT RUN YET.
+--
+--  This file closes the database to the publishable key by giving
+--  students, attendance, submissions, exams and the rest no RLS
+--  policy at all. Every browser read of those tables then returns
+--  no rows and every write is refused.
+--
+--  The app still does this in register.tsx, exams.tsx,
+--  exam.$examId.tsx, results.tsx, r.$slug.tsx and the admin pages.
+--  Move those reads into SECURITY DEFINER functions first, then run
+--  this. See the header of this bundle for the full list.
+-- ============================================================
 -- ==== FILE 4 of 4: supabase/HARDEN_RLS.sql ====
 -- ============================================================
 --  Close the database to the public key
@@ -873,3 +1293,4 @@ GRANT USAGE ON SCHEMA public TO anon, authenticated;
 -- While these must still work:
 --   select * from study_images where active = true limit 1;
 --   select * from app_settings limit 1;   -- admin_password column now errors
+

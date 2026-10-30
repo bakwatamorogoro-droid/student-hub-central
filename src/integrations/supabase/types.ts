@@ -839,6 +839,76 @@ export type Database = {
           check_in_at: string | null
         }[]
       }
+      // Entry point that accepts either the rotating QR token or the session's
+      // join code. Supersedes attendance_check_in_qr, which is kept as a wrapper.
+      attendance_check_in: {
+        Args: {
+          p_token: string | null
+          p_lat: number | null
+          p_lng: number | null
+          p_student_token: string | null
+          p_join_code: string | null
+        }
+        Returns: {
+          ok: boolean
+          reason: string | null
+          full_name: string | null
+          semina: string | null
+          distance_m: number | null
+          radius_m: number | null
+          check_in_at: string | null
+        }[]
+      }
+      // The sessions a signed-in student may check in to right now.
+      attendance_open_sessions: {
+        Args: { p_student_token: string }
+        Returns: {
+          id: string
+          title: string
+          semina: string | null
+          student_group: string | null
+          radius_m: number
+          has_join_code: boolean
+        }[]
+      }
+      // The present list for one session. Read through a function because
+      // HARDEN_RLS leaves `attendance` with no policy for the public key.
+      attendance_session_present: {
+        Args: { p_admin_token: string; p_session_id: string }
+        Returns: {
+          full_name: string
+          reg_no: string
+          created_at: string
+          distance_m: number | null
+          method: string | null
+        }[]
+      }
+      // Start and close a session. Functions, not table writes, because
+      // HARDEN_RLS leaves attendance_sessions with no policy.
+      attendance_start_session: {
+        Args: {
+          p_admin_token: string
+          p_title: string
+          p_semina: string | null
+          p_student_group: string | null
+          p_lat: number | null
+          p_lng: number | null
+          p_radius_m: number
+          p_join_code: string | null
+        }
+        Returns: {
+          id: string
+          join_code: string
+          title: string
+          semina: string | null
+          student_group: string | null
+          radius_m: number
+        }[]
+      }
+      attendance_end_session: {
+        Args: { p_admin_token: string; p_session_id: string }
+        Returns: { ok: boolean }[]
+      }
       student_link_account: {
         Args: { p_reg_no: string; p_user_id: string }
         Returns: { ok: boolean; reason: string | null; full_name: string | null }[]
@@ -853,8 +923,20 @@ export type Database = {
         Args: { p_admin_token: string; p_reg_no: string; p_pin: string }
         Returns: { ok: boolean; reason: string | null; full_name: string | null }[]
       }
+      // Claim a PIN without an admin: registration number plus the phone the
+      // school already has on file. The PIN is returned once and bound to the
+      // device that claimed it, so passing it on does not work.
+      student_claim_pin: {
+        Args: { p_reg_no: string; p_phone: string; p_device_id: string }
+        Returns: {
+          ok: boolean
+          reason: string | null
+          pin: string | null
+          full_name: string | null
+        }[]
+      }
       student_login: {
-        Args: { p_reg_no: string; p_pin: string }
+        Args: { p_reg_no: string; p_pin: string; p_device_id: string | null }
         Returns: {
           ok: boolean
           reason: string | null

@@ -52,6 +52,22 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
 
 ## Database notes
 
+- **`APPLY_STUDENT_PIN_AUTH.sql` HAS NEVER BEEN APPLIED TO LIVE.** Verified by reading
+  `/rest/v1/` with the publishable key: the only RPC the live project exposes is
+  `apply_profile_update`. `attendance_sessions` does not exist. Every PIN, QR and geofence
+  feature therefore renders and then reports `not_ready`. This is the blocking step only the
+  owner can perform.
+- The bundle is split into **Part A (apply now)** and **Part B (do not run yet)**.
+  `HARDEN_RLS.sql` is Part B. It grants `students`, `submissions`, `exams`, `attendance` and
+  friends no policy at all, and the app still reads every one of those straight from the
+  browser, so running it today breaks registration, exams, results and the admin pages. Move
+  those reads into `SECURITY DEFINER` functions first, then run Part B. The bundle header
+  lists the exact call sites.
+- Anything the teacher does to `attendance_sessions` must go through a function, not a table
+  write: `attendance_start_session`, `attendance_end_session`, `attendance_rotate_token`,
+  `attendance_session_present`. The table has no policy, so a browser insert or update is
+  refused.
+
 - **TWO MIGRATIONS ARE PENDING ON LIVE.** `supabase/APPLY_PENDING.sql` is the ready-to-paste
   combination of both. Checked by probing PostgREST per column, the live project has neither:
   - `20261027120000_add_semester.sql` — `students.semester`, `exams.target_semester`,
@@ -247,15 +263,39 @@ environment.
 * A session token is 32 random bytes as hex. Only its SHA-256 hash is stored in `student_sessions`,
   so the table cannot be used to impersonate a session.
 * **A student cannot choose their own PIN.** `admin_set_student_pin()` requires a live admin session
-  token. Without that rule, anyone who knew a registration number could claim the account. This is
-  the single most important property of the design.
+  token. A student may also claim a PIN themselves through `student_claim_pin()`, but only by proving
+  ownership with the phone number the school already has on file — never by knowing a registration
+  number alone. `app_settings.pin_self_claim_enabled` turns self-claim off entirely.
+* A claimed PIN is **bound to the device that claimed it** (`student_pins.bound_device_id`). Presenting
+  it from another phone returns `wrong_device`, so a PIN cannot be shared with a classmate. An admin
+  re-issue clears the binding, which is the recovery path when a student changes phone.
 * Five wrong PINs lock the account for 15 minutes. An unknown registration and a wrong PIN return the
   same `bad_credentials` answer, so the response cannot be used to enumerate registration numbers.
-* `attendance_check_in_qr()` resolves the student from the session token. It deliberately does **not**
+* `attendance_check_in()` resolves the student from the session token. It deliberately does **not**
   use `students.device_id`: that column is world-readable, so it cannot prove anything. (An earlier
   revision used it as a fallback, which was only as safe as the RLS that did not exist yet.)
 * Minting a QR token (`attendance_rotate_token`) and issuing a PIN are both admin-gated in SQL, so a
   tampered client cannot hand out tokens.
+
+### Attendance has two entry points, and both are distance-checked
+
+`attendance_check_in(p_token, p_lat, p_lng, p_student_token, p_join_code)` accepts **either** the
+rotating QR token **or** the session's `join_code` (the short code the teacher reads out). The join
+code exists so a student whose camera will not open can still check in from the room. Both paths go
+through the same gates in the same order: session lookup, session open, student session, GPS present,
+then the Haversine distance against `attendance_sessions.radius_m`. The distance check never runs in
+the browser.
+
+Two rules that were wrong and are now fixed:
+
+* The attendance row must carry `session_id`. An earlier revision never wrote it, so the teacher's
+  per-session present list was always empty and the unique index did nothing.
+* The once-only rule is **per session**, not per day. The old `(student_id, check_in_date)` index
+  refused a student's second lecture of the same day. `attendance_student_session_uniq` replaces it.
+
+`attendance_session_present(admin_token, session_id)` serves the teacher's present list. It has to be
+an RPC: `HARDEN_RLS.sql` leaves `attendance` with no policy, so a browser table read returns no rows
+and the list silently looked empty.
 
 ### Why `HARDEN_RLS.sql` matters
 

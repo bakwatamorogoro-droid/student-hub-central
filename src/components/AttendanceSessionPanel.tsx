@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { QrCodeDisplay } from "@/components/QrCodeDisplay";
-import { rotateSessionToken } from "@/lib/attendance";
+import { Badge } from "@/components/ui/badge";
+import { endAttendanceSession, fetchSessionPresent, makeJoinCode, rotateSessionToken, startAttendanceSession } from "@/lib/attendance";
 import { getAdminToken } from "@/lib/admin-session";
 import { GROUPS } from "@/lib/academicTargeting";
 import { toast } from "@/lib/toast";
@@ -36,6 +37,7 @@ type Session = {
   semina: string | null;
   student_group: string | null;
   radius_m: number;
+  join_code: string | null;
 };
 
 export function AttendanceSessionPanel() {
@@ -51,7 +53,10 @@ export function AttendanceSessionPanel() {
   const [session, setSession] = useState<Session | null>(null);
   const [token, setToken] = useState("");
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
-  const [present, setPresent] = useState<{ full_name: string; created_at: string; distance_m: number | null }[]>([]);
+  const [present, setPresent] = useState<
+    { full_name: string; created_at: string; distance_m: number | null; method: string | null }[]
+  >([]);
+  const [joinCode, setJoinCode] = useState("");
   const [busy, setBusy] = useState(false);
 
   // Default coordinates come from the admin's saved attendance point.
@@ -92,13 +97,18 @@ export function AttendanceSessionPanel() {
     );
   };
 
+  // Read through an RPC: HARDEN_RLS leaves `attendance` with no policy, so a
+  // table select from the browser returns no rows and the list looked empty.
   const loadPresent = useCallback(async (sessionId: string) => {
-    const { data } = await supabase
-      .from("attendance" as never)
-      .select("full_name, created_at, distance_m")
-      .eq("session_id", sessionId)
-      .order("created_at", { ascending: true });
-    setPresent((data as typeof present) || []);
+    const adminToken = getAdminToken();
+    if (!adminToken) return;
+    const rows = await fetchSessionPresent(sessionId, adminToken);
+    setPresent(rows.map((r) => ({
+      full_name: r.fullName,
+      created_at: r.createdAt,
+      distance_m: r.distanceM,
+      method: r.method,
+    })));
   }, []);
 
   // Issue a new token every ROTATE_MS so a shared screenshot goes stale quickly.
@@ -135,31 +145,41 @@ export function AttendanceSessionPanel() {
     }
     setBusy(true);
     try {
-      const { data, error } = await supabase
-        .from("attendance_sessions" as never)
-        .insert({
-          title: title.trim(),
-          semina: semina || null,
-          student_group: group === "all" ? null : group,
-          lat: useFixed ? lat : null,
-          lng: useFixed ? lng : null,
-          radius_m: radius,
-          active: true,
-        } as never)
-        .select("id, title, semina, student_group, radius_m")
-        .single();
+      const adminToken = getAdminToken();
+      if (!adminToken) {
+        toast.error("Kipindi cha msimamizi kimeisha. Ingia tena.");
+        return;
+      }
+      const res = await startAttendanceSession({
+        adminToken,
+        title: title.trim(),
+        semina: semina || null,
+        studentGroup: group === "all" ? null : group,
+        lat: useFixed ? lat : null,
+        lng: useFixed ? lng : null,
+        radiusM: radius,
+        joinCode: makeJoinCode(),
+      });
 
-      if (error) {
+      if (!res.ok) {
         toast.error(
-          error.message.includes("does not exist")
+          res.message.includes("does not exist")
             ? "Jedwali la vipindi halipo — endesha supabase/APPLY_STUDENT_PIN_AUTH.sql"
-            : "Imeshindikana kuanzisha kipindi: " + error.message,
+            : "Imeshindikana kuanzisha kipindi: " + res.message,
         );
         return;
       }
 
-      const created = data as unknown as Session;
+      const created: Session = {
+        id: res.id,
+        title: res.title,
+        semina: res.semina,
+        student_group: res.studentGroup,
+        radius_m: res.radiusM,
+        join_code: res.joinCode,
+      };
       setSession(created);
+      setJoinCode(res.joinCode);
       const ok = await refreshToken(created.id);
       if (ok) toast.success("Kipindi kimeanza — wanafunzi wanaweza kuscan");
     } finally {
@@ -170,12 +190,13 @@ export function AttendanceSessionPanel() {
   const endSession = async () => {
     if (!session) return;
     setBusy(true);
-    await supabase
-      .from("attendance_sessions" as never)
-      .update({ active: false, closes_at: new Date().toISOString() } as never)
-      .eq("id", session.id);
+    const adminToken = getAdminToken();
+    // Close through the function: attendance_sessions has no RLS policy, so a
+    // browser update is refused and the session would stay open.
+    if (adminToken) await endAttendanceSession(session.id, adminToken);
     setSession(null);
     setToken("");
+    setJoinCode("");
     setPresent([]);
     setBusy(false);
     toast.success("Kipindi kimefungwa");
@@ -278,6 +299,15 @@ export function AttendanceSessionPanel() {
             QR inabadilika kila sekunde 25.
             {expiresAt && <> Inaisha {new Date(expiresAt).toLocaleTimeString("sw-TZ")}.</>}
           </p>
+          {joinCode && (
+            <div className="w-full rounded-xl border border-primary/25 bg-primary/5 p-3 text-center">
+              <p className="text-xs text-muted-foreground">Msimbo wa kujiunga bila kamera</p>
+              <p className="font-mono text-2xl font-extrabold tracking-[0.3em] text-primary">{joinCode}</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Sema kwa wanafunzi waliopo darasani. Umbali unahitajika sawa na QR.
+              </p>
+            </div>
+          )}
         </div>
         <div>
           <div className="mb-2 flex items-center gap-2">
@@ -290,7 +320,12 @@ export function AttendanceSessionPanel() {
             {present.map((p, i) => (
               <div key={i} className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2 text-sm">
                 <span className="truncate font-medium">{p.full_name}</span>
-                <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                <span className="ml-2 flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                  {p.method && (
+                    <Badge variant="secondary" className="text-[10px] uppercase">
+                      {p.method === "qr" ? "QR" : "Msimbo"}
+                    </Badge>
+                  )}
                   {p.distance_m != null ? `${Math.round(p.distance_m)}m` : ""} · {new Date(p.created_at).toLocaleTimeString("sw-TZ")}
                 </span>
               </div>

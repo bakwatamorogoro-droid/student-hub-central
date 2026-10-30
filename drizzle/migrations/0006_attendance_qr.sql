@@ -28,14 +28,24 @@ CREATE TABLE IF NOT EXISTS public.attendance_sessions (
   radius_m integer NOT NULL DEFAULT 50,
   token_hash text,
   token_expires_at timestamptz,
+  -- A short code the teacher reads out loud. It lets a student who is in the
+  -- room check in without a camera, while the rotating QR stays the quick path.
+  join_code text,
   opens_at timestamptz NOT NULL DEFAULT now(),
   closes_at timestamptz,
   active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Added after the table shipped, for databases created by an earlier version.
+ALTER TABLE public.attendance_sessions
+  ADD COLUMN IF NOT EXISTS join_code text;
+
 CREATE INDEX IF NOT EXISTS attendance_sessions_token_idx
   ON public.attendance_sessions (token_hash);
+
+CREATE INDEX IF NOT EXISTS attendance_sessions_join_code_idx
+  ON public.attendance_sessions (join_code);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.attendance_sessions TO anon, authenticated;
 GRANT ALL ON public.attendance_sessions TO service_role;
@@ -154,12 +164,24 @@ GRANT EXECUTE ON FUNCTION public.attendance_rotate_token(uuid, text) TO anon, au
 -- trusts a caller-supplied device id.
 DROP FUNCTION IF EXISTS public.attendance_check_in_qr(text, double precision, double precision, double precision);
 DROP FUNCTION IF EXISTS public.attendance_check_in_qr(text, double precision, double precision, double precision, text);
+DROP FUNCTION IF EXISTS public.attendance_check_in_qr(text, double precision, double precision, text);
+-- Superseded by attendance_check_in, which accepts either a scanned token or a
+-- session join code. Dropped so a call cannot resolve to the token-only copy.
+DROP FUNCTION IF EXISTS public.attendance_check_in_qr(text, double precision, double precision, text, text);
 
-CREATE OR REPLACE FUNCTION public.attendance_check_in_qr(
-  p_token text,
-  p_lat double precision,
-  p_lng double precision,
-  p_student_token text DEFAULT NULL
+-- ------------------------------------------------------------
+-- 6a. Record one check-in for a session
+--
+--     Accepts either the rotating QR token or the session's join code, so a
+--     student without a working camera can still check in from the room.
+--     Returns the same shape as the older token-only entry point.
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.attendance_check_in(
+  p_token text DEFAULT NULL,
+  p_lat double precision DEFAULT NULL,
+  p_lng double precision DEFAULT NULL,
+  p_student_token text DEFAULT NULL,
+  p_join_code text DEFAULT NULL
 )
 RETURNS TABLE (
   ok boolean,
@@ -179,23 +201,37 @@ DECLARE
   v_student public.students%ROWTYPE;
   v_student_id uuid;
   v_hash text;
+  v_code text;
   v_distance double precision;
-  v_inserted integer;
 BEGIN
   v_hash := encode(digest(coalesce(p_token, ''), 'sha256'), 'hex');
+  v_code := nullif(upper(trim(coalesce(p_join_code, ''))), '');
 
-  SELECT * INTO v_session
-    FROM public.attendance_sessions s
-   WHERE s.token_hash = v_hash
-   ORDER BY s.created_at DESC
-   LIMIT 1;
+  -- A QR token wins; otherwise fall back to the join code the teacher read out.
+  IF p_token IS NOT NULL AND trim(p_token) <> '' THEN
+    SELECT * INTO v_session
+      FROM public.attendance_sessions s
+     WHERE s.token_hash = v_hash
+     ORDER BY s.created_at DESC
+     LIMIT 1;
+  ELSE
+    SELECT * INTO v_session
+      FROM public.attendance_sessions s
+     WHERE s.join_code = v_code
+       AND s.active
+     ORDER BY s.created_at DESC
+     LIMIT 1;
+  END IF;
 
   IF NOT FOUND THEN
     RETURN QUERY SELECT false, 'invalid_token', NULL::text, NULL::text, NULL::double precision, NULL::double precision, NULL::timestamptz;
     RETURN;
   END IF;
 
-  IF v_session.token_expires_at IS NULL OR v_session.token_expires_at < now() THEN
+  -- A join code is only usable while the session is open. The QR token keeps
+  -- its own 30 second window, checked next.
+  IF p_token IS NOT NULL AND trim(p_token) <> ''
+     AND (v_session.token_expires_at IS NULL OR v_session.token_expires_at < now()) THEN
     RETURN QUERY SELECT false, 'expired_token', NULL::text, NULL::text, NULL::double precision, v_session.radius_m::double precision, NULL::timestamptz;
     RETURN;
   END IF;
@@ -231,6 +267,11 @@ BEGIN
     RETURN;
   END IF;
 
+  IF p_lat IS NULL OR p_lng IS NULL THEN
+    RETURN QUERY SELECT false, 'gps_required', NULL::text, NULL::text, NULL::double precision, v_session.radius_m::double precision, NULL::timestamptz;
+    RETURN;
+  END IF;
+
   v_distance := public.attendance_distance_m(v_session.lat, v_session.lng, p_lat, p_lng);
 
   IF v_distance > v_session.radius_m THEN
@@ -238,14 +279,13 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Already marked today? Checked explicitly rather than with ON CONFLICT:
-  -- the live attendance table has no unique constraint on
-  -- (student_id, check_in_date), so ON CONFLICT DO NOTHING never fired and a
-  -- student could check in repeatedly (verified by test B5).
+  -- Once per session, not once per day: a student attends several lectures a
+  -- day and each has its own session. The old once-per-day rule refused the
+  -- second lecture of the day.
   IF EXISTS (
     SELECT 1 FROM public.attendance a
      WHERE a.student_id = v_student.id
-       AND a.check_in_date = (now() AT TIME ZONE 'Africa/Dar_es_Salaam')::date
+       AND a.session_id = v_session.id
   ) THEN
     RETURN QUERY SELECT false, 'already_marked', v_student.full_name,
                         v_session.semina, v_distance, v_session.radius_m::double precision, NULL::timestamptz;
@@ -254,13 +294,15 @@ BEGIN
 
   INSERT INTO public.attendance (
     student_id, reg_no, full_name, semina, student_group,
-    check_in_date, gps_lat, gps_lng, distance_m, status
+    check_in_date, session_id, gps_lat, gps_lng, distance_m, status, method
   ) VALUES (
     v_student.id, v_student.reg_no, v_student.full_name,
     coalesce(v_session.semina, v_student.semina),
     coalesce(v_session.student_group, v_student.student_group),
     (now() AT TIME ZONE 'Africa/Dar_es_Salaam')::date,
-    p_lat, p_lng, v_distance, 'present'
+    v_session.id,
+    p_lat, p_lng, v_distance, 'present',
+    CASE WHEN p_token IS NOT NULL AND trim(p_token) <> '' THEN 'qr' ELSE 'code' END
   );
 
   RETURN QUERY SELECT true, NULL::text, v_student.full_name, v_session.semina,
@@ -268,32 +310,242 @@ BEGIN
 END;
 $$;
 
+REVOKE ALL ON FUNCTION public.attendance_check_in(text, double precision, double precision, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.attendance_check_in(text, double precision, double precision, text, text) TO anon, authenticated;
+
+-- Kept so an older client build still works. New code calls attendance_check_in.
+CREATE OR REPLACE FUNCTION public.attendance_check_in_qr(
+  p_token text,
+  p_lat double precision,
+  p_lng double precision,
+  p_student_token text DEFAULT NULL
+)
+RETURNS TABLE (
+  ok boolean,
+  reason text,
+  full_name text,
+  semina text,
+  distance_m double precision,
+  radius_m double precision,
+  check_in_at timestamptz
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT * FROM public.attendance_check_in(p_token, p_lat, p_lng, p_student_token, NULL);
+$$;
+
 REVOKE ALL ON FUNCTION public.attendance_check_in_qr(text, double precision, double precision, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.attendance_check_in_qr(text, double precision, double precision, text) TO anon, authenticated;
 
 -- ------------------------------------------------------------
--- 6b. Backstop against a double check-in.
+-- 6b. List the sessions a student may check in to right now
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.attendance_open_sessions(p_student_token text)
+RETURNS TABLE (id uuid, title text, semina text, student_group text, radius_m integer, has_join_code boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_student public.students%ROWTYPE;
+BEGIN
+  SELECT st.* INTO v_student
+    FROM public.student_sessions s
+    JOIN public.students st ON st.id = s.student_id
+   WHERE s.token_hash = encode(digest(coalesce(p_student_token, ''), 'sha256'), 'hex')
+     AND s.expires_at > now()
+   LIMIT 1;
+
+  IF v_student.id IS NULL THEN
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  SELECT s.id, s.title, s.semina, s.student_group, s.radius_m, (s.join_code IS NOT NULL)
+    FROM public.attendance_sessions s
+   WHERE s.active
+     AND s.opens_at <= now()
+     AND (s.closes_at IS NULL OR s.closes_at > now())
+     -- A session aimed at one cohort is only offered to that cohort.
+     AND (s.student_group IS NULL OR s.student_group = v_student.student_group)
+     AND (s.semina IS NULL OR s.semina = v_student.semina)
+     AND NOT EXISTS (
+       SELECT 1 FROM public.attendance a
+        WHERE a.session_id = s.id AND a.student_id = v_student.id
+     )
+   ORDER BY s.created_at DESC
+   LIMIT 10;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.attendance_open_sessions(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.attendance_open_sessions(text) TO anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 6c. The present list for one session, for the teacher's screen.
+--     Read through a function because HARDEN_RLS leaves attendance with
+--     no policy, so a browser read returns no rows.
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.attendance_session_present(p_admin_token text, p_session_id uuid)
+RETURNS TABLE (full_name text, reg_no text, created_at timestamptz, distance_m double precision, method text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_admin boolean;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1 FROM public.admin_sessions s
+     WHERE s.token_hash = encode(digest(coalesce(p_admin_token, ''), 'sha256'), 'hex')
+       AND s.expires_at > now()
+  ) INTO v_admin;
+
+  IF NOT v_admin THEN
+    RAISE EXCEPTION 'not_admin';
+  END IF;
+
+  RETURN QUERY
+  SELECT a.full_name, a.reg_no, a.created_at, a.distance_m, a.method
+    FROM public.attendance a
+   WHERE a.session_id = p_session_id
+   ORDER BY a.created_at ASC;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.attendance_session_present(text, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.attendance_session_present(text, uuid) TO anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 6c. Start and close a session.
+--
+--     These have to be functions, not table writes. HARDEN_RLS.sql grants
+--     attendance_sessions no policy, so a browser insert or update is refused
+--     and the teacher could not open a session at all. Both check the admin
+--     session token here, the same way attendance_rotate_token does.
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.attendance_start_session(
+  p_admin_token text,
+  p_title text,
+  p_semina text DEFAULT NULL,
+  p_student_group text DEFAULT NULL,
+  p_lat double precision DEFAULT NULL,
+  p_lng double precision DEFAULT NULL,
+  p_radius_m integer DEFAULT 50,
+  p_join_code text DEFAULT NULL
+)
+RETURNS TABLE (id uuid, join_code text, title text, semina text, student_group text, radius_m integer)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_id uuid;
+  v_code text;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.admin_sessions s
+     WHERE s.token_hash = encode(digest(coalesce(p_admin_token, ''), 'sha256'), 'hex')
+       AND s.expires_at > now()
+  ) THEN
+    RAISE EXCEPTION 'not_admin';
+  END IF;
+
+  v_code := upper(coalesce(p_join_code, ''));
+
+  -- The code is spoken out loud, so it only needs to be unambiguous, not secret.
+  -- Retry on collision rather than failing the teacher's click.
+  FOR i IN 1..8 LOOP
+    BEGIN
+      INSERT INTO public.attendance_sessions
+        (title, semina, student_group, lat, lng, radius_m, join_code, active, created_at)
+      VALUES
+        (p_title, p_semina, p_student_group, p_lat, p_lng,
+         coalesce(p_radius_m, 50), v_code, true, now())
+      RETURNING attendance_sessions.id INTO v_id;
+      EXIT;
+    EXCEPTION WHEN unique_violation THEN
+      v_code := upper(encode(gen_random_bytes(3), 'hex'));
+    END;
+  END LOOP;
+
+  IF v_id IS NULL THEN
+    RAISE EXCEPTION 'could not allocate a join code';
+  END IF;
+
+  RETURN QUERY
+  SELECT s.id, s.join_code, s.title, s.semina, s.student_group, s.radius_m
+    FROM public.attendance_sessions s
+   WHERE s.id = v_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.attendance_start_session(text, text, text, text, double precision, double precision, integer, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.attendance_start_session(text, text, text, text, double precision, double precision, integer, text) TO anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.attendance_end_session(
+  p_admin_token text,
+  p_session_id uuid
+)
+RETURNS TABLE (ok boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.admin_sessions s
+     WHERE s.token_hash = encode(digest(coalesce(p_admin_token, ''), 'sha256'), 'hex')
+       AND s.expires_at > now()
+  ) THEN
+    RAISE EXCEPTION 'not_admin';
+  END IF;
+
+  UPDATE public.attendance_sessions
+     SET active = false, closes_at = now()
+   WHERE id = p_session_id;
+
+  RETURN QUERY SELECT true;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.attendance_end_session(text, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.attendance_end_session(text, uuid) TO anon, authenticated;
+
+
+-- ------------------------------------------------------------
+-- 6d. Backstop against a double check-in.
 --
 --     The EXISTS test above is the friendly path; this index makes a
 --     duplicate physically impossible even if two scans race, or if some
 --     other code path inserts into attendance directly.
 --
+--     Keyed by session, not by day: the old (student_id, check_in_date) index
+--     blocked a student from attending a second lecture the same day.
+--
 --     Created CONCURRENTLY is not possible inside a migration transaction, so
 --     this is a plain CREATE INDEX. It is written to tolerate pre-existing
 --     duplicates so the file stays safe to run on a live table.
 -- ------------------------------------------------------------
+-- The day-keyed index is dropped so its rule no longer applies. The
+-- (student_id, session_id) index added in section 2 takes over.
+DROP INDEX IF EXISTS public.attendance_one_per_student_per_day;
+
 DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_indexes
      WHERE schemaname = 'public'
-       AND indexname = 'attendance_one_per_student_per_day'
+       AND indexname = 'attendance_student_session_uniq'
   ) THEN
     BEGIN
-      CREATE UNIQUE INDEX attendance_one_per_student_per_day
-        ON public.attendance (student_id, check_in_date);
+      CREATE UNIQUE INDEX attendance_student_session_uniq
+        ON public.attendance (student_id, session_id)
+        WHERE session_id IS NOT NULL;
     EXCEPTION WHEN unique_violation THEN
-      RAISE NOTICE 'attendance_one_per_student_per_day not created: existing duplicate rows must be cleared first';
+      RAISE NOTICE 'attendance_student_session_uniq not created: existing duplicate rows must be cleared first';
     END;
   END IF;
 END $$;

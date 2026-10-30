@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { getDeviceId } from "@/lib/device-id";
 import { z } from "zod";
 
 /**
@@ -29,7 +30,11 @@ const tokenSchema = z.string().trim().min(32).max(200);
 
 export type LoginResult =
   | { ok: true; token: string; fullName: string }
-  | { ok: false; reason: "bad_credentials" | "locked" | "not_ready"; lockedUntil?: string };
+  | { ok: false; reason: "bad_credentials" | "locked" | "wrong_device" | "not_ready"; lockedUntil?: string };
+
+export type ClaimPinResult =
+  | { ok: true; pin: string; fullName: string }
+  | { ok: false; reason: "bad_details" | "disabled" | "already_claimed" | "not_ready" };
 
 export type StudentProfile = {
   fullName: string;
@@ -50,6 +55,38 @@ export type StudentProfile = {
   }>;
 };
 
+/**
+ * Claims a PIN for a student who does not have one yet.
+ *
+ * The student proves who they are with the phone number the school already has
+ * on file, then a random PIN is returned once. The PIN is bound to this device,
+ * so sharing it with a classmate does not work. An admin reset is the recovery
+ * path when a student changes phone.
+ */
+export async function claimStudentPin(
+  regNoInput: string,
+  phoneInput: string,
+): Promise<ClaimPinResult> {
+  const regNo = regNoSchema.safeParse(regNoInput);
+  const phone = z.string().trim().min(9).max(20).safeParse(phoneInput);
+  if (!regNo.success || !phone.success) return { ok: false, reason: "bad_details" };
+
+  const { data: row, error } = await supabase.rpc("student_claim_pin", {
+    p_reg_no: regNo.data,
+    p_phone: phone.data,
+    p_device_id: getDeviceId(),
+  });
+  if (error) return { ok: false, reason: "not_ready" };
+
+  const r = Array.isArray(row) ? row[0] : row;
+  if (!r?.ok || !r.pin) {
+    const reason = r?.reason;
+    if (reason === "disabled" || reason === "already_claimed") return { ok: false, reason };
+    return { ok: false, reason: "bad_details" };
+  }
+  return { ok: true, pin: r.pin, fullName: r.full_name ?? "" };
+}
+
 export async function loginStudent(regNoInput: string, pinInput: string): Promise<LoginResult> {
   const regNo = regNoSchema.safeParse(regNoInput);
   const pin = pinSchema.safeParse(pinInput);
@@ -58,6 +95,7 @@ export async function loginStudent(regNoInput: string, pinInput: string): Promis
   const { data: row, error } = await supabase.rpc("student_login", {
     p_reg_no: regNo.data,
     p_pin: pin.data,
+    p_device_id: getDeviceId(),
   });
 
   // A missing function means the SQL file has not been applied yet.
@@ -68,6 +106,7 @@ export async function loginStudent(regNoInput: string, pinInput: string): Promis
     if (r?.reason === "locked") {
       return { ok: false, reason: "locked", lockedUntil: r.expires_at ?? undefined };
     }
+    if (r?.reason === "wrong_device") return { ok: false, reason: "wrong_device" };
     return { ok: false, reason: "bad_credentials" };
   }
 
