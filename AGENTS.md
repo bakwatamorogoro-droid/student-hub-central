@@ -29,6 +29,23 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   time, so they must be present _during_ the build, not only at runtime.
 - Vercel blocks deploys whose lockfile resolves `@tanstack/react-start` below `1.168.60`
   (CVE-2026-102989) with a `text/plain` error. Keep `package.json` at `^1.168.60` or later.
+- **`package.json` and `bun.lock` must agree, or every deploy fails before the build starts.**
+  Vercel runs `bun install --frozen-lockfile`, which refuses to install when the two disagree:
+
+  ```
+  error: lockfile had changes, but lockfile is frozen
+  note: dependencies in package.json changed since bun.lock was saved: sonner was removed
+  ```
+
+  This is a silent trap: the local `npm`/`vite` build succeeds either way, because `node_modules`
+  is already populated, so nothing looks wrong until Vercel runs. Run `bun install` and commit
+  `bun.lock` in the same commit as any `package.json` dependency change.
+- To reproduce what Vercel does, use a clean tree — a populated `node_modules` hides the problem:
+
+  ```sh
+  mkdir /tmp/probe && git archive HEAD | tar -x -C /tmp/probe && cd /tmp/probe
+  bun install --frozen-lockfile && bun run build
+  ```
 - `bun.lock` was generated on Lovable and pins 115 packages to
   `europe-west{1,4}-npm.pkg.dev/lovable-core-prod/sandbox-npm-cache`. Those URLs do resolve
   from the public internet, but `registry.npmjs.org` is the safer pin.
