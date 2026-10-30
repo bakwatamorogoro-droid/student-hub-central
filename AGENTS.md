@@ -352,9 +352,9 @@ doing auth without a server, and it is why `HARDEN_RLS.sql` matters eventually.
 `attendance_check_in(p_token, p_lat, p_lng, p_student_token, p_join_code)` accepts **either** the
 rotating QR token **or** the session's `join_code` (the short code the teacher reads out). The join
 code exists so a student whose camera will not open can still check in from the room. Both paths go
-through the same gates in the same order: session lookup, session open, student session, GPS present,
-then the Haversine distance against `attendance_sessions.radius_m`. The distance check never runs in
-the browser.
+through the same gates in the same order: session lookup, session open, student session, the group
+match, GPS present, then the Haversine distance against `attendance_sessions.radius_m`. The distance
+check never runs in the browser.
 
 Two rules that were wrong and are now fixed:
 
@@ -429,21 +429,57 @@ caller's shell handles the pipe, so `run.sh` uses `docker cp` instead.
 
 ### Where the QR panel lives
 
-`QrAttendanceCheckIn` is rendered on **two** pages, and it must stay on both:
+`QrAttendanceCheckIn` is rendered on **two** pages:
 
-* `/account` — directly under the profile card, which is the first thing a signed-in
-  student sees. This is the page the student lands on after signing in, so it is the
-  one they will actually use.
+* `/account` — inside a `Mahudhurio` section that also holds the attendance history, so
+  the QR a student scans sits next to the record of what they have scanned.
 * `/student` — under the details card.
-
-It was originally on `/student` only, and there it only appears after a
-registration-number lookup. So a student who signed in on `/account` saw a profile and
-an attendance history and no way to check in, which is exactly what was reported.
-Adding it to `/account` is a two-line change; do not "tidy" it away.
 
 The panel reads the PIN session itself (`getStudentToken()`), so it needs no props and
 renders the sign-in prompt when the token is missing. That is why it can be dropped on
 any page without extra wiring.
+
+**There is no check-in card on `/`.** The home page used to carry a second, weaker one
+(`AttendanceCheckIn`): registration number only, no PIN, writing straight to the legacy
+`attendance` table. It bypassed the PIN identity the whole flow depends on, so it was
+removed, and the component with it. Do not add a check-in affordance back to `/` — the
+student signs in on `/account`, and that is where the QR belongs.
+
+### Two QR payloads, and why
+
+`src/lib/attendance-qr.ts` holds both formats. It has no Supabase import, so
+`node --test` can load it directly — `attendance.ts` reads `import.meta.env` at module
+scope and cannot.
+
+| Payload | Carries | Lives for | Shown on |
+| --- | --- | --- | --- |
+| `ISL-ATT1:<token>` | rotating token | 30 s | the teacher's screen |
+| `ISL-JOIN1:<code>` | session join code | as long as the session is open | the printed poster |
+
+A printed QR **cannot** carry the rotating token: at 30 s it would be dead before the
+sheet reached the wall. So the poster carries the join code instead. What stops a student
+photographing it and checking in from home is the geofence, not the rotation — the code is
+worthless without a GPS fix inside the teacher's radius. A session the teacher starts
+without coordinates therefore has no such protection; that is a deliberate trade the
+teacher makes by not setting a location.
+
+`QrAttendanceCheckIn` tries `decodeJoinQr` first, then `decodeQrToken`, so one camera
+serves a screen or a wall.
+
+### The group rule is enforced on check-in, not just in the picker
+
+`listOpenSessions` hides another group's session from the student's picker. That is not
+enough on its own, because a printed join code can be scanned by anyone in the room.
+`checkIn` therefore re-checks `payload.student_group` against the student's own group and
+refuses with `wrong_group`. Keep both: the picker is what the student sees, and the
+check-in is what actually holds.
+
+### The admin poster
+
+`AttendanceQrPoster` renders the join code as a QR plus a printable A4 sheet, and offers
+**Pakua PNG** and **Chapisha**. It sits under the join code in the QR column of
+`AttendanceSessionPanel` — deliberately not at the top of the page, so the live rotating
+QR stays the primary thing on screen.
 
 ### Deleting rows with the publishable key
 
