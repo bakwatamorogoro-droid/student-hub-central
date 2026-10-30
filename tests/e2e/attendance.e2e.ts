@@ -409,14 +409,10 @@ if (sessionIds.length > 0) {
     });
   }
 }
-await rest(
-  "quiz_participants?exam_id=eq.a0000000-0000-4000-8000-000000000001&student_id=eq." + studentId,
-  { method: "DELETE" },
-);
-await rest(
-  "quiz_participants?exam_id=eq.a0000000-0000-4000-8000-000000000002&student_id=eq." + studentId,
-  { method: "DELETE" },
-);
+// A uuid filter on the `student_id` column does not reliably match on this project, so
+// these are deleted by the reg no they were created with instead.
+await rest("quiz_participants?exam_id=eq." + NS + "01&reg_no=eq." + REG, { method: "DELETE" });
+await rest("quiz_participants?exam_id=eq." + NS + "02&reg_no=eq." + REG, { method: "DELETE" });
 await rest("attendance?reg_no=eq." + REG, { method: "DELETE" });
 await rest("students?reg_no=eq." + REG, { method: "DELETE" });
 

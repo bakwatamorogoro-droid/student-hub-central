@@ -22,7 +22,24 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
 
 - A Vercel token in this workspace is a **team** token: `GET /v2/user` returns 404 and
   `vercel whoami` / `vercel deploy` fail with "User not found". Pass `teamId` to the REST
-  API instead of using the CLI.
+  API instead of using the CLI. The CLI does work with `--token="$VERCEL_TOKEN"` once `HOME`
+  points somewhere writable (`HOME=/tmp/vhome2 XDG_DATA_HOME=/tmp/vxdg`); otherwise it dies
+  with `EACCES` trying to create `~/.local/share/com.vercel.cli`.
+- `vercel.json` carries a catch-all rewrite to `/index.html` so client routes survive a hard
+  refresh. It must **exclude `/assets/`**:
+
+  ```json
+  { "source": "/((?!assets/).*)", "destination": "/index.html" }
+  ```
+
+  With a bare `/(.*)` a request for a hashed chunk that no longer exists returns `index.html`
+  with `200` and `content-type: text/html`, so the browser tries to parse HTML as JavaScript.
+  It fails with a syntax error that looks like a code bug, not a routing bug, and a stale
+  service worker never recovers. `public/_redirects` (Netlify syntax) is dead weight here and
+  duplicates the same trap — it was removed.
+- Hashed assets are content-addressed, so `/assets/*` is served `immutable, max-age=31536000`.
+  Vercel's default for them was `max-age=0, must-revalidate`, which revalidated every chunk on
+  every visit.
 - The project needs six environment variables or the build fails: `VITE_SUPABASE_URL`,
   `VITE_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and the
   `*_PROJECT_ID` pair. `src/integrations/supabase/client.ts` reads the `VITE_` ones at build
