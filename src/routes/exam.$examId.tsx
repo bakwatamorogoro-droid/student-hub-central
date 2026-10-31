@@ -31,6 +31,12 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Users } from "lucide-react";
 import { formatAcademicSummary } from "@/lib/academicTargeting";
+import {
+  ExamStepper,
+  ExamProgress,
+  QuestionPalette,
+  type ExamStep,
+} from "@/components/ExamStepper";
 
 export const Route = createFileRoute("/exam/$examId")({
   component: ExamPage,
@@ -586,41 +592,95 @@ function ExamPage() {
     return <div className="min-h-screen flex items-center justify-center">Inapakia...</div>;
 
   if (!started) {
+    const steps: ExamStep[] = [
+      {
+        key: "identity",
+        label: "Tambua mwanafunzi",
+        hint: student ? `${student.full_name} · ${student.reg_no}` : "Inatafuta taarifa zako…",
+        state: student ? "done" : "busy",
+      },
+    ];
+    if (exam.require_gps)
+      steps.push({
+        key: "gps",
+        label: "Ruhusu mahali (GPS)",
+        hint: "Mfumo unahitaji kujua uko darasani wakati wa mtihani.",
+        state: gps.lat ? "done" : "active",
+      });
+    if (exam.require_camera)
+      steps.push({
+        key: "camera",
+        label: "Ruhusu kamera",
+        hint: "Kamera inasaidia kuthibitisha uko peke yako.",
+        state: camOk ? "done" : "active",
+      });
+    if (exam.require_audio)
+      steps.push({
+        key: "audio",
+        label: "Ruhusu sauti",
+        hint: "Sauti inasaidia kuthibitisha mazingira ya mtihani.",
+        state: audioOk ? "done" : "active",
+      });
+    steps.push({
+      key: "start",
+      label: "Anza mtihani",
+      hint: `${exam.duration_minutes} dakika · maswali ${questions.length}`,
+      state: "todo",
+    });
+
+    const blockers = steps.filter((s) => s.state !== "done" && s.key !== "start").length;
+
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/10">
         <SiteHeader />
-        <main className="container mx-auto px-4 py-8 max-w-2xl">
-          <Card>
-            <CardHeader>
-              <CardTitle>{exam.title}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p>{exam.description}</p>
-              <div className="text-sm space-y-2">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4" /> Muda: {exam.duration_minutes} dakika
-                </div>
-                <div className="text-amber-600 text-xs">
-                  ⚠️ Copy, Paste na Right-click vimezuiwa wakati wa mtihani.
-                </div>
+        <main className="container mx-auto max-w-3xl space-y-5 px-4 py-8">
+          <div className="relative overflow-hidden rounded-3xl border-2 border-primary/25 bg-gradient-to-br from-primary/12 via-card to-secondary/15 p-6 shadow-lg">
+            <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-primary/15 blur-3xl" />
+            <div className="relative">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-primary">
+                Islamic Studies Test Online
+              </span>
+              <h1 className="mt-3 text-2xl font-black tracking-tight md:text-3xl">{exam.title}</h1>
+              {exam.description && (
+                <p className="mt-1 text-sm text-muted-foreground">{exam.description}</p>
+              )}
+              <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                <span className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-background/70 px-2.5 py-1.5 font-semibold">
+                  <Clock className="h-3.5 w-3.5 text-primary" /> {exam.duration_minutes} dakika
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-background/70 px-2.5 py-1.5 font-semibold">
+                  Maswali {questions.length}
+                </span>
                 {exam.require_camera && (
-                  <div className="flex items-center gap-2">
-                    <Camera className="h-4 w-4" /> Kamera itaruhusiwa
-                  </div>
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-background/70 px-2.5 py-1.5 font-semibold">
+                    <Camera className="h-3.5 w-3.5 text-primary" /> Kamera
+                  </span>
                 )}
                 {exam.require_gps && (
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4" /> GPS itaruhusiwa
-                  </div>
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-background/70 px-2.5 py-1.5 font-semibold">
+                    <MapPin className="h-3.5 w-3.5 text-primary" /> GPS
+                  </span>
                 )}
                 {exam.require_audio && (
-                  <div className="flex items-center gap-2">
-                    <Mic className="h-4 w-4" /> Sauti itaruhusiwa
-                  </div>
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-background/70 px-2.5 py-1.5 font-semibold">
+                    <Mic className="h-3.5 w-3.5 text-primary" /> Sauti
+                  </span>
                 )}
               </div>
-              <Button onClick={beginExam} className="w-full">
-                Anza Mtihani
+            </div>
+          </div>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Hatua za Kuanza</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <ExamStepper steps={steps} />
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700">
+                ⚠️ Copy, Paste na Right-click vimezuiwa wakati wa mtihani.
+              </div>
+              <Button onClick={beginExam} className="w-full" size="lg">
+                {blockers > 0 ? "Anza Mtihani (Ruhusu kwanza)" : "Anza Mtihani"}
               </Button>
             </CardContent>
           </Card>
@@ -631,6 +691,14 @@ function ExamPage() {
 
   const mm = String(Math.floor(timeLeft / 60)).padStart(2, "0");
   const ss = String(timeLeft % 60).padStart(2, "0");
+
+  const isAnswered = (a: any) => {
+    if (a === undefined || a === null || a === "") return false;
+    if (typeof a === "object") return Object.keys(a).length > 0;
+    return true;
+  };
+  const answeredCount = questions.filter((q) => isAnswered(answers[q.id])).length;
+  const unansweredCount = questions.length - answeredCount;
 
   return (
     <div
@@ -655,6 +723,20 @@ function ExamPage() {
         />
       )}
       <main className="container mx-auto px-4 py-6 max-w-3xl space-y-4">
+        {!isAssignment && questions.length > 0 && (
+          <div className="sticky top-12 z-30 space-y-3 rounded-2xl border border-primary/20 bg-card/90 p-4 backdrop-blur">
+            <ExamProgress answered={answeredCount} total={questions.length} />
+            <QuestionPalette
+              items={questions.map((q) => ({ id: q.id, answered: isAnswered(answers[q.id]) }))}
+              onJump={(id) =>
+                document.getElementById(`q-${id}`)?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                })
+              }
+            />
+          </div>
+        )}
         {isAssignment && (
           <div className="rounded-xl border-2 border-secondary/50 bg-gradient-to-br from-secondary/10 to-primary/5 p-4">
             <div className="text-xs font-semibold uppercase tracking-wide text-secondary-foreground/80">
@@ -778,7 +860,7 @@ function ExamPage() {
           </Card>
         )}
         {questions.map((q, i) => (
-          <Card key={q.id}>
+          <Card key={q.id} id={`q-${q.id}`} className="scroll-mt-32">
             <CardHeader>
               <CardTitle className="text-base">
                 {isAssignment ? "Swali la Assignment" : `Swali ${i + 1}`} ({q.points} alama)
@@ -888,6 +970,13 @@ function ExamPage() {
               </Button>
             </CardContent>
           </Card>
+        )}
+
+        {!isAssignment && questions.length > 0 && unansweredCount > 0 && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700">
+            Bado hujajibu maswali <b>{unansweredCount}</b>. Unaweza kuwasilisha, lakini maswali hayo
+            yatapata alama 0.
+          </div>
         )}
 
         <div className="flex flex-col sm:flex-row gap-2">

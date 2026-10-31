@@ -18,6 +18,7 @@ import { useI18n } from "@/lib/i18n";
 import { supabase } from "@/integrations/supabase/client";
 import { getDeviceId } from "@/lib/device-id";
 import { BigSystemTitle } from "@/components/ExamVideoHero";
+import { FounderPurpose } from "@/components/FounderPurpose";
 import { HomeAnimationHero } from "@/components/HomeAnimationHero";
 import { RealPhotoHero } from "@/components/RealPhotoHero";
 import { UpdateTaarifaCard } from "@/components/UpdateTaarifaCard";
@@ -352,6 +353,8 @@ function Index() {
         </section>
 
         <BigSystemTitle sub={t("badge_islamic")} />
+
+        <FounderPurpose />
       </main>
     </div>
   );

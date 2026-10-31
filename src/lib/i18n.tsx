@@ -19,10 +19,55 @@ const dict: Record<string, { sw: string; en: string }> = {
   admin: { sw: "Admin", en: "Admin" },
   language: { sw: "Lugha", en: "Language" },
   loading: { sw: "Inapakia...", en: "Loading..." },
-  title_app: { sw: "Mfumo wa Mtihani wa Islamic Studies", en: "Islamic Studies Exam System" },
+  title_app: {
+    sw: "Islamic Studies Test Online",
+    en: "Islamic Studies Test Online",
+  },
   subtitle_app: {
     sw: "Mtandaoni · AI · Kamera · GPS · Sahihi",
     en: "Online · AI · Camera · GPS · Signature",
+  },
+  // --- utambulisho wa mfumo -------------------------------------------------
+  system_full_name: { sw: "Islamic Studies Test Online", en: "Islamic Studies Test Online" },
+  system_short_name: { sw: "IST Online", en: "IST Online" },
+  founder_role: { sw: "Mwanzilishi wa Mfumo", en: "Founder of the System" },
+  founder_name: { sw: "Dr. Jiba", en: "Dr. Jiba" },
+  founder_title: {
+    sw: "Mhadhiri wa Islamic Studies",
+    en: "Lecturer of Islamic Studies",
+  },
+  founder_message: {
+    sw: "Mfumo huu umeundwa ili kumrahisishia kila mwanafunzi wa Islamic Studies kufanya mitihani kwa haki, kwa urahisi, na kwa kasi ya teknolojia ya kisasa.",
+    en: "This system was built so every Islamic Studies student can sit exams fairly, easily, and with the speed of modern technology.",
+  },
+  purpose_kicker: { sw: "Lengo la Mfumo", en: "Our Purpose" },
+  purpose_title: {
+    sw: "Kufundisha kwa Teknolojia ya Kisasa",
+    en: "Teaching Through Modern Technology",
+  },
+  purpose_sub: {
+    sw: "Tunaleta mitihani ya Islamic Studies kwenye tehama, ili maarifa yafike kwa kila mwanafunzi popote alipo — kwa haki, kwa urahisi, na kwa kasi.",
+    en: "We bring Islamic Studies exams into the digital age, so knowledge reaches every student wherever they are — fairly, simply, and fast.",
+  },
+  purpose_p1_title: { sw: "Elimu kwa Wote", en: "Education for All" },
+  purpose_p1_body: {
+    sw: "Mwanafunzi anaweza kufanya mtihani kwa simu au kompyuta, mahali popote, bila usumbufu wa karatasi.",
+    en: "A student can sit an exam on a phone or computer, from anywhere, without the friction of paper.",
+  },
+  purpose_p2_title: { sw: "Usahihi na Haki", en: "Accuracy and Fairness" },
+  purpose_p2_body: {
+    sw: "AI inasahihisha majibu kwa maana, sio kwa maneno yanayofanana, kwa hiyo kila mwanafunzi anapata alama anazostahili.",
+    en: "AI marks answers by meaning, not by matching words, so every student gets the marks they deserve.",
+  },
+  purpose_p3_title: { sw: "Kasi ya Tehama", en: "The Speed of Technology" },
+  purpose_p3_body: {
+    sw: "Matokeo yanatoka mara moja baada ya mtihani, kwa hiyo mwalimu na mwanafunzi wanajua hali halisi papo hapo.",
+    en: "Results appear as soon as the exam ends, so teacher and student both know where they stand right away.",
+  },
+  purpose_p4_title: { sw: "Maarifa ya Kiislamu", en: "Islamic Knowledge" },
+  purpose_p4_body: {
+    sw: "Mfumo unajua Qur'an, Hadith, Fiqh na mada nyingine, kwa hiyo unaweza kusaidia kujifunza sio tu kupima.",
+    en: "The system knows Qur'an, Hadith, Fiqh and more, so it can help students learn, not only test them.",
   },
   nav_exams: { sw: "Mtihani wa Mtandaoni", en: "Online Test" },
   nav_quiz: { sw: "Kazi za Kufanya", en: "Assignment" },
@@ -35,6 +80,42 @@ const dict: Record<string, { sw: string; en: string }> = {
     en: "Scan a QR or enter a session code to check in. Your history lives here too.",
   },
   attendance_open_now: { sw: "Hudhuria sasa", en: "Check in now" },
+  // --- mahudhurio ya mwanafunzi ---------------------------------------------
+  att_title: { sw: "Mahudhurio Yangu", en: "My Attendance" },
+  att_sub: {
+    sw: "Hudhuria kipindi kwa kuscan QR au kwa msimbo. Historia yako yote iko hapa chini.",
+    en: "Check in with a QR scan or a session code. Your full history sits below.",
+  },
+  att_present_today: { sw: "Umehudhuria leo", en: "Present today" },
+  att_total: { sw: "Jumla ya Vipindi", en: "Sessions attended" },
+  att_rate: { sw: "Kiwango cha Mahudhurio", en: "Attendance rate" },
+  att_sessions_open: { sw: "Vipindi Vinavyoendelea", en: "Open sessions" },
+  att_no_open: {
+    sw: "Hakuna kipindi kinachoendelea kwa sasa. Subiri mwalimu afungue kipindi.",
+    en: "No session is open right now. Wait for your teacher to start one.",
+  },
+  att_one_tap: { sw: "Hudhuria kwa Mbofyo Mmoja", en: "One-tap check-in" },
+  att_scan_qr: { sw: "Scan QR", en: "Scan QR" },
+  att_enter_code: { sw: "Weka Msimbo", en: "Enter code" },
+  att_code_placeholder: { sw: "Mfano: ABC-123", en: "e.g. ABC-123" },
+  att_history: { sw: "Historia ya Mahudhurio", en: "Attendance history" },
+  att_no_history: {
+    sw: "Bado hujahudhuria kipindi chochote.",
+    en: "You have not attended a session yet.",
+  },
+  att_present: { sw: "Alikuwepo", en: "Present" },
+  att_need_account: {
+    sw: "Ingia kwenye akaunti yako kwanza.",
+    en: "Sign in to your account first.",
+  },
+  att_need_account_body: {
+    sw: "Weka Reg Namba na PIN yako kwenye Akaunti, kisha urudi hapa kuhudhuria.",
+    en: "Set your Reg number and PIN under Account, then come back to check in.",
+  },
+  att_go_account: { sw: "Nenda kwenye Akaunti", en: "Go to Account" },
+  att_confirmed: { sw: "Mahudhurio yamethibitishwa", en: "Attendance confirmed" },
+  att_distance: { sw: "Umbali", en: "Distance" },
+  att_time: { sw: "Muda", en: "Time" },
   coming_soon: { sw: "Coming Soon", en: "Coming Soon" },
   coming_soon_body: {
     sw: "Sehemu hii inaandaliwa. Itakua tayari hivi karibuni — subiri tangazo.",
@@ -59,6 +140,29 @@ const dict: Record<string, { sw: string; en: string }> = {
     sw: "Kifaa chochote • Hakuna Copy/Paste • Muda wa EAT • Imeundwa na viwango stationary",
     en: "Any device • No copy/paste • EAT time zone • Built to stationary standards",
   },
+  // --- admin dashboard ------------------------------------------------------
+  admin_welcome: { sw: "Karibu kwenye Dashibodi", en: "Welcome to the Dashboard" },
+  admin_welcome_sub: {
+    sw: "Muhtasari wa mfumo wako, mahudhurio ya hivi karibuni, na muda wa mitihani inayokuja.",
+    en: "An overview of your system, recent attendance, and the time left on upcoming exams.",
+  },
+  admin_attendance: { sw: "Mahudhurio", en: "Attendance" },
+  admin_att_short: { sw: "Waliopo Darasani", en: "Present in class" },
+  admin_att_open: { sw: "Vipindi Vinavyoendelea", en: "Open sessions" },
+  admin_att_recent: { sw: "Vipindi vya Hivi Karibuni", en: "Recent sessions" },
+  admin_att_none: {
+    sw: "Hakuna kipindi cha mahudhurio bado. Fungua kipindi kwenye ukurasa wa Mahudhurio.",
+    en: "No attendance session yet. Start one from the Attendance page.",
+  },
+  admin_att_manage: { sw: "Simamia Mahudhurio", en: "Manage attendance" },
+  admin_att_present: { sw: "Waliopo", en: "Present" },
+  admin_founder: { sw: "Mwanzilishi", en: "Founder" },
+  admin_ai_ready: { sw: "AI Inasahihisha", en: "AI Grading" },
+  admin_ai_ready_sub: {
+    sw: "Majibu yanapimwa kwa maana, bila kusubiri mwalimu.",
+    en: "Answers are marked by meaning, without waiting for a teacher.",
+  },
+  admin_quick: { sw: "Vitendo vya Haraka", en: "Quick actions" },
 
   // --- home hero ----------------------------------------------------------
   hero_kicker: { sw: "Mfumo wa Kisasa wa Mitihani", en: "A modern exam system" },
