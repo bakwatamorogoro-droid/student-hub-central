@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { supabase } from "@/integrations/supabase/client";
+import { retryWithoutMissingColumns } from "@/lib/schema-retry";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -518,6 +519,8 @@ type GpsSettingsRow = {
   attendance_gps_required?: boolean | null;
   register_radius_m?: number | string | null;
   register_gps_required?: boolean | null;
+  exam_radius_m?: number | string | null;
+  exam_gps_required?: boolean | null;
 };
 
 function GpsSettings() {
@@ -528,7 +531,7 @@ function GpsSettings() {
     supabase
       .from("app_settings")
       .select(
-        "attendance_lat,attendance_lng,attendance_radius_m,attendance_gps_required,register_radius_m,register_gps_required",
+        "attendance_lat,attendance_lng,attendance_radius_m,attendance_gps_required,register_radius_m,register_gps_required,exam_radius_m,exam_gps_required",
       )
       .eq("id", 1)
       .maybeSingle()
@@ -541,6 +544,8 @@ function GpsSettings() {
             attendance_gps_required: true,
             register_radius_m: 800,
             register_gps_required: true,
+            exam_radius_m: 300,
+            exam_gps_required: true,
           },
         );
       });
@@ -548,19 +553,25 @@ function GpsSettings() {
 
   const save = async () => {
     setSaving(true);
-    const { error } = await supabase
-      .from("app_settings")
-      .update({
-        attendance_lat: settings?.attendance_lat ?? null,
-        attendance_lng: settings?.attendance_lng ?? null,
-        attendance_radius_m: Number(settings?.attendance_radius_m) || 200,
-        attendance_gps_required: !!settings?.attendance_gps_required,
-        register_radius_m: Number(settings?.register_radius_m) || 800,
-        register_gps_required: !!settings?.register_gps_required,
-      } as never)
-      .eq("id", 1);
+    // Safu za eneo la mtihani huenda hazipo bado kwenye hifadhidata; zikikataliwa
+    // zinaachwa badala ya kuzuia eneo la mahudhurio na usajili kuhifadhiwa.
+    const payload: Record<string, unknown> = {
+      attendance_lat: settings?.attendance_lat ?? null,
+      attendance_lng: settings?.attendance_lng ?? null,
+      attendance_radius_m: Number(settings?.attendance_radius_m) || 200,
+      attendance_gps_required: !!settings?.attendance_gps_required,
+      register_radius_m: Number(settings?.register_radius_m) || 800,
+      register_gps_required: !!settings?.register_gps_required,
+      exam_radius_m: Number(settings?.exam_radius_m) || 300,
+      exam_gps_required: !!settings?.exam_gps_required,
+    };
+    const { last, dropped } = await retryWithoutMissingColumns(payload, (body) =>
+      supabase.from("app_settings").update(body as never).eq("id", 1),
+    );
     setSaving(false);
-    if (error) toast.error(error.message);
+    if (last.error) toast.error(last.error.message);
+    else if (dropped.length > 0)
+      toast.error(`Imehifadhiwa, lakini safu hizi hazipo: ${dropped.join(", ")}`);
     else toast.success("GPS settings zimehifadhiwa");
   };
 
@@ -656,6 +667,29 @@ function GpsSettings() {
               type="number"
               value={settings?.register_radius_m ?? 800}
               onChange={(e) => setSettings({ ...settings, register_radius_m: e.target.value })}
+            />
+          </div>
+        </div>
+        <div className="space-y-2 rounded-lg border bg-background/50 p-3">
+          <label className="flex items-center gap-2">
+            <Switch
+              checked={!!settings?.exam_gps_required}
+              onCheckedChange={(v) => setSettings({ ...settings, exam_gps_required: v })}
+            />
+            <span className="text-sm font-medium">
+              Mtihani: lazima mwanafunzi awe karibu na chuo
+            </span>
+          </label>
+          <p className="text-[11px] text-muted-foreground">
+            Mwanafunzi aliye nje ya umbali huu hawezi kuanza mtihani. Umbali hurekodiwa kwa kila
+            mtihani, ili uone wapi mwanafunzi alikuwa.
+          </p>
+          <div className="max-w-xs">
+            <Label className="text-xs">Umbali wa mtihani kutoka chuo (mita)</Label>
+            <Input
+              type="number"
+              value={settings?.exam_radius_m ?? 300}
+              onChange={(e) => setSettings({ ...settings, exam_radius_m: e.target.value })}
             />
           </div>
         </div>

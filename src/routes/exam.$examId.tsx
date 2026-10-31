@@ -31,6 +31,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Users } from "lucide-react";
 import { formatAcademicSummary } from "@/lib/academicTargeting";
+import { areaMessage, checkArea, type AreaVerdict } from "@/lib/geo";
 import {
   ExamStepper,
   ExamProgress,
@@ -58,6 +59,13 @@ function ExamPage() {
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [gps, setGps] = useState<{ lat?: number; lng?: number }>({});
+  const [area, setArea] = useState<{
+    lat: number | null;
+    lng: number | null;
+    radiusM: number;
+  } | null>(null);
+  const [areaVerdict, setAreaVerdict] = useState<AreaVerdict | null>(null);
+  const [examGpsRequired, setExamGpsRequired] = useState(true);
   const [camOk, setCamOk] = useState(false);
   const [audioOk, setAudioOk] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -103,6 +111,37 @@ function ExamPage() {
       }
       setExam(e);
       setTimeLeft(e.duration_minutes * 60);
+
+      // Eneo la chuo: kituo kimoja, umbali wa mtihani. Safu za eneo la mtihani
+      // huenda hazipo bado kwenye hifadhidata, kwa hivyo zikikataliwa tunarudi kwenye
+      // kituo pekee (kinachojulikana kuwepo) na umbali wa kawaida. Mtihani hauvunjiki,
+      // na geofence inaanza kufanya kazi mara kituo kinapowekwa.
+      const loadArea = async () => {
+        const full = await supabase
+          .from("app_settings")
+          .select("attendance_lat,attendance_lng,exam_radius_m,exam_gps_required")
+          .eq("id", 1)
+          .maybeSingle();
+        if (!full.error && full.data) return full.data as Record<string, unknown>;
+        const lean = await supabase
+          .from("app_settings")
+          .select("attendance_lat,attendance_lng")
+          .eq("id", 1)
+          .maybeSingle();
+        return (lean.data as Record<string, unknown> | null) ?? null;
+      };
+
+      try {
+        const row = await loadArea();
+        if (row) {
+          setArea({
+            lat: (row.attendance_lat as number | null) ?? null,
+            lng: (row.attendance_lng as number | null) ?? null,
+            radiusM: Number(row.exam_radius_m) || 300,
+          });
+          setExamGpsRequired(row.exam_gps_required !== false);
+        }
+      } catch {}
       const { data: qs } = await supabase
         .from("questions")
         .select("*")
@@ -288,15 +327,37 @@ function ExamPage() {
       }
     } catch {}
 
-    if (exam.require_gps) {
+    // GPS: chukua mahali, kisha linganisha na eneo la mwalimu. Kama mwanafunzi
+    // yuko nje ya umbali, mtihani hauanzi — ndiyo kazi ya "Eneo langu".
+    if (exam.require_gps || (area && area.lat != null)) {
       try {
         const pos = await new Promise<GeolocationPosition>((res, rej) =>
-          navigator.geolocation.getCurrentPosition(res, rej, { timeout: 10000 }),
+          navigator.geolocation.getCurrentPosition(res, rej, {
+            enableHighAccuracy: true,
+            timeout: 12000,
+            maximumAge: 0,
+          }),
         );
-        setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        const fix = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setGps(fix);
+        if (area && area.lat != null && area.lng != null) {
+          const verdict = checkArea(area, fix);
+          setAreaVerdict(verdict);
+          if (verdict.status === "outside") {
+            toast.error(areaMessage(verdict));
+            return;
+          }
+        }
       } catch {
-        toast.error("Lazima uruhusu GPS kuendelea");
-        return;
+        if (examGpsRequired && area && area.lat != null) {
+          setAreaVerdict({ status: "missing_fix" });
+          toast.error("Ruhusu GPS (location) ili mfumo upime eneo lako.");
+          return;
+        }
+        if (exam.require_gps) {
+          toast.error("Lazima uruhusu GPS kuendelea");
+          return;
+        }
       }
     }
     if (exam.require_camera || exam.require_audio) {
@@ -483,6 +544,8 @@ function ExamPage() {
       ai_confirmed: true,
       signature_data: sigData,
       gps_lat: gps.lat,
+      gps_distance_m: areaVerdict && "distanceM" in areaVerdict ? areaVerdict.distanceM : null,
+      gps_radius_m: area && area.lat != null ? area.radiusM : null,
       gps_lng: gps.lng,
       device_id: getDeviceId(),
       started_at: startedAtRef.current.toISOString(),
@@ -600,11 +663,14 @@ function ExamPage() {
         state: student ? "done" : "busy",
       },
     ];
-    if (exam.require_gps)
+    if (exam.require_gps || (area && area.lat != null))
       steps.push({
         key: "gps",
         label: "Ruhusu mahali (GPS)",
-        hint: "Mfumo unahitaji kujua uko darasani wakati wa mtihani.",
+        hint:
+          areaVerdict && areaVerdict.status !== "no_fence"
+            ? areaMessage(areaVerdict)
+            : "Mfumo unahitaji kujua uko darasani wakati wa mtihani.",
         state: gps.lat ? "done" : "active",
       });
     if (exam.require_camera)

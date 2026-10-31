@@ -624,3 +624,66 @@ The same trap applies to test cleanup: `quiz_participants` rows _are_ deletable,
 will leave it behind. Prefer namespaced `quiz_participants` rows for anything a test
 needs to create and remove. Leftover `OH-*` test students on production can only be
 removed through the Lovable SQL editor, which is the owner's account.
+
+### One location, three radii, and the results PIN
+
+`app_settings` holds **one** centre (`attendance_lat` / `attendance_lng`) and each feature
+carries its own radius:
+
+| setting                | used by      | default |
+| ---------------------- | ------------ | ------- |
+| `attendance_radius_m`  | attendance   | 200 m   |
+| `register_radius_m`    | registration | 800 m   |
+| `exam_radius_m`        | exams        | 300 m   |
+
+`src/lib/geo.ts` is the single place that turns a centre + radius + fix into a verdict
+(`distanceMetres`, `checkArea`, `areaMessage`, `AreaVerdict`). Attendance had its own copy
+first; keep new features on the shared module so the three stay comparable.
+
+An exam now **enforces** the fence in `beginExam`: it takes a high-accuracy fix, calls
+`checkArea`, and refuses to start when the verdict is `outside`, showing the distance so the
+student knows how far off they are. Previously the exam recorded `gps_lat`/`gps_lng` and never
+compared them — the columns were written but nothing was checked.
+
+`submissions.gps_distance_m` and `gps_radius_m` freeze the measurement at submit time. They are
+**not** derived from the current settings on read, because the centre can be re-set later and a
+historical submission should keep the distance it was actually measured at.
+
+### The results gate is reg number, then PIN — but only for students who have a PIN
+
+`/results` asks for the reg number, then the PIN, before revealing anything. Two things make
+this safe to ship against a table where almost nobody has a PIN yet (2 of ~1,572 students):
+
+- `verifyStudentPin` checks the PIN and counts failures, but **creates no session and never
+  touches the device binding**. `loginStudent` is the wrong tool here: checking marks on a
+  friend's phone would otherwise bind that phone to you.
+- The gate is skipped when the student has no PIN row (`studentHasPin`), and
+  `app_settings.results_require_pin` turns it off wholesale. So enabling the feature cannot
+  lock out the ~1,570 students who have not claimed one.
+
+### The exam-area columns may not exist yet
+
+`exam_radius_m`, `exam_gps_required` and `results_require_pin` arrive with
+`supabase/migrations/20261029090000_add_exam_area_and_results_pin.sql`, which **may not have been
+applied**. Both write paths cope:
+
+- the admin GPS save runs through `retryWithoutMissingColumns`, so the attendance and
+  registration radii still save and the toast names what was dropped;
+- the exam page loads the full `select` first and falls back to a centre-only `select`.
+
+Do not "fix" either by removing the fallback: the columns are absent in production today.
+
+### The CI build is not the Vercel build
+
+`vite build` succeeding locally proves little — `node_modules` is already populated. Reproduce
+what Vercel does on a clean tree:
+
+```sh
+mkdir /tmp/probe && git archive HEAD | tar -x -C /tmp/probe && cd /tmp/probe
+bun install --frozen-lockfile && bun run build
+```
+
+`.github/workflows/build.yml` used to require `dist/_redirects`, which was removed on purpose
+(Vercel serves the SPA rewrite from `vercel.json`; a `_redirects` copy re-creates the catch-all
+that turns a missing hashed chunk into HTML). The check failed every PR after the removal and
+was replaced with a warning.

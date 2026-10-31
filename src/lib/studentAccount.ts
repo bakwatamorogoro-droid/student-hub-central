@@ -426,6 +426,54 @@ async function resolveSession(tokenInput: string): Promise<StudentRow | null> {
   return students[0] as StudentRow;
 }
 
+/**
+ * Confirms a student's PIN without signing them in.
+ *
+ * The results page needs to know "is this really this student?" but must not
+ * bind the phone: a student checking marks on a friend's phone should not
+ * invalidate their own session, and should not be locked to that friend's
+ * device. So this checks the PIN and counts failures, but creates no session
+ * and never touches the device binding that `loginStudent` writes.
+ */
+export async function verifyStudentPin(
+  regNoInput: string,
+  pinInput: string,
+): Promise<{ ok: true; regNo: string; fullName: string } | { ok: false; reason: "bad_credentials" | "locked" | "not_ready" }> {
+  const regNo = regNoSchema.safeParse(regNoInput);
+  const pin = pinSchema.safeParse(pinInput);
+  if (!regNo.success || !pin.success) return { ok: false, reason: "bad_credentials" };
+
+  const student = await findStudent(regNo.data);
+  if (!student) return { ok: false, reason: "bad_credentials" };
+
+  const row = await readPinRow(student.id);
+  if (!row) return { ok: false, reason: "bad_credentials" };
+
+  const { payload } = row;
+  if (payload.locked_until && new Date(payload.locked_until).getTime() > Date.now()) {
+    return { ok: false, reason: "locked" };
+  }
+
+  const supplied = await hashSecret(pin.data, payload.salt);
+  if (!digestsEqual(supplied, payload.hash)) {
+    const fail = (payload.fail || 0) + 1;
+    const next: PinPayload = {
+      ...payload,
+      fail: fail >= MAX_FAILS ? 0 : fail,
+      locked_until:
+        fail >= MAX_FAILS ? new Date(Date.now() + LOCK_MINUTES * 60_000).toISOString() : payload.locked_until ?? null,
+    };
+    await writePinRow(student, next, row.id);
+    return { ok: false, reason: fail >= MAX_FAILS ? "locked" : "bad_credentials" };
+  }
+
+  if (payload.fail !== 0 || payload.locked_until) {
+    await writePinRow(student, { ...payload, fail: 0, locked_until: null }, row.id);
+  }
+
+  return { ok: true, regNo: student.reg_no, fullName: student.full_name };
+}
+
 export async function getMyProfile(tokenInput: string): Promise<StudentProfile | null> {
   const student = await resolveSession(tokenInput);
   if (!student) return null;

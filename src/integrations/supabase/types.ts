@@ -46,6 +46,8 @@ export type Database = {
           attendance_lat: number | null;
           attendance_lng: number | null;
           attendance_radius_m: number;
+          exam_gps_required: boolean;
+          exam_radius_m: number;
           global_audio: boolean;
           global_camera: boolean;
           global_gps: boolean;
@@ -58,6 +60,7 @@ export type Database = {
           register_gps_required: boolean;
           register_radius_m: number;
           results_secret_slug: string;
+          results_require_pin: boolean;
           semina_list: Json;
           system_locked: boolean;
           updated_at: string;
@@ -69,6 +72,8 @@ export type Database = {
           attendance_lat?: number | null;
           attendance_lng?: number | null;
           attendance_radius_m?: number;
+          exam_gps_required?: boolean;
+          exam_radius_m?: number;
           global_audio?: boolean;
           global_camera?: boolean;
           global_gps?: boolean;
@@ -81,6 +86,7 @@ export type Database = {
           register_gps_required?: boolean;
           register_radius_m?: number;
           results_secret_slug?: string;
+          results_require_pin?: boolean;
           semina_list?: Json;
           system_locked?: boolean;
           updated_at?: string;
@@ -92,6 +98,8 @@ export type Database = {
           attendance_lat?: number | null;
           attendance_lng?: number | null;
           attendance_radius_m?: number;
+          exam_gps_required?: boolean;
+          exam_radius_m?: number;
           global_audio?: boolean;
           global_camera?: boolean;
           global_gps?: boolean;
@@ -104,6 +112,7 @@ export type Database = {
           register_gps_required?: boolean;
           register_radius_m?: number;
           results_secret_slug?: string;
+          results_require_pin?: boolean;
           semina_list?: Json;
           system_locked?: boolean;
           updated_at?: string;
@@ -720,6 +729,8 @@ export type Database = {
           exam_id: string;
           gps_lat: number | null;
           gps_lng: number | null;
+          gps_distance_m: number | null;
+          gps_radius_m: number | null;
           id: string;
           max_score: number | null;
           reg_no: string;
@@ -739,6 +750,8 @@ export type Database = {
           exam_id: string;
           gps_lat?: number | null;
           gps_lng?: number | null;
+          gps_distance_m?: number | null;
+          gps_radius_m?: number | null;
           id?: string;
           max_score?: number | null;
           reg_no: string;
@@ -758,6 +771,8 @@ export type Database = {
           exam_id?: string;
           gps_lat?: number | null;
           gps_lng?: number | null;
+          gps_distance_m?: number | null;
+          gps_radius_m?: number | null;
           id?: string;
           max_score?: number | null;
           reg_no?: string;
