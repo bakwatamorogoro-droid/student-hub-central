@@ -139,8 +139,12 @@ function Page() {
           setResetNeedsReg(true);
           toast.info("Wanafunzi zaidi ya mmoja wana taarifa hizi. Weka Reg Namba yako.");
         } else {
+          // Seven students on file have no phone number at all, so no answer they
+          // can give will match. Point them at the admin rather than leaving them
+          // retyping the same details.
           toast.error(
-            "Taarifa hizi hazilingani na usajili. Hakikisha namba ya simu, jina la mwisho, na Reg Namba ni sahihi.",
+            "Taarifa hizi hazilingani na usajili. Hakikisha namba ya simu, jina la mwisho, na Reg Namba ni sahihi. Kama bado inashindikana, mwone msimamizi akuwekee PIN.",
+            { duration: 6000 },
           );
         }
         return;
