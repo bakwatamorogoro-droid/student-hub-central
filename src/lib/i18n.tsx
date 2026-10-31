@@ -30,6 +30,11 @@ const dict: Record<string, { sw: string; en: string }> = {
   nav_account: { sw: "Akaunti", en: "My account" },
   nav_semester_qs: { sw: "Maswali ya Semester", en: "Semester Questions" },
   nav_attendance: { sw: "Mahudhurio", en: "Attendance" },
+  attendance_card_sub: {
+    sw: "Skani QR au weka msimbo wa kipindi kuhudhuria. Hapa pia unaona historia yako.",
+    en: "Scan a QR or enter a session code to check in. Your history lives here too.",
+  },
+  attendance_open_now: { sw: "Hudhuria sasa", en: "Check in now" },
   coming_soon: { sw: "Coming Soon", en: "Coming Soon" },
   coming_soon_body: {
     sw: "Sehemu hii inaandaliwa. Itakua tayari hivi karibuni — subiri tangazo.",

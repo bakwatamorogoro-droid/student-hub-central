@@ -11,6 +11,7 @@ import {
   getMyProfile,
   loginStudent,
   logoutStudent,
+  resetStudentPin,
   type StudentProfile,
 } from "@/lib/studentAccount";
 import { getStudentToken, setStudentToken, clearStudentToken } from "@/lib/student-session";
@@ -23,6 +24,8 @@ import {
   LogIn,
   LogOut,
   QrCode,
+  RotateCcw,
+  ShieldAlert,
   ShieldCheck,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
@@ -40,6 +43,11 @@ function Page() {
   const [claimPhone, setClaimPhone] = useState("");
   const [claimBusy, setClaimBusy] = useState(false);
   const [issuedPin, setIssuedPin] = useState<string | null>(null);
+  // Forgot-PIN flow: phone on file plus last name, in exchange for a new PIN.
+  const [resetPhone, setResetPhone] = useState("");
+  const [resetLastName, setResetLastName] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetPin, setResetPin] = useState<string | null>(null);
 
   // Restore a previous session so a refresh does not sign the student out.
   useEffect(() => {
@@ -109,10 +117,35 @@ function Page() {
     }
   };
 
-  const copyPin = async () => {
-    if (!issuedPin) return;
+  const doReset = async () => {
+    if (resetPhone.trim().length < 9) return toast.error("Weka namba ya simu uliyosajiliwa nayo");
+    if (resetLastName.trim().length < 2) return toast.error("Weka jina lako la mwisho");
+    setResetBusy(true);
     try {
-      await navigator.clipboard.writeText(issuedPin);
+      const res = await resetStudentPin(resetPhone.trim(), resetLastName.trim());
+      if (!res.ok) {
+        if (res.reason === "not_ready") {
+          toast.error("Imeshindikana kuwasiliana na hifadhidata. Jaribu tena.");
+        } else {
+          toast.error(
+            "Taarifa hizi hazilingani na usajili. Hakikisha namba ya simu na jina la mwisho ni sahihi.",
+          );
+        }
+        return;
+      }
+      setResetPin(res.pin);
+      setRegNo(res.regNo);
+      toast.success("PIN mpya imetengenezwa. Iandike!");
+    } finally {
+      setResetBusy(false);
+    }
+  };
+
+  const copyPin = async () => {
+    const value = issuedPin || resetPin;
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
       toast.success("PIN imenakiliwa");
     } catch {
       toast.error("Imeshindikana kunakili — andika kwa mkono");
@@ -201,12 +234,15 @@ function Page() {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue={issuedPin ? "login" : "claim"}>
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="claim" className="gap-1">
                 <KeyRound className="h-3.5 w-3.5" /> Pata PIN
               </TabsTrigger>
               <TabsTrigger value="login" className="gap-1">
                 <LogIn className="h-3.5 w-3.5" /> Ingia
+              </TabsTrigger>
+              <TabsTrigger value="reset" className="gap-1">
+                <RotateCcw className="h-3.5 w-3.5" /> Sahau PIN
               </TabsTrigger>
             </TabsList>
 
@@ -306,8 +342,77 @@ function Page() {
                 Ingia
               </Button>
               <p className="text-center text-xs text-muted-foreground">
-                Huna PIN? Fungua kichupo cha "Pata PIN" juu.
+                Huna PIN? Fungua kichupo cha "Pata PIN" juu. Umesahau? Fungua "Sahau PIN".
               </p>
+            </TabsContent>
+
+            <TabsContent value="reset" className="space-y-3 pt-3">
+              {resetPin ? (
+                <div className="space-y-3 rounded-xl border-2 border-amber-500/40 bg-amber-500/10 p-4 text-center">
+                  <p className="text-sm font-medium">PIN yako mpya ni</p>
+                  <p className="font-mono text-4xl font-extrabold tracking-[0.35em] text-amber-700 dark:text-amber-300">
+                    {resetPin}
+                  </p>
+                  <Button variant="outline" size="sm" onClick={copyPin} className="mx-auto gap-1">
+                    <Copy className="h-3.5 w-3.5" /> Nakili
+                  </Button>
+                  <div className="rounded-lg bg-background/70 p-3 text-left text-xs text-muted-foreground">
+                    <p className="font-semibold text-foreground">PIN ya zamani imefutwa.</p>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                      <li>Vifaa vyote ulivyoingia vimetolewa — ingia upya kwa PIN hii.</li>
+                      <li>Ihifadhi vizuri. Ukiacha hapa, mwone msimamizi wa shule.</li>
+                    </ul>
+                  </div>
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      setPin(resetPin);
+                      setResetPin(null);
+                    }}
+                  >
+                    Nimeiandika — ingia sasa
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                    <ShieldAlert className="h-5 w-5 shrink-0 text-amber-600" />
+                    <p className="text-xs text-muted-foreground">
+                      Umesahau PIN? Weka namba ya simu uliyosajiliwa nayo na jina lako la mwisho.
+                      Zikilingana na taarifa zilizopo shuleni, utapata PIN mpya.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Namba ya simu uliyosajiliwa nayo</Label>
+                    <Input
+                      inputMode="numeric"
+                      value={resetPhone}
+                      onChange={(e) => setResetPhone(e.target.value)}
+                      placeholder="0699105527"
+                      className="font-mono"
+                      autoComplete="tel"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Jina lako la mwisho</Label>
+                    <Input
+                      value={resetLastName}
+                      onChange={(e) => setResetLastName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") doReset();
+                      }}
+                      placeholder="Mfano: MOHAMEDI"
+                    />
+                  </div>
+                  <Button onClick={doReset} disabled={resetBusy} className="w-full">
+                    {resetBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Nipatie PIN mpya
+                  </Button>
+                  <p className="text-center text-xs text-muted-foreground">
+                    Ukishindwa, mwone msimamizi wa shule — anaweza kukupa PIN mpya moja kwa moja.
+                  </p>
+                </>
+              )}
             </TabsContent>
           </Tabs>
         </CardContent>

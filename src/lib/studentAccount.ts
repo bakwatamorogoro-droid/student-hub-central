@@ -233,6 +233,81 @@ export async function claimStudentPin(
   return { ok: true, pin, fullName: student.full_name };
 }
 
+export type ResetPinResult =
+  | { ok: true; pin: string; fullName: string; regNo: string }
+  | { ok: false; reason: "bad_details" | "disabled" | "not_ready" };
+
+/** The last whitespace-separated token of a name, lower-cased. */
+function lastNameOf(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/);
+  return (parts[parts.length - 1] || "").toLowerCase();
+}
+
+/**
+ * Issues a fresh PIN to a student who forgot theirs.
+ *
+ * The proof is the phone the school already holds plus the student's last name,
+ * which is the same evidence `claimStudentPin` accepts for a first PIN. Both are
+ * on file in `students`, so a classmate who knows only a registration number
+ * cannot take the account over.
+ *
+ * What this deliberately does: clears the old PIN, the lockout, and every live
+ * session, so a reset also signs the student out everywhere. What it cannot do:
+ * stop someone who knows both facts from doing the same. That is the ceiling of
+ * doing auth with a publishable key, and the reason `HARDEN_RLS.sql` exists.
+ */
+export async function resetStudentPin(
+  phoneInput: string,
+  lastNameInput: string,
+): Promise<ResetPinResult> {
+  const phone = normalizePhone(phoneInput || "");
+  const lastName = (lastNameInput || "").trim().toLowerCase();
+  if (!phone || lastName.length < 2) return { ok: false, reason: "bad_details" };
+
+  // Search by last name rather than by phone: `phone` is free text in the table,
+  // so the stored spelling varies (0712…, +255712…, 255712…) while the name is
+  // entered the same way by everyone.
+  const { data, error } = await supabase
+    .from("students")
+    .select(
+      "id, reg_no, full_name, phone, semina, student_group, course, study_year, academic_year",
+    )
+    .ilike("full_name", `%${escapeLike(lastNameInput.trim())}`)
+    .limit(50);
+  if (error) return { ok: false, reason: "not_ready" };
+
+  const matches = ((data ?? []) as StudentRow[]).filter(
+    (s) => lastNameOf(s.full_name) === lastName && normalizePhone(s.phone || "") === phone,
+  );
+  // More than one match means the pair is not unique enough to prove identity.
+  if (matches.length !== 1) return { ok: false, reason: "bad_details" };
+  const student = matches[0];
+
+  const existing = await readPinRow(student.id);
+  const salt = newSalt();
+  const pin = generatePin(PIN_LENGTH);
+  const payload: PinPayload = {
+    v: 1,
+    t: "pin",
+    salt,
+    hash: await hashSecret(pin, salt),
+    // The student is very likely on the phone they are resetting from, so bind
+    // to this device; a later phone change goes through the admin.
+    device: await hashDeviceId(currentDeviceId(), salt),
+    fail: 0,
+    locked_until: null,
+  };
+
+  const stored = await writePinRow(student, payload, existing?.id);
+  if (!stored) return { ok: false, reason: "not_ready" };
+
+  // A reset is a credential change, so every session minted with the old PIN
+  // stops working.
+  await clearSessions(student.id);
+
+  return { ok: true, pin, fullName: student.full_name, regNo: student.reg_no };
+}
+
 export async function loginStudent(regNoInput: string, pinInput: string): Promise<LoginResult> {
   const regNo = regNoSchema.safeParse(regNoInput);
   const pin = pinSchema.safeParse(pinInput);

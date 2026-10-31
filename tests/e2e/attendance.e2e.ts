@@ -60,7 +60,9 @@ const {
   logoutStudent,
   resolveStudentToken,
   adminSetStudentPin,
+  resetStudentPin,
 } = await import("@/lib/studentAccount");
+const { checkRegistrationConflicts } = await import("@/lib/registration");
 const {
   startAttendanceSession,
   endAttendanceSession,
@@ -99,9 +101,13 @@ const FAR_LAT = -6.809,
   FAR_LNG = 39.2;
 
 // --- seed a student directly (registration is not what is under test here)
+//
+// RLS currently refuses DELETE on `students` (see AGENTS.md), so a row left by
+// an earlier run cannot be cleared and the insert below answers 23505. The seed
+// therefore adopts whatever row already holds this registration number, and the
+// name-sensitive checks further down use `FULL_NAME` rather than a literal.
 await rest("quiz_participants?reg_no=eq." + REG, { method: "DELETE" });
-let r = await rest("students?reg_no=eq." + REG, { method: "DELETE" });
-r = await rest("students", {
+let r = await rest("students", {
   method: "POST",
   headers: { Prefer: "return=representation" },
   body: JSON.stringify({
@@ -115,13 +121,21 @@ r = await rest("students", {
 });
 let studentId = r.body?.[0]?.id;
 if (!studentId) {
-  const found = await rest("students?reg_no=eq." + REG + "&select=id");
+  const found = await rest("students?reg_no=eq." + REG + "&select=id,full_name,phone");
   studentId = found.body?.[0]?.id;
 }
 check("seeded a student", !!studentId, JSON.stringify(r.body));
 
+// The row's real name and phone: an adopted row may differ from the seed above.
+const rowInfo =
+  (await rest("students?reg_no=eq." + REG + "&select=full_name,phone")).body?.[0] ?? {};
+const FULL_NAME: string = rowInfo.full_name || "E2E ATT STUDENT";
+const LAST_NAME: string = FULL_NAME.trim().split(/\s+/).pop() || "STUDENT";
+const ROW_PHONE: string = rowInfo.phone || PHONE;
+console.log("     using student " + REG + " / " + FULL_NAME + " / " + ROW_PHONE);
+
 // --- A1: claim a PIN through the real code path
-const claim = await claimStudentPin(REG, PHONE);
+const claim = await claimStudentPin(REG, ROW_PHONE);
 check("A1 claimStudentPin succeeds without any SQL", claim.ok, JSON.stringify(claim));
 if (!claim.ok) {
   console.log("cannot continue");
@@ -130,7 +144,7 @@ if (!claim.ok) {
 check("A1b the issued PIN is 6 digits", /^[0-9]{6}$/.test(claim.pin), claim.pin);
 
 // --- A2: claiming again is refused
-const again = await claimStudentPin(REG, PHONE);
+const again = await claimStudentPin(REG, ROW_PHONE);
 check(
   "A2 a second claim is refused",
   !again.ok && again.reason === "already_claimed",
@@ -499,6 +513,102 @@ if (afterReissue.ok) {
   await logoutStudent(afterReissue.token);
   check("A9 logout invalidates the token", (await getMyProfile(afterReissue.token)) === null);
 }
+
+// --- C1..C6: the forgot-PIN reset
+// Run after A9 has logged the student out, so the "reset clears sessions" check
+// below starts from a clean slate.
+const wrongResetPhone = await resetStudentPin("0700000000", LAST_NAME);
+check(
+  "C1 a reset with the wrong phone is refused",
+  !wrongResetPhone.ok && wrongResetPhone.reason === "bad_details",
+  JSON.stringify(wrongResetPhone),
+);
+
+const wrongResetName = await resetStudentPin(ROW_PHONE, "MWANAFUNZI");
+check(
+  "C2 a reset with the wrong last name is refused",
+  !wrongResetName.ok && wrongResetName.reason === "bad_details",
+  JSON.stringify(wrongResetName),
+);
+
+const shortReset = await resetStudentPin(ROW_PHONE, "X");
+check(
+  "C3 a one-letter last name is refused",
+  !shortReset.ok && shortReset.reason === "bad_details",
+  JSON.stringify(shortReset),
+);
+
+// A session minted with the old PIN, to prove the reset retires it.
+const preResetLogin = await loginStudent(REG, "778899");
+check("C4 the PIN from A8 still signs in", preResetLogin.ok, JSON.stringify(preResetLogin));
+
+const reset = await resetStudentPin(ROW_PHONE, LAST_NAME);
+check("C5 the reset succeeds with phone plus last name", reset.ok, JSON.stringify(reset));
+if (reset.ok) {
+  check("C5b the new PIN is 6 digits", /^[0-9]{6}$/.test(reset.pin), reset.pin);
+  check("C5c the reset reports the registration number", reset.regNo === REG, reset.regNo);
+
+  // The old PIN must be dead. The new one is random, so a match would be a
+  // one-in-a-million collision rather than a stale hash.
+  const oldPinLogin = await loginStudent(REG, "778899");
+  check("C6 the old PIN no longer signs in", !oldPinLogin.ok, JSON.stringify(oldPinLogin));
+
+  if (preResetLogin.ok) {
+    check(
+      "C6b the reset signed the old session out",
+      (await getMyProfile(preResetLogin.token)) === null,
+    );
+  }
+
+  const newPinLogin = await loginStudent(REG, reset.pin);
+  check("C6c the new PIN signs in", newPinLogin.ok, JSON.stringify(newPinLogin));
+}
+
+// --- D1..D5: what the registration check decides
+// The check is the gate on the whole app, and its failure mode — refusing a
+// student who merely shares a name — is invisible in the UI, so it is pinned
+// here against the real project.
+const dupName = await checkRegistrationConflicts(REG, FULL_NAME);
+check(
+  "D1 the seeded student reads as returning",
+  dupName.kind === "returning",
+  JSON.stringify(dupName),
+);
+
+const takenNumber = await checkRegistrationConflicts("OH-ATT-E2E", "SOMEONE ELSE");
+check(
+  "D2 a known number under a different name is a conflict",
+  takenNumber.kind === "taken_by_other",
+  JSON.stringify(takenNumber),
+);
+
+// "UI FIX STUDENT" exists in the project from an earlier session; registering a
+// different number under that exact name must be a question, not a refusal.
+const sharedName = await checkRegistrationConflicts("OH-ATT-E2E-NEW", "UI FIX STUDENT");
+check(
+  "D3 a repeated name asks instead of refusing",
+  sharedName.kind === "shared_name" || sharedName.kind === "clear",
+  JSON.stringify(sharedName),
+);
+
+const freshName = await checkRegistrationConflicts(
+  "OH-ATT-E2E-NEW",
+  "ZZZ NOBODY HAS THIS NAME " + Date.now(),
+);
+check(
+  "D4 an unused number and name is clear",
+  freshName.kind === "clear",
+  JSON.stringify(freshName),
+);
+
+// The bug this pins: a student whose name matches an existing row but whose
+// number is new must never be told they are already registered.
+const notReturning = await checkRegistrationConflicts("OH-ATT-E2E-NEW", FULL_NAME);
+check(
+  "D5 a shared name is never reported as returning",
+  notReturning.kind !== "returning" && notReturning.kind !== "taken_by_other",
+  JSON.stringify(notReturning),
+);
 
 // --- cleanup
 clearStudentToken();

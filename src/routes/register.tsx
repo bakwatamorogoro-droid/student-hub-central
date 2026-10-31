@@ -20,9 +20,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
+import { checkRegistrationConflicts } from "@/lib/registration";
 import { getDeviceId } from "@/lib/device-id";
 import { toast } from "@/lib/toast";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Users } from "lucide-react";
 import {
   CURRENT_ACADEMIC_YEAR,
   GROUPS,
@@ -67,6 +68,10 @@ function RegisterPage() {
   const [studyYears, setStudyYears] = useState<number[]>(studyYearsFor(2));
   const [loading, setLoading] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Set once the student has accepted that the shared name is a coincidence, so
+  // the second submit skips the question.
+  const [nameConfirmed, setNameConfirmed] = useState(false);
+  const [nameConfirmOpen, setNameConfirmOpen] = useState(false);
 
   const [geo, setGeo] = useState<any>(null);
   const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
@@ -157,6 +162,11 @@ function RegisterPage() {
       );
     });
 
+  const editField = (patch: Partial<typeof form>) => {
+    setForm((f) => ({ ...f, ...patch }));
+    setNameConfirmed(false);
+  };
+
   const handleReview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (
@@ -185,37 +195,41 @@ function RegisterPage() {
   const submit = async () => {
     setLoading(true);
     const device_id = getDeviceId();
-    // Zuia usajili maradufu — reg_no AU jina kamili
-    const regUpper = form.reg_no.toUpperCase();
+    const regUpper = form.reg_no.trim().toUpperCase();
     const nameTrim = form.full_name.trim();
-    const { data: byReg } = await supabase
-      .from("students")
-      .select("id, full_name, reg_no")
-      .eq("reg_no", regUpper)
-      .maybeSingle();
-    const { data: byName } = await supabase
-      .from("students")
-      .select("id, full_name, reg_no")
-      .ilike("full_name", nameTrim)
-      .maybeSingle();
-    if (byReg || byName) {
-      const existing = byReg || byName;
-      // Ruhusu mwenye reg_no ile ile aendelee (kazi anaingia tu)
-      if (byReg && byReg.full_name.toLowerCase() === nameTrim.toLowerCase()) {
-        localStorage.setItem("student_reg", byReg.reg_no);
-        setLoading(false);
-        setConfirmOpen(false);
-        toast.success("Tayari umesajiliwa. Karibu tena!");
-        nav({ to: "/exams" });
-        return;
-      }
+
+    const conflict = await checkRegistrationConflicts(regUpper, nameTrim);
+    if (conflict.kind === "error") {
+      setLoading(false);
+      setConfirmOpen(false);
+      toast.error(conflict.message);
+      return;
+    }
+    if (conflict.kind === "returning") {
+      localStorage.setItem("student_reg", conflict.regNo);
+      setLoading(false);
+      setConfirmOpen(false);
+      toast.success("Tayari umesajiliwa. Karibu tena!");
+      nav({ to: "/exams" });
+      return;
+    }
+    if (conflict.kind === "taken_by_other") {
       setLoading(false);
       setConfirmOpen(false);
       toast.error(
-        `Tayari kuna usajili wa ${existing?.full_name} (${existing?.reg_no}). Nenda Update Taarifa kuomba marekebisho.`,
+        `Reg Namba ${conflict.regNo} imesajiliwa kwa jina ${conflict.fullName}. Kama wewe ni huyu, nenda Update Taarifa. Kama sivyo, mwone msimamizi.`,
       );
       return;
     }
+    // A shared name is a question for the student, not a refusal: both students
+    // are real, and only they know whether the other entry is theirs.
+    if (conflict.kind === "shared_name" && !nameConfirmed) {
+      setLoading(false);
+      setConfirmOpen(false);
+      setNameConfirmOpen(true);
+      return;
+    }
+
     const baseRow = {
       reg_no: form.reg_no,
       full_name: form.full_name,
@@ -246,7 +260,9 @@ function RegisterPage() {
     }
     localStorage.setItem("student_reg", form.reg_no);
     toast.success("Usajili umethibitishwa kikamilifu!");
-    nav({ to: "/exams" });
+    // Straight to the PIN step: without a PIN the student cannot sign in or mark
+    // attendance, and that is the next thing they need.
+    nav({ to: "/account" });
   };
 
   return (
@@ -264,7 +280,7 @@ function RegisterPage() {
                 <Label>{t("reg_number")} *</Label>
                 <Input
                   value={form.reg_no}
-                  onChange={(e) => setForm({ ...form, reg_no: e.target.value.toUpperCase() })}
+                  onChange={(e) => editField({ reg_no: e.target.value.toUpperCase() })}
                   placeholder="Mfano: MUM2021-04-08787"
                   required
                 />
@@ -273,7 +289,7 @@ function RegisterPage() {
                 <Label>{t("full_name")} *</Label>
                 <Input
                   value={form.full_name}
-                  onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                  onChange={(e) => editField({ full_name: e.target.value })}
                   required
                 />
               </div>
@@ -468,6 +484,39 @@ function RegisterPage() {
               </Button>
               <Button onClick={submit} disabled={loading}>
                 {loading ? "Inathibitisha..." : "Thibitisha & Sajili"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={nameConfirmOpen} onOpenChange={setNameConfirmOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" /> Jina lako linapatikana
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 text-sm">
+              <p className="text-muted-foreground">
+                Kuna mwanafunzi mwingine aliye na jina linalofanana na{" "}
+                <b>{form.full_name.trim()}</b>, lakini Reg Namba ni tofauti.
+              </p>
+              <p>
+                Kama wewe ni mwanafunzi mpya, endelea. Kama Reg Namba yako tayari ilisajiliwa, tumia{" "}
+                <b>Update Taarifa</b> badala yake ili usijiandikishe mara mbili.
+              </p>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setNameConfirmOpen(false)}>
+                Rudi
+              </Button>
+              <Button
+                onClick={() => {
+                  setNameConfirmed(true);
+                  setNameConfirmOpen(false);
+                  setConfirmOpen(true);
+                }}
+              >
+                Ni jina langu — endelea
               </Button>
             </DialogFooter>
           </DialogContent>

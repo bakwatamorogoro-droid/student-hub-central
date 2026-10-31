@@ -37,6 +37,7 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   It fails with a syntax error that looks like a code bug, not a routing bug, and a stale
   service worker never recovers. `public/_redirects` (Netlify syntax) is dead weight here and
   duplicates the same trap — it was removed.
+
 - Hashed assets are content-addressed, so `/assets/*` is served `immutable, max-age=31536000`.
   Vercel's default for them was `max-age=0, must-revalidate`, which revalidated every chunk on
   every visit.
@@ -57,12 +58,14 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   This is a silent trap: the local `npm`/`vite` build succeeds either way, because `node_modules`
   is already populated, so nothing looks wrong until Vercel runs. Run `bun install` and commit
   `bun.lock` in the same commit as any `package.json` dependency change.
+
 - To reproduce what Vercel does, use a clean tree — a populated `node_modules` hides the problem:
 
   ```sh
   mkdir /tmp/probe && git archive HEAD | tar -x -C /tmp/probe && cd /tmp/probe
   bun install --frozen-lockfile && bun run build
   ```
+
 - `bun.lock` was generated on Lovable and pins 115 packages to
   `europe-west{1,4}-npm.pkg.dev/lovable-core-prod/sandbox-npm-cache`. Those URLs do resolve
   from the public internet, but `registry.npmjs.org` is the safer pin.
@@ -109,9 +112,9 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   columns and swallow the error, so the page still renders), the semester filter on
   `semester-questions`, and `students.semester` targeting.
 
-  These migrations cannot be applied from this environment: there is no service_role key, no
+  These migrations cannot be applied from this environment: there is no service*role key, no
   database password, and no Supabase access token. The only key available is the publishable
-  `sb_publishable_…`, which is RLS-limited and cannot run DDL. The owner must paste the file into
+  `sb_publishable*…`, which is RLS-limited and cannot run DDL. The owner must paste the file into
   Supabase → SQL Editor.
 
 - **`students.reg_no` values carry a trailing space** (e.g. `"MUM2025-04-14106 "`), so exact
@@ -164,7 +167,7 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   `select=<column>` request instead. If a probe does write, find the previous value in the
   conversation logs (`grep -rhoE '"<column>":"[^"]*"' conversations/`) and restore it immediately.
 
-- **The Vercel deploy token is recoverable from the prior conversation log** and is *not* an env
+- **The Vercel deploy token is recoverable from the prior conversation log** and is _not_ an env
   var, so it does not survive in the shell. Extract it each session with
   `grep -rhoE "vcp_[A-Za-z0-9]{56}" /workspace/conversations | sort -u` — it is exactly 60
   characters. Team `team_Vdk2Y0gDRdZqQuxP6yvdHlMq`, project
@@ -297,20 +300,20 @@ The whole account and attendance system is built on `quiz_participants`, because
 that is (a) writable with the publishable key, (b) referenced by nothing in `src/`, and (c) carries
 `UNIQUE (exam_id, student_id)`. Rows are namespaced by `exam_id`, and `semina` holds a JSON payload:
 
-| `exam_id` | row key | holds |
-| --- | --- | --- |
-| `a0000000-…-0001` | `student_id` = the student | one student's PIN |
-| `a0000000-…-0002` | `student_id` = the student | one live sign-in session |
-| `a0000000-…-0003` | `student_id` = the session | a teacher's attendance session |
-| `a0000000-…-0004` | `student_id` = derived from session+student | one student's check-in |
-| `a0000000-…-0005` | `student_id` = the session | that session's live QR token |
+| `exam_id`         | row key                                     | holds                          |
+| ----------------- | ------------------------------------------- | ------------------------------ |
+| `a0000000-…-0001` | `student_id` = the student                  | one student's PIN              |
+| `a0000000-…-0002` | `student_id` = the student                  | one live sign-in session       |
+| `a0000000-…-0003` | `student_id` = the session                  | a teacher's attendance session |
+| `a0000000-…-0004` | `student_id` = derived from session+student | one student's check-in         |
+| `a0000000-…-0005` | `student_id` = the session                  | that session's live QR token   |
 
 Two keys do the work the schema would otherwise have to do:
 
-* A check-in row's `id` **and** `student_id` are both `SHA-256("checkin:<session>:<student>")` folded
+- A check-in row's `id` **and** `student_id` are both `SHA-256("checkin:<session>:<student>")` folded
   into a UUID, so `UNIQUE (exam_id, student_id)` makes a second check-in for the same session
   impossible — even from two phones at once — without a new index.
-* A session's `id` is its own `student_id`, so `UNIQUE (exam_id, student_id)` cannot make two
+- A session's `id` is its own `student_id`, so `UNIQUE (exam_id, student_id)` cannot make two
   sessions collide.
 
 Per-session attendance lives in `quiz_participants`; the legacy `attendance` row is written in
@@ -328,23 +331,23 @@ doing auth without a server, and it is why `HARDEN_RLS.sql` matters eventually.
 
 ### How identity is proved
 
-* A PIN is stored only as a bcrypt hash (`crypt(pin, gen_salt('bf', 10))`), so reading `student_pins`
+- A PIN is stored only as a bcrypt hash (`crypt(pin, gen_salt('bf', 10))`), so reading `student_pins`
   never yields a usable PIN.
-* A session token is 32 random bytes as hex. Only its SHA-256 hash is stored in `student_sessions`,
+- A session token is 32 random bytes as hex. Only its SHA-256 hash is stored in `student_sessions`,
   so the table cannot be used to impersonate a session.
-* **A student cannot choose their own PIN.** `admin_set_student_pin()` requires a live admin session
+- **A student cannot choose their own PIN.** `admin_set_student_pin()` requires a live admin session
   token. A student may also claim a PIN themselves through `student_claim_pin()`, but only by proving
   ownership with the phone number the school already has on file — never by knowing a registration
   number alone. `app_settings.pin_self_claim_enabled` turns self-claim off entirely.
-* A claimed PIN is **bound to the device that claimed it** (`student_pins.bound_device_id`). Presenting
+- A claimed PIN is **bound to the device that claimed it** (`student_pins.bound_device_id`). Presenting
   it from another phone returns `wrong_device`, so a PIN cannot be shared with a classmate. An admin
   re-issue clears the binding, which is the recovery path when a student changes phone.
-* Five wrong PINs lock the account for 15 minutes. An unknown registration and a wrong PIN return the
+- Five wrong PINs lock the account for 15 minutes. An unknown registration and a wrong PIN return the
   same `bad_credentials` answer, so the response cannot be used to enumerate registration numbers.
-* `attendance_check_in()` resolves the student from the session token. It deliberately does **not**
+- `attendance_check_in()` resolves the student from the session token. It deliberately does **not**
   use `students.device_id`: that column is world-readable, so it cannot prove anything. (An earlier
   revision used it as a fallback, which was only as safe as the RLS that did not exist yet.)
-* Minting a QR token (`attendance_rotate_token`) and issuing a PIN are both admin-gated in SQL, so a
+- Minting a QR token (`attendance_rotate_token`) and issuing a PIN are both admin-gated in SQL, so a
   tampered client cannot hand out tokens.
 
 ### Attendance has two entry points, and both are distance-checked
@@ -358,9 +361,9 @@ check never runs in the browser.
 
 Two rules that were wrong and are now fixed:
 
-* The attendance row must carry `session_id`. An earlier revision never wrote it, so the teacher's
+- The attendance row must carry `session_id`. An earlier revision never wrote it, so the teacher's
   per-session present list was always empty and the unique index did nothing.
-* The once-only rule is **per session**, not per day. The old `(student_id, check_in_date)` index
+- The once-only rule is **per session**, not per day. The old `(student_id, check_in_date)` index
   refused a student's second lecture of the same day. `attendance_student_session_uniq` replaces it.
 
 `attendance_session_present(admin_token, session_id)` serves the teacher's present list. It has to be
@@ -375,10 +378,10 @@ was enabled, that key could read all 1561 students, 2602 submissions, and `app_s
 
 Two details that are easy to get wrong:
 
-* Use `ENABLE ROW LEVEL SECURITY`, never `FORCE`. `FORCE` also applies RLS to the table owner, and
+- Use `ENABLE ROW LEVEL SECURITY`, never `FORCE`. `FORCE` also applies RLS to the table owner, and
   the `SECURITY DEFINER` functions run as the owner, so `FORCE` silently makes every one of them
   return NULL (verified).
-* A table-wide `GRANT SELECT` covers every column, so `REVOKE SELECT (admin_password)` does nothing
+- A table-wide `GRANT SELECT` covers every column, so `REVOKE SELECT (admin_password)` does nothing
   on its own. The table grant has to be withdrawn first, then SELECT re-granted on the remaining
   columns.
 
@@ -391,15 +394,15 @@ functions before this file is applied.
 
 ### Other design points
 
-* Only the SHA-256 hash of a rotating QR token is stored. Reading `attendance_sessions` never yields a
+- Only the SHA-256 hash of a rotating QR token is stored. Reading `attendance_sessions` never yields a
   usable QR payload. Tokens rotate every 25 s (`ROTATE_MS`).
-* Every gate (token, expiry, session window, identity, geofence, duplicate) is enforced inside
+- Every gate (token, expiry, session window, identity, geofence, duplicate) is enforced inside
   `attendance_check_in_qr()`. The browser supplies only a token and a GPS fix.
-* The duplicate check is an explicit `EXISTS`, not `ON CONFLICT`. The live `attendance` table has no
+- The duplicate check is an explicit `EXISTS`, not `ON CONFLICT`. The live `attendance` table has no
   unique constraint on `(student_id, check_in_date)`, so `ON CONFLICT DO NOTHING` never fired and a
   student could check in repeatedly (caught by test B5). A unique index is created as a backstop.
-* The real `attendance` columns are `student_id, reg_no, full_name, semina, student_group,
-  check_in_date, gps_lat, gps_lng, distance_m, status`. There is no `session_id`, `gps_accuracy` or
+- The real `attendance` columns are `student_id, reg_no, full_name, semina, student_group,
+check_in_date, gps_lat, gps_lng, distance_m, status`. There is no `session_id`, `gps_accuracy` or
   `method`. The real `students` columns do **not** include `auth_user_id` or `semester` — an earlier
   revision of this feature selected both and was broken.
 
@@ -433,7 +436,9 @@ caller's shell handles the pipe, so `run.sh` uses `docker cp` instead.
 menu (`nav_attendance` in `SiteHeader`). The page holds the scanner, the join-code box, the
 "vipindi vinavyoendelea" list, and the student's own history (`fetchMyCheckIns`).
 
-`/account` and `/student` no longer embed the panel. Each carries a small card that links to
+`/` carries a full-width attendance card above the exam cards, because marking
+attendance is the one thing a student needs during a lecture and should not be
+behind a menu. `/account` and `/student` no longer embed the panel. Each carries a small card that links to
 `/attendance`, so a student who lands on either still finds check-in in one click. Embedding
 it in three places meant three scanners, three sets of failure messages, and no single URL to
 send to a class.
@@ -448,18 +453,55 @@ fires after a successful scan so the host page can refresh a history list.
 removed, and the component with it. Do not add a check-in affordance back to `/` — the
 student signs in on `/account`, and that is where the QR belongs.
 
+### Two things RLS currently blocks, and how the code copes
+
+Both were found by testing against the live project, not by reading the code.
+
+**DELETE on `students` silently does nothing.** PostgREST answers 200 with an
+empty array whether or not a row matched, so a delete that RLS refuses is
+indistinguishable from one that hit nothing. The migration that grants
+`s_d ON public.students FOR DELETE` (20260520093923) has not been applied to
+production, so `admin.students.tsx` verifies its delete by reading the row back
+and reports failure rather than claiming success. The e2e seed does not try to
+delete its student either; it adopts whatever row already holds the registration
+number. If a migration is ever applied that fixes this, the read-back check is
+still the right thing to keep.
+
+**Registration must not treat a repeated name as a duplicate.** The cohort has 77
+names that appear more than once, and the old check refused a registration when
+the full name matched any existing row, which locked out every one of those
+students. `src/lib/registration.ts` now decides the conflict, and the rule is:
+a registration number already on file is the only hard stop, and only when the
+name disagrees with it. A shared name with a different number asks the student to
+confirm and then proceeds. That module exists so the rule can be tested — its
+failure mode is invisible in the UI.
+
+### Forgot PIN
+
+`resetStudentPin(phone, lastName)` in `studentAccount.ts` issues a new PIN when a
+student supplies the phone on file plus their last name. It searches by last name
+rather than by phone because `students.phone` is free text and the stored
+spelling varies (`0712…`, `+255712…`, `255712…`), while the name is typed the same
+way by everyone. It then requires exactly one row to match both, so an ambiguous
+pair is refused rather than guessed.
+
+A reset clears the old PIN, the lockout, and every live session, so it also signs
+the student out on all their devices. The UI lives in the "Sahau PIN" tab on
+`/account`. `adminSetStudentPin` remains the fallback for a student who cannot
+answer either question.
+
 ### The admin console, and what the legacy table is for
 
 `/admin/attendance` is three things, top to bottom:
 
-* `AttendanceSessionPanel` — starts a session, shows its rotating QR, its join code, and its
+- `AttendanceSessionPanel` — starts a session, shows its rotating QR, its join code, and its
   printable poster.
-* `GpsSettings` — the attendance point, radius, and the register-time fence.
-* `AdminAccessQr` — a QR of `/admin/attendance` itself, so the admin opens the console on a
+- `GpsSettings` — the attendance point, radius, and the register-time fence.
+- `AdminAccessQr` — a QR of `/admin/attendance` itself, so the admin opens the console on a
   phone without typing a URL. It is built from `window.location.origin`, so a preview
   deployment points at itself. This is a link, not a credential: the admin login still guards
   the page.
-* `LegacyArchive` — a collapsible, read-only table over the legacy `attendance` table, plus a
+- `LegacyArchive` — a collapsible, read-only table over the legacy `attendance` table, plus a
   CSV export.
 
 `LegacyArchive` exists because the legacy table already holds real rows (251 at the time of
@@ -479,10 +521,10 @@ rows are matched on `reg_no`, which holds the session id.
 `node --test` can load it directly — `attendance.ts` reads `import.meta.env` at module
 scope and cannot.
 
-| Payload | Carries | Lives for | Shown on |
-| --- | --- | --- | --- |
-| `ISL-ATT1:<token>` | rotating token | 30 s | the teacher's screen |
-| `ISL-JOIN1:<code>` | session join code | as long as the session is open | the printed poster |
+| Payload            | Carries           | Lives for                      | Shown on             |
+| ------------------ | ----------------- | ------------------------------ | -------------------- |
+| `ISL-ATT1:<token>` | rotating token    | 30 s                           | the teacher's screen |
+| `ISL-JOIN1:<code>` | session join code | as long as the session is open | the printed poster   |
 
 A printed QR **cannot** carry the rotating token: at 30 s it would be dead before the
 sheet reached the wall. So the poster carries the join code instead. What stops a student
@@ -516,7 +558,7 @@ returns **`204` and deletes nothing**, because RLS refuses the row and PostgREST
 the request, not the outcome. Never treat a `204` as proof of deletion. `admin.students`
 reads the row back for exactly this reason.
 
-The same trap applies to test cleanup: `quiz_participants` rows *are* deletable, but
+The same trap applies to test cleanup: `quiz_participants` rows _are_ deletable, but
 `students` rows are not, so a test that inserts a `students` row cannot clean it up and
 will leave it behind. Prefer namespaced `quiz_participants` rows for anything a test
 needs to create and remove. Leftover `OH-*` test students on production can only be
