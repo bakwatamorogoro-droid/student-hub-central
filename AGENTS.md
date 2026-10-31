@@ -429,21 +429,49 @@ caller's shell handles the pipe, so `run.sh` uses `docker cp` instead.
 
 ### Where the QR panel lives
 
-`QrAttendanceCheckIn` is rendered on **two** pages:
+`QrAttendanceCheckIn` is rendered on **one** page: `/attendance`, which is also in the main
+menu (`nav_attendance` in `SiteHeader`). The page holds the scanner, the join-code box, the
+"vipindi vinavyoendelea" list, and the student's own history (`fetchMyCheckIns`).
 
-* `/account` — inside a `Mahudhurio` section that also holds the attendance history, so
-  the QR a student scans sits next to the record of what they have scanned.
-* `/student` — under the details card.
+`/account` and `/student` no longer embed the panel. Each carries a small card that links to
+`/attendance`, so a student who lands on either still finds check-in in one click. Embedding
+it in three places meant three scanners, three sets of failure messages, and no single URL to
+send to a class.
 
 The panel reads the PIN session itself (`getStudentToken()`), so it needs no props and
-renders the sign-in prompt when the token is missing. That is why it can be dropped on
-any page without extra wiring.
+renders the sign-in prompt when the token is missing. Its one optional prop, `onCheckedIn`,
+fires after a successful scan so the host page can refresh a history list.
 
 **There is no check-in card on `/`.** The home page used to carry a second, weaker one
 (`AttendanceCheckIn`): registration number only, no PIN, writing straight to the legacy
 `attendance` table. It bypassed the PIN identity the whole flow depends on, so it was
 removed, and the component with it. Do not add a check-in affordance back to `/` — the
 student signs in on `/account`, and that is where the QR belongs.
+
+### The admin console, and what the legacy table is for
+
+`/admin/attendance` is three things, top to bottom:
+
+* `AttendanceSessionPanel` — starts a session, shows its rotating QR, its join code, and its
+  printable poster.
+* `GpsSettings` — the attendance point, radius, and the register-time fence.
+* `AdminAccessQr` — a QR of `/admin/attendance` itself, so the admin opens the console on a
+  phone without typing a URL. It is built from `window.location.origin`, so a preview
+  deployment points at itself. This is a link, not a credential: the admin login still guards
+  the page.
+* `LegacyArchive` — a collapsible, read-only table over the legacy `attendance` table, plus a
+  CSV export.
+
+`LegacyArchive` exists because the legacy table already holds real rows (251 at the time of
+writing, across 17 dates) and removing the old screen would have hidden them. It is read-only
+on purpose: that table carries `UNIQUE (student_id, check_in_date)`, so it can hold only one
+row per student per calendar day and cannot represent a second lecture. Per-session truth
+lives in the session archive above it, and `fetchMyCheckIns` reads from there too, so a student
+who attended twice in one day sees both.
+
+`listSessionSummaries()` is the teacher's view: every session, newest first, each with a head
+count. `deleteAttendanceSession()` removes a session and its check-ins together — the check-in
+rows are matched on `reg_no`, which holds the session id.
 
 ### Two QR payloads, and why
 

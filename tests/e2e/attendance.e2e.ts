@@ -70,6 +70,9 @@ const {
   listOpenSessions,
   makeJoinCode,
   distanceM,
+  listSessionSummaries,
+  fetchMyCheckIns,
+  deleteAttendanceSession,
 } = await import("@/lib/attendance");
 const { getStudentToken, setStudentToken, clearStudentToken } =
   await import("@/lib/student-session");
@@ -430,6 +433,66 @@ check(
   afterReissue.ok,
   JSON.stringify(afterReissue),
 );
+
+// --- B16: the teacher's archive lists sessions with head counts
+const summaries = await listSessionSummaries();
+const summary = summaries.find((x) => x.id === (posterSession.ok ? posterSession.session.id : ""));
+check("B16a the archive lists the poster session", !!summary);
+check("B16b the archive counts its check-in", summary?.presentCount === 1, JSON.stringify(summary));
+check(
+  "B16c the archive keeps the join code",
+  summary?.joinCode === (posterSession.ok ? posterSession.session.joinCode : null),
+);
+check("B16d the archive marks the ended session closed", summary?.active === false);
+check("B16e the archive records when it closed", !!summary?.closedAt);
+
+// --- B17: the student's own history is per session, not per day
+const freshToken = afterReissue.ok ? afterReissue.token : login.token;
+const myHistory = await fetchMyCheckIns(freshToken);
+check("B17a the student's history is not empty", myHistory.length > 0, myHistory.length);
+check(
+  "B17b the student's history has one entry per session",
+  new Set(myHistory.map((h) => h.id)).size === myHistory.length,
+);
+check(
+  "B17c the history carries the session title",
+  myHistory.every((h) => !!h.title),
+  JSON.stringify(myHistory.map((h) => h.title)),
+);
+
+// --- B18: deleting a session removes its check-ins with it
+const doomed = await startAttendanceSession({
+  title: "E2E To Delete",
+  semina: null,
+  studentGroup: null,
+  lat: LAT,
+  lng: LNG,
+  radiusM: 50,
+  joinCode: makeJoinCode(),
+});
+check("B18a a session to delete started", doomed.ok);
+if (doomed.ok) {
+  const delCheck = await checkIn({
+    studentToken: freshToken,
+    joinCode: doomed.session.joinCode,
+    lat: LAT,
+    lng: LNG,
+  });
+  check("B18b a check-in into it succeeds", delCheck.ok, JSON.stringify(delCheck));
+  check(
+    "B18c the archive shows one present",
+    (await listSessionSummaries()).find((x) => x.id === doomed.session.id)?.presentCount === 1,
+  );
+  check("B18d deleting the session succeeds", await deleteAttendanceSession(doomed.session.id));
+  check(
+    "B18e the session is gone from the archive",
+    !(await listSessionSummaries()).some((x) => x.id === doomed.session.id),
+  );
+  check(
+    "B18f its check-ins are gone too",
+    (await fetchSessionPresent(doomed.session.id)).length === 0,
+  );
+}
 
 // --- A9: logout invalidates the session
 if (afterReissue.ok) {

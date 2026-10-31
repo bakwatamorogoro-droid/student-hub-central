@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +17,15 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/lib/toast";
 import { alertSuccess, alertWarning } from "@/lib/alerts";
-import { UserCog, AlertTriangle, CheckCircle2, Mail, Clock } from "lucide-react";
+import {
+  UserCog,
+  AlertTriangle,
+  CheckCircle2,
+  Mail,
+  Clock,
+  CalendarCheck,
+  QrCode,
+} from "lucide-react";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 import { updateStudentProfile, isMissingColumnError } from "@/lib/studentProfile";
@@ -30,7 +38,6 @@ import {
   studyYearsFor,
 } from "@/lib/academicTargeting";
 import { useI18n } from "@/lib/i18n";
-import { QrAttendanceCheckIn } from "@/components/QrAttendanceCheckIn";
 import { loadDirectory } from "@/lib/directory";
 
 export const Route = createFileRoute("/student")({
@@ -388,7 +395,25 @@ function Page() {
           </Card>
         )}
 
-        <QrAttendanceCheckIn />
+        {/* Check-in lives on its own page, reachable from the menu. Linking
+            rather than embedding keeps one place to check in, not three. */}
+        <Card className="border-2 border-primary/25 bg-gradient-to-br from-primary/10 via-card to-secondary/10">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 font-bold">
+                <CalendarCheck className="h-4 w-4 text-primary" /> Mahudhurio
+              </p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Skani QR ya mwalimu ukiwa darasani, au andika msimbo wa kipindi.
+              </p>
+            </div>
+            <Button asChild>
+              <Link to="/attendance">
+                <QrCode className="h-4 w-4" /> Nenda Mahudhurio
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
 
         <Tabs defaultValue="edit" id="edit-taasrifa" className="scroll-mt-20">
           <TabsList className="grid grid-cols-2 w-full">

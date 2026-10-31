@@ -29,6 +29,7 @@ const dict: Record<string, { sw: string; en: string }> = {
   nav_student: { sw: "Update Taarifa", en: "Update details" },
   nav_account: { sw: "Akaunti", en: "My account" },
   nav_semester_qs: { sw: "Maswali ya Semester", en: "Semester Questions" },
+  nav_attendance: { sw: "Mahudhurio", en: "Attendance" },
   coming_soon: { sw: "Coming Soon", en: "Coming Soon" },
   coming_soon_body: {
     sw: "Sehemu hii inaandaliwa. Itakua tayari hivi karibuni — subiri tangazo.",

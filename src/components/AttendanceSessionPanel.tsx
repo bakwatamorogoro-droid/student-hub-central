@@ -32,7 +32,11 @@ const ROTATE_MS = 25_000;
 
 type PanelSession = AttendanceSession;
 
-export function AttendanceSessionPanel() {
+/**
+ * `onSessionChange` fires when a session starts or ends, so a host page can
+ * refresh anything derived from sessions — the archive on /admin/attendance.
+ */
+export function AttendanceSessionPanel({ onSessionChange }: { onSessionChange?: () => void } = {}) {
   const [title, setTitle] = useState("");
   const [semina, setSemina] = useState("");
   const [group, setGroup] = useState("all");
@@ -159,6 +163,7 @@ export function AttendanceSessionPanel() {
       setJoinCode(created.joinCode || "");
       const ok = await refreshToken(created.id);
       if (ok) toast.success("Kipindi kimeanza — wanafunzi wanaweza kuscan");
+      onSessionChange?.();
     } finally {
       setBusy(false);
     }
@@ -174,6 +179,7 @@ export function AttendanceSessionPanel() {
     setPresent([]);
     setBusy(false);
     toast.success("Kipindi kimefungwa");
+    onSessionChange?.();
   };
 
   if (!session) {

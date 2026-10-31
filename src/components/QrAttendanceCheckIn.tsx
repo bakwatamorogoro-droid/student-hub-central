@@ -33,7 +33,13 @@ const FAILURE_TEXT: Record<AttendanceFailure, string> = {
 
 type Done = { fullName: string; distanceM: number; checkInAt: string; semina: string | null };
 
-export function QrAttendanceCheckIn() {
+/**
+ * `onCheckedIn` fires after a successful check-in so a host page can refresh
+ * whatever it shows about attendance — the history list on /attendance, for
+ * one. Optional, so the component still drops onto a page with nothing to
+ * refresh.
+ */
+export function QrAttendanceCheckIn({ onCheckedIn }: { onCheckedIn?: () => void } = {}) {
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Done | null>(null);
@@ -82,6 +88,7 @@ export function QrAttendanceCheckIn() {
             semina: res.semina,
           });
           toast.success("Mahudhurio yamekamilika ✓");
+          onCheckedIn?.();
         } else {
           setFailure({ reason: res.reason, distanceM: res.distanceM, radiusM: res.radiusM });
         }
@@ -89,7 +96,7 @@ export function QrAttendanceCheckIn() {
         setBusy(false);
       }
     },
-    [],
+    [onCheckedIn],
   );
 
   const handleToken = useCallback(

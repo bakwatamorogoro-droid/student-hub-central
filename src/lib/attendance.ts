@@ -551,6 +551,131 @@ export async function fetchSessionPresent(sessionId: string): Promise<PresentRow
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
+// ---------------------------------------------------------------
+// Teacher's archive
+// ---------------------------------------------------------------
+
+export type SessionSummary = {
+  id: string;
+  title: string;
+  semina: string | null;
+  studentGroup: string | null;
+  radiusM: number;
+  joinCode: string | null;
+  active: boolean;
+  startedAt: string | null;
+  closedAt: string | null;
+  presentCount: number;
+};
+
+/**
+ * Every session ever started, newest first, each with its head count.
+ *
+ * The legacy `attendance` table can only hold one row per student per calendar
+ * day, so it cannot represent a second lecture — this is the authoritative view.
+ */
+export async function listSessionSummaries(): Promise<SessionSummary[]> {
+  const { data, error } = await supabase
+    .from("quiz_participants")
+    .select("id, semina, joined_at")
+    .eq("exam_id", SESSION_NS);
+  if (error || !data) return [];
+
+  // One query for every check-in, then count in memory: the alternative is a
+  // round trip per session, and a teacher has few enough of them.
+  const { data: checkIns } = await supabase
+    .from("quiz_participants")
+    .select("reg_no")
+    .eq("exam_id", CHECKIN_NS);
+  const counts = new Map<string, number>();
+  for (const c of (checkIns ?? []) as Array<{ reg_no: string | null }>) {
+    if (!c.reg_no) continue;
+    counts.set(c.reg_no, (counts.get(c.reg_no) ?? 0) + 1);
+  }
+
+  const out: SessionSummary[] = [];
+  for (const row of data as Array<{ id: string; semina: string | null; joined_at: string }>) {
+    const p = parse<SessionPayload>(row.semina);
+    if (!p || p.t !== "session") continue;
+    out.push({
+      id: row.id,
+      title: p.title,
+      semina: p.semina,
+      studentGroup: p.student_group,
+      radiusM: p.radius_m,
+      joinCode: p.join_code,
+      active: !!p.active,
+      startedAt: row.joined_at,
+      closedAt: p.closes_at,
+      presentCount: counts.get(row.id) ?? 0,
+    });
+  }
+  return out.sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""));
+}
+
+/** Removes a session and every check-in recorded against it. */
+export async function deleteAttendanceSession(sessionId: string): Promise<boolean> {
+  const { error: checkInError } = await supabase
+    .from("quiz_participants")
+    .delete()
+    .eq("exam_id", CHECKIN_NS)
+    .eq("reg_no", sessionId);
+  if (checkInError) return false;
+  const { error } = await supabase.from("quiz_participants").delete().eq("id", sessionId);
+  return !error;
+}
+
+/**
+ * One student's own check-ins, session by session.
+ *
+ * Read from the check-in rows rather than the legacy mirror, so a student who
+ * attended two lectures on the same day sees both.
+ */
+export async function fetchMyCheckIns(studentToken: string): Promise<SessionSummary[]> {
+  const student = await resolveStudentToken(studentToken);
+  if (!student) return [];
+
+  const { data: sessions } = await supabase
+    .from("quiz_participants")
+    .select("id, semina, joined_at")
+    .eq("exam_id", SESSION_NS);
+  const byId = new Map<string, { title: string; semina: string | null; group: string | null }>();
+  for (const row of (sessions ?? []) as Array<{ id: string; semina: string | null }>) {
+    const p = parse<SessionPayload>(row.semina);
+    if (!p || p.t !== "session") continue;
+    byId.set(row.id, { title: p.title, semina: p.semina, group: p.student_group });
+  }
+
+  const { data: checkIns } = await supabase
+    .from("quiz_participants")
+    .select("id, semina, joined_at")
+    .eq("exam_id", CHECKIN_NS);
+
+  const out: SessionSummary[] = [];
+  for (const row of (checkIns ?? []) as Array<{
+    id: string;
+    semina: string | null;
+    joined_at: string;
+  }>) {
+    const p = parse<CheckInPayload>(row.semina);
+    if (!p || p.student_id !== student.id) continue;
+    const meta = byId.get(p.session_id);
+    out.push({
+      id: p.session_id,
+      title: meta?.title ?? "Kipindi",
+      semina: meta?.semina ?? null,
+      studentGroup: meta?.group ?? null,
+      radiusM: 0,
+      joinCode: null,
+      active: false,
+      startedAt: p.check_in_at ?? row.joined_at,
+      closedAt: null,
+      presentCount: 0,
+    });
+  }
+  return out.sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""));
+}
+
 /** A short, unambiguous code the teacher can read out. */
 export function makeJoinCode(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";

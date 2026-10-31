@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,6 @@ import {
   type StudentProfile,
 } from "@/lib/studentAccount";
 import { getStudentToken, setStudentToken, clearStudentToken } from "@/lib/student-session";
-import { QrAttendanceCheckIn } from "@/components/QrAttendanceCheckIn";
 import {
   CalendarCheck,
   Copy,
@@ -23,6 +22,7 @@ import {
   Loader2,
   LogIn,
   LogOut,
+  QrCode,
   ShieldCheck,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
@@ -166,49 +166,25 @@ function Page() {
           </CardContent>
         </Card>
 
-        {/* One Mahudhurio section holds everything attendance: the QR to scan and
-            the record of what has been scanned. Keeping the two together means a
-            student who signs in sees where to check in without a second stop. */}
-        <section className="space-y-3">
-          <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-muted-foreground">
-            <CalendarCheck className="h-4 w-4" /> Mahudhurio
-          </h2>
-
-          <QrAttendanceCheckIn />
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Historia ya Mahudhurio</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {profile.attendance.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Bado hujahudhuria kipindi chochote.</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {profile.attendance.map((h) => (
-                    <div
-                      key={h.id}
-                      className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2 text-sm"
-                    >
-                      <span className="truncate">
-                        {h.semina || "—"}
-                        {h.status === "present" && (
-                          <Badge variant="secondary" className="ml-2 text-[10px]">
-                            Alikuwepo
-                          </Badge>
-                        )}
-                      </span>
-                      <span className="ml-2 shrink-0 text-xs text-muted-foreground">
-                        {new Date(h.created_at).toLocaleDateString("sw-TZ")}
-                        {h.distance_m != null ? ` · ${Math.round(h.distance_m)}m` : ""}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </section>
+        {/* Attendance has its own page now, reachable from the main menu. This
+            card is the signpost so a student who lands here still finds it. */}
+        <Card className="border-2 border-primary/25 bg-gradient-to-br from-primary/10 via-card to-secondary/10">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 font-bold">
+                <CalendarCheck className="h-4 w-4 text-primary" /> Mahudhurio
+              </p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Hudhuria kipindi kwa kuscan QR ya mwalimu, na uone historia yako.
+              </p>
+            </div>
+            <Button asChild>
+              <Link to="/attendance">
+                <QrCode className="h-4 w-4" /> Nenda Mahudhurio
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
