@@ -702,9 +702,22 @@ check(
   JSON.stringify(e1.last.error),
 );
 check(
-  "E1b the missing columns are reported to the admin",
-  e1.dropped.length >= 1 && e1.dropped.includes("current_semester"),
+  "E1b the settings save needs no column dropped",
+  e1.dropped.length === 0,
   JSON.stringify(e1.dropped),
+);
+
+// The academic block must survive the save, not just return "no error".
+const acadReadBack =
+  (
+    (await rest("app_settings?id=eq.1&select=current_semester,current_academic_year"))
+      .body as Array<Record<string, unknown>> | null
+  )?.[0] ?? {};
+check(
+  "E1c the academic settings were persisted",
+  acadReadBack.current_semester === "Semester ya Kwanza" &&
+    acadReadBack.current_academic_year === "2025/2026",
+  JSON.stringify(acadReadBack),
 );
 
 // The settings that do exist must actually have been written, not just "no error".
@@ -724,16 +737,18 @@ check(
   JSON.stringify(e3),
 );
 
-// --- E5: approving a request must not quietly drop the columns that do exist.
-// `semester` is absent, and PostgREST rejects the whole PATCH when one column is
-// unknown, so course and study_year used to be lost with it — while the admin was
-// told the request had been approved.
+// --- E5: approving a request must persist the whole academic block.
+// `semester` used to be absent, and PostgREST rejects the whole PATCH when one
+// column is unknown, so course and study_year were lost with it — while the
+// admin was told the request had been approved. Now that the column exists, the
+// block must save in one pass and every field must land.
 const probeStudent = (
-  (await rest("students?select=id,reg_no,course,study_year&limit=1")).body as Array<{
+  (await rest("students?select=id,reg_no,course,study_year,semester&limit=1")).body as Array<{
     id: string;
     reg_no: string;
     course: string | null;
     study_year: number | null;
+    semester: string | null;
   }> | null
 )?.[0];
 
@@ -741,7 +756,7 @@ if (!probeStudent) {
   check("E5 skipped: no student to probe", false, "the project has no students");
 } else {
   const before = { course: probeStudent.course, study_year: probeStudent.study_year };
-  // Exactly the academic block admin.requests.tsx builds, with `semester` absent.
+  // Exactly the academic block admin.requests.tsx builds.
   const acad = {
     course: before.course,
     study_year: before.study_year,
@@ -757,19 +772,23 @@ if (!probeStudent) {
     return { error: err };
   });
   check(
-    "E5 the academic block is saved by dropping only the absent column",
-    !last.error && dropped.length === 1 && dropped[0] === "semester",
+    "E5 the academic block is saved in one pass",
+    !last.error && dropped.length === 0,
     JSON.stringify({ error: last.error, dropped }),
   );
   const after = (
-    (await rest("students?select=course,study_year&id=eq." + probeStudent.id)).body as Array<{
+    (await rest("students?select=course,study_year,semester&id=eq." + probeStudent.id))
+      .body as Array<{
       course: string | null;
       study_year: number | null;
+      semester: string | null;
     }> | null
   )?.[0];
   check(
-    "E5b course and study_year are still there afterwards",
-    after?.course === before.course && after?.study_year === before.study_year,
+    "E5b course, study_year and semester all persisted",
+    after?.course === before.course &&
+      after?.study_year === before.study_year &&
+      after?.semester === "Semester ya Kwanza",
     JSON.stringify({ before, after }),
   );
 }

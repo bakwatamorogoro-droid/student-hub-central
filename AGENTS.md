@@ -112,42 +112,48 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   columns and swallow the error, so the page still renders), the semester filter on
   `semester-questions`, and `students.semester` targeting.
 
-  These migrations cannot be applied from this environment: there is no service*role key, no
-  database password, and no Supabase access token. The only key available is the publishable
-  `sb_publishable*…`, which is RLS-limited and cannot run DDL. The owner must paste the file into
-  Supabase → SQL Editor.
+  These migrations are applied. They were run against the current project
+  `weiwabywirhoxiyyjkko` with `psycopg` over the pooler connection, using the
+  database password chosen when the project was created. `supabase/migrations/`
+  is the source of truth; run the whole directory in filename order.
+
+- **The project this app talks to is `weiwabywirhoxiyyjkko` (eu-west-1).** Vercel
+  supplies `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_PROJECT_ID`
+  (plus the `VITE_` twins) for production, preview and development. `.env` is
+  git-ignored; copy `.env.example` for local work. The old brokered
+  `…lovable.cloud` host and the legacy `tkagffueenwajmkhuopn` project are no
+  longer referenced anywhere.
+
+- **Stored storage URLs point at `weiwabywirhoxiyyjkko.supabase.co`.** The five
+  objects under `exam-media/` (`gallery/`, `announcements/`,
+  `exam-pdfs/semester/`) were copied into the current bucket and the
+  `image_url` / `pdf_url` / `file_url` columns were rewritten to match. If you
+  move projects again, re-upload the files **and** rewrite the columns together,
+  or the gallery and PDFs 404.
+
+- **The schema is rebuilt from `supabase/migrations/`.** `drizzle/migrations/`
+  still holds `0003_migration.sql` (`group_messages`) and `0006`/`0007`
+  (attendance, PIN auth); those objects were created from the `supabase/` chain
+  plus a one-off gap-fill. Verify parity by diffing
+  `information_schema.columns` against production before trusting a fresh build.
 
 - **`students.reg_no` values carry a trailing space** (e.g. `"MUM2025-04-14106 "`), so exact
   `ilike` lookups silently miss. Trim both sides before comparing — see
   `src/lib/studentSearch.ts`.
 
-- **The legacy project host `tkagffueenwajmkhuopn.supabase.co` is still live** and still serves the
-  gallery images in `study_images.image_url`. The newer project host
-  `owztbeotrhzzdfbnwu.supabase.co` does **not** resolve (DNS failure), so only the brokered
-  `…lovable.cloud` URL works for API and storage calls. Do not rewrite stored `image_url` values to
-  the new project without re-uploading the files, or the gallery images will 404.
+- **The semester migration was duplicated and the Drizzle copy never ran.**
+  `drizzle/migrations/0004_add_semester.sql` and
+  `supabase/migrations/20261027120000_add_semester.sql` add an identical column
+  set, but `0004` was **absent from `drizzle/migrations/meta/_journal.json`**
+  (the journal stopped at `0003`), so the migrator skipped it. That single
+  omission was the root cause of every missing-column symptom. When adding a
+  migration, add its journal entry too — a `.sql` file alone is never applied.
 
-- **The database is a Lovable Cloud project, not a plain Supabase one.** The REST URL is a
-  brokered `https://c--<uuid>-prod.lovable.cloud` host; the direct host
-  `owztbeotrhzzdfzhbnwu.supabase.co` does not resolve at all. `supabase/config.toml` points at that
-  unreachable host, so the Supabase CLI cannot be used. The SQL Editor lives in the **Lovable**
-  project, not at supabase.com:
-  <https://lovable.dev/projects/5ea8369e-0d0b-402b-aa5f-3a1e8becd478> (private; owner login required).
-  The owner's own Lovable account is the only place with DDL rights.
-
-- **The semester migration exists twice and never ran.** `drizzle/migrations/0004_add_semester.sql`
-  and `supabase/migrations/20261027120000_add_semester.sql` add an identical column set, but `0004`
-  was **absent from `drizzle/migrations/meta/_journal.json`** (the journal stopped at `0003`), so the
-  migrator skipped it. That single omission is the root cause of every missing-column symptom. The
-  journal now lists `0004` and `0005`, so a normal migration run creates both column sets. When
-  adding a migration, always add its journal entry too — a `.sql` file alone is never applied.
-
-- **`git push` cannot deliver that fix.** The `GITHUB_TOKEN` authenticates as
-  `bakwatamorogoro-droid` (the repo owner) but carries **no OAuth scopes**, so every push is
-  rejected with `403 Permission to … denied to bakwatamorogoro-droid`. Deploys therefore go through
-  the Vercel API (see below), and the Lovable project never sees the change. To make the journal fix
-  take effect, the owner must commit and push it from their own account (or paste it into Lovable),
-  then run the migration.
+- **`git push` may be rejected.** The `GITHUB_TOKEN` authenticates as
+  `bakwatamorogoro-droid` (the repo owner) but sometimes carries **no OAuth
+  scopes**, so a push fails with `403 Permission to … denied`. When that
+  happens, ship the change through the Vercel API (see below) and have the owner
+  push from their own account.
 
 - **The publishable key is not read-only, and `app_settings` has no write protection.** The
   `sb_publishable_…` key ships in the public JS bundle, and it can `PATCH app_settings?id=eq.1`
