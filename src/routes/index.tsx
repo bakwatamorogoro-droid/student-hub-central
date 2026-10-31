@@ -12,11 +12,11 @@ import {
   Eye,
   ArrowRight,
   Brain,
+  CalendarCheck,
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { supabase } from "@/integrations/supabase/client";
 import { getDeviceId } from "@/lib/device-id";
-import { AttendanceCheckIn } from "@/components/AttendanceCheckIn";
 import { BigSystemTitle } from "@/components/ExamVideoHero";
 import { HomeAnimationHero } from "@/components/HomeAnimationHero";
 import { RealPhotoHero } from "@/components/RealPhotoHero";
@@ -160,8 +160,37 @@ function Index() {
           <UpdateTaarifaCard />
         </div>
 
-        {/* VITENDO VIKUU: Fanya Mtihani · Attendance · Quiz */}
-        <div className="grid gap-4 md:grid-cols-3">
+        {/* MAHUDHURIO — the one thing a student needs during a lecture, so it
+            sits above the exam cards rather than behind a menu. */}
+        <div className="animate-fade-in mb-4">
+          <Link to="/attendance" className="group block">
+            <Card className="relative h-full overflow-hidden border-2 border-emerald-500/40 bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-600 text-white transition-all hover:-translate-y-1 hover:shadow-2xl">
+              <div className="absolute -right-8 -bottom-8 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
+              <CardContent className="relative flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur">
+                    <CalendarCheck className="h-7 w-7" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-extrabold tracking-tight">
+                      {t("nav_attendance")}
+                    </h2>
+                    <p className="mt-1 max-w-md text-sm text-white/90">
+                      {t("attendance_card_sub")}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-sm font-bold sm:shrink-0">
+                  {t("attendance_open_now")}
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
+
+        {/* VITENDO VIKUU: Fanya Mtihani / Quiz */}
+        <div className="grid gap-4 md:grid-cols-2">
           <Link to="/exams" className="group animate-fade-in">
             <Card className="h-full min-h-[190px] border-2 hover:border-primary hover:shadow-2xl transition-all hover:-translate-y-1 bg-gradient-to-br from-primary via-primary/80 to-primary/40 text-primary-foreground overflow-hidden relative">
               <div className="absolute -right-10 -bottom-10 w-48 h-48 rounded-full bg-primary-foreground/10 blur-2xl" />
@@ -180,11 +209,7 @@ function Index() {
             </Card>
           </Link>
 
-          <div className="animate-fade-in" style={{ animationDelay: "80ms" }}>
-            <AttendanceCheckIn />
-          </div>
-
-          <Link to="/quiz" className="group animate-fade-in" style={{ animationDelay: "160ms" }}>
+          <Link to="/quiz" className="group animate-fade-in" style={{ animationDelay: "80ms" }}>
             <Card className="h-full min-h-[190px] border-2 hover:border-emerald-500 hover:shadow-2xl transition-all hover:-translate-y-1 bg-gradient-to-br from-emerald-500/20 via-card to-primary/10 overflow-hidden relative">
               <div className="absolute -right-6 -top-6 w-32 h-32 rounded-full bg-emerald-500/10 blur-2xl" />
               <CardContent className="p-6 h-full flex flex-col justify-between relative">
@@ -205,23 +230,28 @@ function Index() {
 
         {/* TAKWIMU — chini kwa mpangilio */}
         <section className="mt-10">
-          <h2 className="text-xl md:text-2xl font-extrabold tracking-tight mb-4">
+          <h2 className="mb-4 flex items-center gap-3 text-xl font-extrabold tracking-tight md:text-2xl">
+            <span className="h-6 w-1.5 rounded-full bg-gradient-to-b from-primary to-secondary" />
             {t("stats_title")}
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-            <Card className="bg-gradient-to-br from-primary/15 to-transparent border-primary/20">
+            <Card className="border-primary/20 bg-gradient-to-br from-primary/15 to-transparent transition-transform hover:-translate-y-1">
               <CardContent className="p-4">
-                <Users className="h-6 w-6 text-primary mb-3" />
+                <span className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15">
+                  <Users className="h-5 w-5 text-primary" />
+                </span>
                 <Odometer value={stats.students} className="text-2xl font-extrabold" />
-                <div className="text-[10px] uppercase text-muted-foreground">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
                   {t("stat_registered")}
                 </div>
               </CardContent>
             </Card>
             {vis.showSubmissions ? (
-              <Card className="bg-gradient-to-br from-secondary/40 to-transparent border-secondary/30">
+              <Card className="border-secondary/30 bg-gradient-to-br from-secondary/40 to-transparent transition-transform hover:-translate-y-1">
                 <CardContent className="p-4">
-                  <ClipboardCheck className="h-6 w-6 text-primary mb-3" />
+                  <span className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-secondary/25">
+                    <ClipboardCheck className="h-5 w-5 text-primary" />
+                  </span>
                   <Odometer value={stats.submissions} className="text-2xl font-extrabold" />
                   <div className="text-[10px] uppercase text-muted-foreground">
                     {t("stat_took_exam")}
@@ -239,12 +269,12 @@ function Index() {
                 </CardContent>
               </Card>
             )}
-            <Card className="bg-gradient-to-br from-emerald-500/15 to-transparent border-emerald-500/30">
+            <Card className="border-emerald-500/30 bg-gradient-to-br from-emerald-500/15 to-transparent transition-transform hover:-translate-y-1">
               <CardContent className="p-4">
-                <div className="relative w-fit mb-3">
-                  <Eye className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-                  <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
-                  <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-500" />
+                <div className="relative mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15">
+                  <Eye className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                  <span className="absolute -top-0.5 -right-0.5 h-2 w-2 animate-ping rounded-full bg-emerald-500" />
+                  <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-500" />
                 </div>
                 <Odometer value={stats.visitsToday} className="text-2xl font-extrabold" />
                 <div className="text-[10px] uppercase text-muted-foreground">
@@ -263,7 +293,8 @@ function Index() {
             </Link>
           </div>
 
-          <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mt-8 mb-3">
+          <h3 className="mt-8 mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-muted-foreground">
+            <span className="h-3.5 w-1 rounded-full bg-secondary" />
             {t("per_test_title")}
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">

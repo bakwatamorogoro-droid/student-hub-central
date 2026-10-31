@@ -91,7 +91,9 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 
 -- Students. device_id is deliberately different from anything sent at check-in,
 -- so a passing test cannot be relying on it.
-INSERT INTO public.students (id, reg_no, full_name, semina, student_group, course, study_year, academic_year, device_id) VALUES
-  ('11111111-1111-1111-1111-111111111111', 'MUM2025-04-14106', 'Amina Yusuf',   'Semina 1', 'GROUP 1', 'IIS', 1, '2025/2026', 'dev-amina'),
-  ('22222222-2222-2222-2222-222222222222', 'REG-002',          'Bakari Said',   'Semina 1', 'GROUP 1', 'IIS', 1, '2025/2026', 'dev-bakari'),
-  ('33333333-3333-3333-3333-333333333333', 'REG-003',          'Chausiku Juma', 'Semina 2', 'GROUP 2', 'IIS', 2, '2025/2026', 'dev-chausiku');
+INSERT INTO public.students (id, reg_no, full_name, semina, student_group, course, study_year, academic_year, device_id, phone) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'MUM2025-04-14106', 'Amina Yusuf',   'Semina 1', 'GROUP 1', 'IIS', 1, '2025/2026', 'dev-amina',    '0699105527'),
+  ('22222222-2222-2222-2222-222222222222', 'REG-002',          'Bakari Said',   'Semina 1', 'GROUP 1', 'IIS', 1, '2025/2026', 'dev-bakari',   '0712345678'),
+  ('33333333-3333-3333-3333-333333333333', 'REG-003',          'Chausiku Juma', 'Semina 2', 'GROUP 2', 'IIS', 2, '2025/2026', 'dev-chausiku', '0765111222'),
+  -- No phone on file: this student cannot self-claim a PIN.
+  ('44444444-4444-4444-4444-444444444444', 'REG-004',          'Daudi Hamisi',  'Semina 1', 'GROUP 1', 'IIS', 1, '2025/2026', 'dev-daudi',    NULL);

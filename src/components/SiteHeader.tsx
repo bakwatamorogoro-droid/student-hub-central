@@ -1,5 +1,15 @@
 import { Link, useRouter } from "@tanstack/react-router";
-import { BookOpenCheck, Home, ArrowLeft, ArrowRight, Languages, UserCog, FileText, LogIn } from "lucide-react";
+import {
+  BookOpenCheck,
+  Home,
+  ArrowLeft,
+  ArrowRight,
+  Languages,
+  UserCog,
+  FileText,
+  LogIn,
+  CalendarCheck,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
 
@@ -39,7 +49,7 @@ export function SiteHeader() {
               <span className="hidden max-w-48 truncate sm:inline">{t("title_app")}</span>
             </Link>
           </div>
-          <nav className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-xl border border-primary/10 bg-background/50 p-1 text-sm shadow-inner [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <nav className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-2xl border border-primary/10 bg-background/60 p-1 text-sm shadow-inner backdrop-blur [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {[
               { to: "/", label: t("home"), icon: <Home className="h-3.5 w-3.5" /> },
               { to: "/register", label: t("register") },
@@ -51,6 +61,11 @@ export function SiteHeader() {
                 icon: <FileText className="h-3.5 w-3.5" />,
               },
               { to: "/results", label: t("results") },
+              {
+                to: "/attendance",
+                label: t("nav_attendance"),
+                icon: <CalendarCheck className="h-3.5 w-3.5" />,
+              },
               {
                 to: "/student",
                 label: t("nav_student"),
@@ -66,10 +81,10 @@ export function SiteHeader() {
               <Link
                 key={l.to}
                 to={l.to}
-                className="flex shrink-0 items-center gap-1 rounded-lg px-3 py-2 font-medium text-foreground/80 transition-all hover:bg-primary/10 hover:text-primary"
+                className="flex shrink-0 items-center gap-1 rounded-xl px-3 py-2 font-medium text-foreground/75 transition-all hover:bg-primary/10 hover:text-primary"
                 activeProps={{
                   className:
-                    "flex shrink-0 items-center gap-1 rounded-lg bg-primary px-3 py-2 font-bold text-primary-foreground shadow-md",
+                    "flex shrink-0 items-center gap-1 rounded-xl bg-gradient-to-b from-primary to-primary/85 px-3 py-2 font-bold text-primary-foreground shadow-md shadow-primary/25",
                 }}
                 activeOptions={{ exact: true }}
               >

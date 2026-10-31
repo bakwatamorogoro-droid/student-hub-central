@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,10 +17,19 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/lib/toast";
 import { alertSuccess, alertWarning } from "@/lib/alerts";
-import { UserCog, AlertTriangle, CheckCircle2, Mail, Clock } from "lucide-react";
+import {
+  UserCog,
+  AlertTriangle,
+  CheckCircle2,
+  Mail,
+  Clock,
+  CalendarCheck,
+  QrCode,
+} from "lucide-react";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
-import { updateStudentProfile, isMissingColumnError } from "@/lib/studentProfile";
+import { updateStudentProfile } from "@/lib/studentProfile";
+import { retryWithoutMissingColumns } from "@/lib/schema-retry";
 import {
   CURRENT_ACADEMIC_YEAR,
   GROUPS,
@@ -30,7 +39,6 @@ import {
   studyYearsFor,
 } from "@/lib/academicTargeting";
 import { useI18n } from "@/lib/i18n";
-import { QrAttendanceCheckIn } from "@/components/QrAttendanceCheckIn";
 import { loadDirectory } from "@/lib/directory";
 
 export const Route = createFileRoute("/student")({
@@ -195,23 +203,20 @@ function Page() {
       new_academic_year: CURRENT_ACADEMIC_YEAR,
       changed_fields: changed,
     };
-    let { data: inserted, error } = await (supabase as any)
-      .from("profile_update_requests")
-      .insert(detailPayload)
-      .select()
-      .single();
-    if (error && isMissingColumnError(error)) {
-      const retry = await (supabase as any)
+    type InsertResult = { error: { message?: string } | null; data: unknown };
+    const { last } = await retryWithoutMissingColumns(detailPayload, async (body) => {
+      const r = await (supabase as any)
         .from("profile_update_requests")
-        .insert(basePayload)
+        .insert(body)
         .select()
         .single();
-      inserted = retry.data;
-      error = retry.error;
-    }
+      return r as InsertResult;
+    });
+    const inserted = last.data;
+    const error = last.error;
     if (error) {
       setSubmitting(false);
-      return toast.error(error.message);
+      return toast.error(error.message || "Imeshindikana kuwasilisha ombi. Jaribu tena.");
     }
 
     if (autoApprove) {
@@ -242,7 +247,7 @@ function Page() {
       const yearNow = student.study_year == null ? "" : String(student.study_year);
       if ((edit.new_study_year || "") !== yearNow) acad.study_year = edit.new_study_year;
       if ((edit.new_semester || "") !== (student.semester || "")) acad.semester = edit.new_semester;
-      const { error: acadErr, semesterUnsupported } = await updateStudentProfile(
+      const { error: acadErr, dropped: acadDropped } = await updateStudentProfile(
         student.id,
         acad as Parameters<typeof updateStudentProfile>[1],
       );
@@ -260,10 +265,10 @@ function Page() {
           "Taarifa za msingi zimehifadhiwa",
           "Kozi/mwaka haukuhifadhiwa: " + acadErr.message,
         );
-      } else if (semesterUnsupported) {
+      } else if (acadDropped.length) {
         await alertWarning(
           "Imehifadhiwa",
-          "Semester bado haijawashwa kwenye mfumo (admin aendeshe migration 0004).",
+          `${acadDropped.join(", ")} bado haijawashwa kwenye mfumo (admin aendeshe supabase/APPLY_PENDING.sql).`,
         );
       } else {
         await alertSuccess(t("saved_title"), t("saved_body"));
@@ -292,7 +297,7 @@ function Page() {
       message: issue.message,
     });
     setSubmitting(false);
-    if (error) return toast.error(error.message);
+    if (error) return toast.error(error.message || "Imeshindikana kuwasilisha ombi. Jaribu tena.");
     toast.success(t("issue_received"));
     setIssue({ category: "test1", message: "", phone: "", email: "" });
     if (student) lookup(student.reg_no);
@@ -388,7 +393,25 @@ function Page() {
           </Card>
         )}
 
-        <QrAttendanceCheckIn />
+        {/* Check-in lives on its own page, reachable from the menu. Linking
+            rather than embedding keeps one place to check in, not three. */}
+        <Card className="border-2 border-primary/25 bg-gradient-to-br from-primary/10 via-card to-secondary/10">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 font-bold">
+                <CalendarCheck className="h-4 w-4 text-primary" /> Mahudhurio
+              </p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Skani QR ya mwalimu ukiwa darasani, au andika msimbo wa kipindi.
+              </p>
+            </div>
+            <Button asChild>
+              <Link to="/attendance">
+                <QrCode className="h-4 w-4" /> Nenda Mahudhurio
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
 
         <Tabs defaultValue="edit" id="edit-taasrifa" className="scroll-mt-20">
           <TabsList className="grid grid-cols-2 w-full">

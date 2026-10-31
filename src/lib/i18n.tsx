@@ -29,6 +29,12 @@ const dict: Record<string, { sw: string; en: string }> = {
   nav_student: { sw: "Update Taarifa", en: "Update details" },
   nav_account: { sw: "Akaunti", en: "My account" },
   nav_semester_qs: { sw: "Maswali ya Semester", en: "Semester Questions" },
+  nav_attendance: { sw: "Mahudhurio", en: "Attendance" },
+  attendance_card_sub: {
+    sw: "Skani QR au weka msimbo wa kipindi kuhudhuria. Hapa pia unaona historia yako.",
+    en: "Scan a QR or enter a session code to check in. Your history lives here too.",
+  },
+  attendance_open_now: { sw: "Hudhuria sasa", en: "Check in now" },
   coming_soon: { sw: "Coming Soon", en: "Coming Soon" },
   coming_soon_body: {
     sw: "Sehemu hii inaandaliwa. Itakua tayari hivi karibuni — subiri tangazo.",
@@ -75,10 +81,6 @@ const dict: Record<string, { sw: string; en: string }> = {
     en: "Group or individual — choose inside",
   },
   enter: { sw: "Ingia", en: "Enter" },
-  attendance_today: { sw: "Mahudhurio ya Leo", en: "Today's attendance" },
-  attendance_sub: { sw: "Jisajili kwa Reg Namba yako", en: "Check in with your Reg number" },
-  attendance_count: { sw: "waliohudhuria", en: "checked in" },
-  here: { sw: "Niko", en: "I'm here" },
   gps_recorded: { sw: "GPS itarekodiwa", en: "GPS will be recorded" },
 
   // --- stats --------------------------------------------------------------

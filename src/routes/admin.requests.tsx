@@ -6,8 +6,9 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
+import { retryWithoutMissingColumns } from "@/lib/schema-retry";
 import { toast } from "@/lib/toast";
-import { alertSuccess, alertError, confirmAction } from "@/lib/alerts";
+import { alertSuccess, alertError, alertWarning, confirmAction } from "@/lib/alerts";
 import { Check, X, UserCog, Pencil, Trash2, Save, RefreshCw } from "lucide-react";
 import { ACADEMIC_YEARS, STUDY_YEARS, SEMESTERS } from "@/lib/academicTargeting";
 import { isMissingColumnError } from "@/lib/studentProfile";
@@ -96,12 +97,25 @@ function Page() {
     if (r.new_semester) acad.semester = r.new_semester;
     if (r.new_academic_year) acad.academic_year = r.new_academic_year;
     if (Object.keys(acad).length) {
-      const { error: acadErr } = await supabase
-        .from("students")
-        .update(acad as any)
-        .eq("id", r.student_id);
-      if (acadErr && !isMissingColumnError(acadErr)) {
-        return alertError("Taarifa za kitaaluma hazikuhifadhiwa", acadErr.message);
+      // `semester` is not in the database yet, and PostgREST rejects the whole
+      // PATCH when one column is unknown — so course and study_year were being
+      // thrown away with it. `isMissingColumnError` then swallowed the failure
+      // and the admin was told the request had been approved. Drop the unknown
+      // column, retry, and say which fields did not save.
+      const { last, dropped } = await retryWithoutMissingColumns(acad, (body) =>
+        supabase
+          .from("students")
+          .update(body as any)
+          .eq("id", r.student_id),
+      );
+      if (last.error && !isMissingColumnError(last.error)) {
+        return alertError("Taarifa za kitaaluma hazikuhifadhiwa", (last.error as Error).message);
+      }
+      if (dropped.length) {
+        await alertWarning(
+          "Ombi limekubaliwa, lakini sehemu zifuatazo hazikuhifadhiwa",
+          `${dropped.join(", ")} — msimamizi aendeshe supabase/APPLY_PENDING.sql kwenye Supabase SQL Editor.`,
+        );
       }
     }
     await (supabase as any)

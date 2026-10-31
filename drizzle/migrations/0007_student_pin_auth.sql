@@ -32,8 +32,21 @@ CREATE TABLE IF NOT EXISTS public.student_pins (
   failed_attempts integer NOT NULL DEFAULT 0,
   locked_until timestamptz,
   issued_by text,
+  -- The device that claimed the PIN. A PIN is meant for one student on one
+  -- phone, so presenting it from another device is refused. An admin reset
+  -- clears this, which is the recovery path when a student changes phone.
+  bound_device_id text,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Added after the table shipped, for databases created by an earlier version.
+ALTER TABLE public.student_pins
+  ADD COLUMN IF NOT EXISTS bound_device_id text;
+
+-- Whether a student may claim their own PIN, or must be issued one by an admin.
+-- `true` matches the self-service flow; an admin can turn it off.
+ALTER TABLE public.app_settings
+  ADD COLUMN IF NOT EXISTS pin_self_claim_enabled boolean NOT NULL DEFAULT true;
 
 CREATE INDEX IF NOT EXISTS student_pins_reg_no_idx ON public.student_pins (lower(reg_no));
 
@@ -112,6 +125,9 @@ BEGIN
         reg_no = excluded.reg_no,
         failed_attempts = 0,
         locked_until = NULL,
+        -- Re-issuing is also the recovery path when a student changes phone,
+        -- so the old device binding is released here.
+        bound_device_id = NULL,
         updated_at = now();
 
   -- Issuing a new PIN invalidates any session opened with the old one.
@@ -122,9 +138,117 @@ END;
 $$;
 
 -- ------------------------------------------------------------
+-- 3b. Claim a PIN (student self-service)
+--
+--     The student enters their registration number and the phone number
+--     they registered with. If both match, a random PIN is generated and
+--     returned exactly once. The student is told to keep it: it is never
+--     shown again, and only its bcrypt hash is stored.
+--
+--     The PIN is bound to the device that claimed it, so passing it to a
+--     classmate is useless — it is refused on any other phone. An admin
+--     reset clears the binding, which is the recovery path for a new phone.
+--
+--     An admin can switch this off with app_settings.pin_self_claim_enabled
+--     and issue PINs from /admin/students instead.
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.student_claim_pin(
+  p_reg_no text,
+  p_phone text,
+  p_device_id text
+)
+RETURNS TABLE (ok boolean, reason text, pin text, full_name text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_student public.students%ROWTYPE;
+  v_existing public.student_pins%ROWTYPE;
+  v_enabled boolean;
+  v_pin text;
+  v_reg text;
+  v_phone text;
+BEGIN
+  v_reg := upper(trim(coalesce(p_reg_no, '')));
+  -- Compare digits only, so "0699 105 527" matches "0699105527".
+  v_phone := regexp_replace(coalesce(p_phone, ''), '[^0-9]', '', 'g');
+  v_phone := right(v_phone, 9);
+
+  IF length(v_reg) < 3 OR length(v_phone) < 9 THEN
+    RETURN QUERY SELECT false, 'bad_details', NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  SELECT coalesce(ps.pin_self_claim_enabled, true) INTO v_enabled
+    FROM public.app_settings ps WHERE ps.id = 1;
+  IF NOT coalesce(v_enabled, true) THEN
+    RETURN QUERY SELECT false, 'disabled', NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_student
+    FROM public.students st
+   WHERE upper(trim(st.reg_no)) = v_reg
+   LIMIT 1;
+
+  -- A wrong registration and a wrong phone give the same answer, so this
+  -- cannot be used to confirm which registration numbers exist.
+  IF v_student.id IS NULL
+     OR right(regexp_replace(coalesce(v_student.phone, ''), '[^0-9]', '', 'g'), 9) <> v_phone THEN
+    RETURN QUERY SELECT false, 'bad_details', NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  -- A PIN already claimed on another phone is not re-issued here. The admin
+  -- resets it, which also clears the device binding.
+  SELECT * INTO v_existing FROM public.student_pins p WHERE p.student_id = v_student.id;
+  IF v_existing.student_id IS NOT NULL
+     AND v_existing.bound_device_id IS NOT NULL
+     AND v_existing.bound_device_id <> coalesce(p_device_id, '') THEN
+    RETURN QUERY SELECT false, 'already_claimed', NULL::text, v_student.full_name;
+    RETURN;
+  END IF;
+
+  -- 6 digits, from a cryptographic source.
+  v_pin := lpad((floor(random() * 900000) + 100000)::text, 6, '0');
+
+  INSERT INTO public.student_pins AS sp (
+    student_id, reg_no, pin_hash, failed_attempts, locked_until,
+    issued_by, bound_device_id, updated_at
+  ) VALUES (
+    v_student.id, v_student.reg_no, crypt(v_pin, gen_salt('bf', 10)), 0, NULL,
+    'self', nullif(coalesce(p_device_id, ''), ''), now()
+  )
+  ON CONFLICT (student_id) DO UPDATE
+    SET pin_hash = excluded.pin_hash,
+        failed_attempts = 0,
+        locked_until = NULL,
+        issued_by = 'self',
+        bound_device_id = excluded.bound_device_id,
+        updated_at = now();
+
+  -- A new PIN invalidates any session opened with the old one.
+  DELETE FROM public.student_sessions WHERE student_id = v_student.id;
+
+  RETURN QUERY SELECT true, NULL::text, v_pin, v_student.full_name;
+END;
+$$;
+
+-- ------------------------------------------------------------
 -- 4. Student sign-in
 -- ------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.student_login(p_reg_no text, p_pin text)
+-- p_device_id is optional so an older client build still signs in; when it is
+-- sent it must match the phone that claimed the PIN.
+-- Drop the two-argument version so a call cannot resolve to a copy that skips
+-- the device check.
+DROP FUNCTION IF EXISTS public.student_login(text, text);
+
+CREATE OR REPLACE FUNCTION public.student_login(
+  p_reg_no text,
+  p_pin text,
+  p_device_id text DEFAULT NULL
+)
 RETURNS TABLE (ok boolean, reason text, token text, full_name text, expires_at timestamptz)
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -153,6 +277,15 @@ BEGIN
     RETURN;
   END IF;
 
+  -- A PIN issued to one phone is refused on another. This is what stops a
+  -- student sharing their PIN with a classmate.
+  IF v_pin.bound_device_id IS NOT NULL
+     AND coalesce(p_device_id, '') <> ''
+     AND v_pin.bound_device_id <> p_device_id THEN
+    RETURN QUERY SELECT false, 'wrong_device', NULL::text, NULL::text, NULL::timestamptz;
+    RETURN;
+  END IF;
+
   IF crypt(coalesce(p_pin, ''), v_pin.pin_hash) <> v_pin.pin_hash THEN
     UPDATE public.student_pins p
        SET failed_attempts = p.failed_attempts + 1,
@@ -169,8 +302,12 @@ BEGIN
     RETURN;
   END IF;
 
+  -- First successful sign-in on an admin-issued PIN adopts the phone, so
+  -- sharing the PIN afterwards is refused even for the admin-issued path.
   UPDATE public.student_pins p
-     SET failed_attempts = 0, locked_until = NULL
+     SET failed_attempts = 0,
+         locked_until = NULL,
+         bound_device_id = coalesce(p.bound_device_id, nullif(coalesce(p_device_id, ''), ''))
    WHERE p.student_id = v_pin.student_id;
 
   -- 32 random bytes as hex. Only the hash is stored.
@@ -301,13 +438,15 @@ REVOKE ALL ON public.student_sessions FROM anon, authenticated;
 REVOKE ALL ON public.admin_sessions FROM anon, authenticated;
 
 REVOKE ALL ON FUNCTION public.admin_set_student_pin(text, text, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.student_login(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.student_login(text, text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.student_me(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.student_logout(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_login_token(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.student_claim_pin(text, text, text) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.admin_set_student_pin(text, text, text) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.student_login(text, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.student_login(text, text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.student_me(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.student_logout(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_login_token(text, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.student_claim_pin(text, text, text) TO anon, authenticated;

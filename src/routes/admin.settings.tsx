@@ -8,9 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/lib/toast";
+import { alertInfo } from "@/lib/alerts";
 import { Trash2, Upload, FileText, Lock, Copy, Unlock, AlertTriangle } from "lucide-react";
 import { eatLocalInputToUtcIso, utcIsoToEatLocalInput } from "@/lib/time";
-import { isMissingColumnError } from "@/lib/studentProfile";
+import { retryWithoutMissingColumns } from "@/lib/schema-retry";
 import { ACADEMIC_YEARS, SEMESTERS, isSemesterActive } from "@/lib/academicTargeting";
 import {
   Select,
@@ -72,40 +73,22 @@ function Page() {
       admin_username: s.admin_username,
       admin_password: s.admin_password,
     };
-    // course_list and the academic-calendar columns arrive with
-    // drizzle/migrations/0004_add_semester.sql. Until that migration is applied,
-    // keep saving whatever the database does accept instead of failing outright.
-    let { error } = await supabase
-      .from("app_settings")
-      .update(payload as any)
-      .eq("id", 1);
-    if (error && isMissingColumnError(error)) {
-      const optional = [
-        "course_list",
-        "academic_years_list",
-        "program_years",
-        "current_academic_year",
-        "current_semester",
-      ];
-      const missing = optional.filter((k) => String(error?.message || "").includes(k));
-      const drop = missing.length ? missing : ["course_list"];
-      const rest: Record<string, unknown> = { ...payload };
-      drop.forEach((k) => delete rest[k]);
-      const retry = await supabase
+    // Five of these columns arrive with drizzle/migrations/0004_add_semester.sql
+    // and are absent from production. PostgREST names only one unknown column per
+    // response, so the retry has to drop them one at a time — dropping a fixed
+    // list of one, as this used to, fails on the second name and loses the save.
+    const { last, dropped } = await retryWithoutMissingColumns(payload, (body) =>
+      supabase
         .from("app_settings")
-        .update(rest as any)
-        .eq("id", 1);
-      error = retry.error;
-      if (!error) {
-        toast.warning(
-          `Mipangilio imehifadhiwa, lakini ${drop.join(", ")} haijahifadhiwa — endesha migration 0004_add_semester.sql.`,
-        );
-        loadAll();
-        return;
-      }
-    }
-    if (error) toast.error(error.message);
-    else toast.success("Mipangilio imehifadhiwa");
+        .update(body as any)
+        .eq("id", 1),
+    );
+    if (last.error) toast.error((last.error as Error).message);
+    else if (dropped.length) {
+      toast.warning(
+        `Mipangilio imehifadhiwa, lakini ${dropped.join(", ")} haijahifadhiwa — endesha migration 0004_add_semester.sql.`,
+      );
+    } else toast.success("Mipangilio imehifadhiwa");
     loadAll();
   };
 
@@ -162,25 +145,18 @@ function Page() {
       image_url: newAnn.image_url || null,
       expires_at: newAnn.expires_at || null,
     };
-    let { error } = await supabase.from("announcements").insert(payload as any);
     // image_url arrives with drizzle/migrations/0004_add_semester.sql; save the
     // rest of the announcement rather than losing it entirely.
-    if (error && isMissingColumnError(error)) {
-      const { image_url: _drop, ...rest } = payload;
-      const retry = await supabase.from("announcements").insert(rest as any);
-      error = retry.error;
-      if (!error) {
-        toast.warning(
-          "Tangazo limeongezwa, lakini picha haijahifadhiwa — endesha migration 0004_add_semester.sql.",
-        );
-        setNewAnn({ message: "", title: "", expires_at: "", pdf_url: "", image_url: "" });
-        loadAll();
-        return;
-      }
-    }
-    if (error) return toast.error(error.message);
+    const { last, dropped } = await retryWithoutMissingColumns(payload, (body) =>
+      supabase.from("announcements").insert(body as any),
+    );
+    if (last.error) return toast.error((last.error as Error).message);
     setNewAnn({ message: "", title: "", expires_at: "", pdf_url: "", image_url: "" });
-    toast.success("Tangazo limeongezwa");
+    if (dropped.length) {
+      toast.warning(
+        `Tangazo limeongezwa, lakini ${dropped.join(", ")} haijahifadhiwa — endesha migration 0004_add_semester.sql.`,
+      );
+    } else toast.success("Tangazo limeongezwa");
     loadAll();
   };
 
@@ -225,6 +201,39 @@ function Page() {
     loadAll();
   };
 
+  // Kept here so the admin can fix the database from this page, without
+  // hunting for the file. Mirrors supabase/APPLY_PENDING.sql.
+  const pendingSql = [
+    "ALTER TABLE public.students ADD COLUMN IF NOT EXISTS semester text;",
+    "ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS target_semester text;",
+    "ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS course_list jsonb DEFAULT '[]'::jsonb;",
+    "ALTER TABLE public.announcements ADD COLUMN IF NOT EXISTS image_url text;",
+    "ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS program_years integer DEFAULT 2;",
+    "ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS current_academic_year text;",
+    "ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS current_semester text;",
+    "ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS academic_years_list jsonb DEFAULT '[]'::jsonb;",
+    "ALTER TABLE public.exam_pdfs ADD COLUMN IF NOT EXISTS target_semester text;",
+    "ALTER TABLE public.profile_update_requests ADD COLUMN IF NOT EXISTS new_course text;",
+    "ALTER TABLE public.profile_update_requests ADD COLUMN IF NOT EXISTS new_study_year integer;",
+    "ALTER TABLE public.profile_update_requests ADD COLUMN IF NOT EXISTS new_semester text;",
+    "ALTER TABLE public.profile_update_requests ADD COLUMN IF NOT EXISTS new_academic_year text;",
+    "ALTER TABLE public.profile_update_requests ADD COLUMN IF NOT EXISTS changed_fields jsonb DEFAULT '[]'::jsonb;",
+    "ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS show_submissions_stat boolean DEFAULT true;",
+    "ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS show_test1_stat boolean DEFAULT true;",
+    "ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS stats_hidden_at timestamptz;",
+  ].join("\n");
+
+  const copyPendingSql = async () => {
+    try {
+      await navigator.clipboard.writeText(pendingSql);
+      toast.success("SQL imenakiliwa — ifashe kwenye Supabase SQL Editor");
+    } catch {
+      // Clipboard access needs a secure context and can be refused; show the SQL
+      // instead of failing silently.
+      await alertInfo("SQL ya kuendesha", pendingSql);
+    }
+  };
+
   if (!s) return <div>Inapakia...</div>;
 
   // Columns added by drizzle/migrations/0004_add_semester.sql. Surfacing which
@@ -257,12 +266,13 @@ function Page() {
               Mfumo unaendelea kufanya kazi, lakini sehemu hizo hazitahifadhiwa.
             </p>
             <p className="text-muted-foreground">
-              Endesha{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                supabase/migrations/20261027120000_add_semester.sql
-              </code>{" "}
-              kwenye SQL Editor ya Supabase ili kuziwezesha.
+              Nakili SQL hapa chini, kisha uifashe kwenye Supabase &rarr; SQL Editor na ubonyeze
+              Run. Ni salama kuiendesha mara nyingi — kila mstari ni IF NOT EXISTS.
             </p>
+            <Button variant="outline" size="sm" onClick={copyPendingSql} className="gap-2">
+              <Copy className="h-4 w-4" />
+              Nakili SQL
+            </Button>
           </CardContent>
         </Card>
       )}
