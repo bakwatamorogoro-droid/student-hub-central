@@ -235,7 +235,7 @@ export async function claimStudentPin(
 
 export type ResetPinResult =
   | { ok: true; pin: string; fullName: string; regNo: string }
-  | { ok: false; reason: "bad_details" | "disabled" | "not_ready" };
+  | { ok: false; reason: "bad_details" | "disabled" | "not_ready" | "ambiguous" };
 
 /** The last whitespace-separated token of a name, lower-cased. */
 function lastNameOf(fullName: string): string {
@@ -259,6 +259,7 @@ function lastNameOf(fullName: string): string {
 export async function resetStudentPin(
   phoneInput: string,
   lastNameInput: string,
+  regNoInput?: string,
 ): Promise<ResetPinResult> {
   const phone = normalizePhone(phoneInput || "");
   const lastName = (lastNameInput || "").trim().toLowerCase();
@@ -273,13 +274,23 @@ export async function resetStudentPin(
       "id, reg_no, full_name, phone, semina, student_group, course, study_year, academic_year",
     )
     .ilike("full_name", `%${escapeLike(lastNameInput.trim())}`)
-    .limit(50);
+    .limit(200);
   if (error) return { ok: false, reason: "not_ready" };
 
-  const matches = ((data ?? []) as StudentRow[]).filter(
+  let matches = ((data ?? []) as StudentRow[]).filter(
     (s) => lastNameOf(s.full_name) === lastName && normalizePhone(s.phone || "") === phone,
   );
-  // More than one match means the pair is not unique enough to prove identity.
+
+  // A fifth of this cohort shares a last name *and* a phone number with at least
+  // one other student, so the pair alone often does not name one person. When it
+  // does not, ask for the registration number rather than refusing or guessing:
+  // it is on the student's ID card, and it resolves the tie exactly.
+  if (matches.length > 1) {
+    const wanted = (regNoInput || "").trim().toUpperCase();
+    if (!wanted) return { ok: false, reason: "ambiguous" };
+    matches = matches.filter((s) => s.reg_no.trim().toUpperCase() === wanted);
+  }
+
   if (matches.length !== 1) return { ok: false, reason: "bad_details" };
   const student = matches[0];
 

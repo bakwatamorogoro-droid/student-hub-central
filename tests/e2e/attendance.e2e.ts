@@ -610,6 +610,62 @@ check(
   JSON.stringify(notReturning),
 );
 
+// --- C7..C9: the ambiguous pair, which affects a fifth of the cohort
+// Seed two students who share both a last name and a phone number, then prove
+// the reset refuses to guess and accepts the registration number as the tiebreak.
+const AMB_A = "OH-AMB-A",
+  AMB_B = "OH-AMB-B",
+  AMB_PHONE = "0713000999",
+  AMB_LAST = "MSHOKOLA";
+for (const [reg, name] of [
+  [AMB_A, "ALI JUMA " + AMB_LAST],
+  [AMB_B, "FATUMA SAID " + AMB_LAST],
+] as const) {
+  await rest("students", {
+    method: "POST",
+    headers: { Prefer: "return:representation" },
+    body: JSON.stringify({
+      reg_no: reg,
+      full_name: name,
+      phone: AMB_PHONE,
+      semina: "Semina 2",
+      student_group: "GROUP 2",
+      device_id: "e2e",
+    }),
+  });
+}
+const seededAmb = await rest(
+  "students?reg_no=in.(" + AMB_A + "," + AMB_B + ")&select=reg_no,full_name,phone",
+);
+const ambCount = (seededAmb.body as unknown[] | null)?.length ?? 0;
+check(
+  "C7 two students share a last name and phone",
+  ambCount === 2,
+  JSON.stringify(seededAmb.body),
+);
+
+const ambNoReg = await resetStudentPin(AMB_PHONE, AMB_LAST);
+check(
+  "C8 the reset asks for a registration number instead of guessing",
+  !ambNoReg.ok && ambNoReg.reason === "ambiguous",
+  JSON.stringify(ambNoReg),
+);
+
+const ambWithReg = await resetStudentPin(AMB_PHONE, AMB_LAST, AMB_A);
+check(
+  "C9 the registration number resolves the tie",
+  ambWithReg.ok && ambWithReg.regNo === AMB_A,
+  JSON.stringify(ambWithReg),
+);
+
+// A number that does not belong to either student must not resolve it either.
+const ambWrongReg = await resetStudentPin(AMB_PHONE, AMB_LAST, "OH-NOPE-9");
+check(
+  "C9b an unrelated registration number is refused",
+  !ambWrongReg.ok && ambWrongReg.reason === "bad_details",
+  JSON.stringify(ambWrongReg),
+);
+
 // --- cleanup
 clearStudentToken();
 // Delete only this run's rows. Namespace-wide deletes here would wipe the

@@ -490,6 +490,18 @@ the student out on all their devices. The UI lives in the "Sahau PIN" tab on
 `/account`. `adminSetStudentPin` remains the fallback for a student who cannot
 answer either question.
 
+The pair is often not unique. In the current cohort 168 (last name, phone) pairs
+belong to more than one student — 24% of students share both with someone else,
+and `juma` alone covers 41 people. So when more than one row matches, the reset
+answers `ambiguous` instead of guessing or refusing, and the UI reveals a
+registration-number field. That third value resolves the tie exactly. This is why
+`resetStudentPin` takes an optional third argument rather than two.
+
+Note the search is by last name, not by phone, and the `ilike` limit is 200: a
+common name returns many rows, and the match then filters on the normalised phone
+in code. Filtering on phone in the query would not work, because the stored
+spelling varies.
+
 ### The admin console, and what the legacy table is for
 
 `/admin/attendance` is three things, top to bottom:

@@ -48,6 +48,9 @@ function Page() {
   const [resetLastName, setResetLastName] = useState("");
   const [resetBusy, setResetBusy] = useState(false);
   const [resetPin, setResetPin] = useState<string | null>(null);
+  // Shown only after the pair proves ambiguous, so the common case stays short.
+  const [resetReg, setResetReg] = useState("");
+  const [resetNeedsReg, setResetNeedsReg] = useState(false);
 
   // Restore a previous session so a refresh does not sign the student out.
   useEffect(() => {
@@ -122,13 +125,22 @@ function Page() {
     if (resetLastName.trim().length < 2) return toast.error("Weka jina lako la mwisho");
     setResetBusy(true);
     try {
-      const res = await resetStudentPin(resetPhone.trim(), resetLastName.trim());
+      const res = await resetStudentPin(
+        resetPhone.trim(),
+        resetLastName.trim(),
+        resetReg.trim() || undefined,
+      );
       if (!res.ok) {
         if (res.reason === "not_ready") {
           toast.error("Imeshindikana kuwasiliana na hifadhidata. Jaribu tena.");
+        } else if (res.reason === "ambiguous") {
+          // Not an error: several students share this name and number, so ask
+          // for the one thing that tells them apart.
+          setResetNeedsReg(true);
+          toast.info("Wanafunzi zaidi ya mmoja wana taarifa hizi. Weka Reg Namba yako.");
         } else {
           toast.error(
-            "Taarifa hizi hazilingani na usajili. Hakikisha namba ya simu na jina la mwisho ni sahihi.",
+            "Taarifa hizi hazilingani na usajili. Hakikisha namba ya simu, jina la mwisho, na Reg Namba ni sahihi.",
           );
         }
         return;
@@ -404,6 +416,24 @@ function Page() {
                       placeholder="Mfano: MOHAMEDI"
                     />
                   </div>
+                  {resetNeedsReg && (
+                    <div className="space-y-1.5">
+                      <Label>Reg Namba yako</Label>
+                      <Input
+                        value={resetReg}
+                        onChange={(e) => setResetReg(e.target.value.toUpperCase())}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") doReset();
+                        }}
+                        placeholder="MUM2025-04-14106"
+                        className="font-mono"
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        Wanafunzi wengine wana jina na namba ya simu kama zako. Reg Namba
+                        inatutofautisha.
+                      </p>
+                    </div>
+                  )}
                   <Button onClick={doReset} disabled={resetBusy} className="w-full">
                     {resetBusy && <Loader2 className="h-4 w-4 animate-spin" />}
                     Nipatie PIN mpya
