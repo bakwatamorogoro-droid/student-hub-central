@@ -22,6 +22,12 @@ import {
   synonymsOf,
 } from "./islamic-knowledge.ts";
 
+/**
+ * Herufi za nukta zinazotumika badala ya apostrofi. "Dha‘if" na "Dha'if"
+ * ni neno moja, kwa hiyo zinaondolewa kabla ya kulinganisha.
+ */
+const APOSTROPHES = /['\u2018\u2019\u02bb\u02bc\u201b]/g;
+
 export type ConceptMatch = { concept: string; matched: boolean; reason?: string };
 
 export type GradeResult = {
@@ -174,19 +180,23 @@ function stem(word: string): string {
 function canon(word: string): string {
   const base = word
     .toLowerCase()
+    .replace(APOSTROPHES, "")
     .replace(/[^\p{L}\p{N}\s'-]+/gu, "")
     .trim();
   if (!base) return "";
   const syn = synonymsOf(base);
   // Kundi la visawe linawakilishwa na neno fupi zaidi — kigezo thabiti.
   const representative = syn.size > 1 ? [...syn].sort((a, b) => a.length - b.length)[0] : base;
-  return stem(representative);
+  // Matamshi hufupishwa kwanza: "maudhu" na "maudu" zote huwa "maudu", kisha
+  // ukataji wa viambishi hutoa matokeo sawa.
+  return stem(skeleton(representative));
 }
 
 /** Maneno muhimu ya maandishi, yamewekwa katika mfumo unaolinganishwa. */
 export function tokenize(text: string): Set<string> {
   const cleaned = normalizeArabic(String(text || ""))
     .toLowerCase()
+    .replace(APOSTROPHES, "")
     .replace(/<[^>]+>/g, " ")
     .replace(/[^\p{L}\p{N}\s'-]+/gu, " ");
   const out = new Set<string>();
@@ -199,14 +209,58 @@ export function tokenize(text: string): Set<string> {
   return out;
 }
 
+/**
+ * Jibu la marejeo linalorudia swali lenyewe halina maana ya kulinganishwa.
+ *
+ * Walimu wengine huweka swali kama jibu; linganisho la maneno lingetoa alama
+ * za uongo kwa jibu lolote.
+ */
+function looksLikeQuestionEcho(question: string, reference: string): boolean {
+  const q = tokenize(question);
+  const r = tokenize(reference);
+  if (r.size === 0) return true;
+  // Jibu la kweli huwa refu zaidi ya swali; linalofanana kwa urefu ni rudufu.
+  if (r.size > q.size * 1.2) return false;
+  let hit = 0;
+  for (const w of r) if (q.has(w)) hit++;
+  return hit / r.size >= 0.8;
+}
+
+/**
+ * Mfumo wa herufi unaofuata matamshi ya Kiarabu.
+ *
+ * "Dha'if", "Dhaif" na "Daif" ni neno moja; "Maudhu" na "Maudu" pia. Hivyo
+ * kanzi ya maarifa haihitaji kila tahajia ya neno moja.
+ */
+function skeleton(word: string): string {
+  return word
+    .replace(/dh/g, "d")
+    .replace(/th/g, "t")
+    .replace(/kh/g, "h")
+    .replace(/gh/g, "g")
+    .replace(/aa+/g, "a")
+    .replace(/ee+/g, "i")
+    .replace(/oo+/g, "u")
+    .replace(/uu+/g, "u")
+    .replace(/([aeiou])h$/, "$1");
+}
+
+/** Mfumo wa matamshi wa maneno yote ya mwanafunzi, kwa ulinganisho wa karibu. */
+function skeletons(tokens: Set<string>): Set<string> {
+  const out = new Set<string>();
+  for (const t of tokens) out.add(skeleton(t));
+  return out;
+}
+
 /** Kundi la dhana linapimwa kwa maneno yake yote, yakiwa na visawe. */
-function matchCluster(cluster: string[], student: Set<string>): ConceptMatch {
+function matchCluster(cluster: string[], student: Set<string>, near: Set<string>): ConceptMatch {
   for (const term of cluster) {
     const want = tokenize(term);
     for (const w of want) {
-      if (student.has(w)) return { concept: clusterLabel(cluster), matched: true, reason: term };
+      if (student.has(w) || near.has(skeleton(w)))
+        return { concept: clusterLabel(cluster), matched: true, reason: term };
       for (const s of synonymsOf(w))
-        if (student.has(stem(s))) {
+        if (student.has(stem(s)) || near.has(skeleton(stem(s)))) {
           return { concept: clusterLabel(cluster), matched: true, reason: term };
         }
     }
@@ -218,11 +272,12 @@ function matchCluster(cluster: string[], student: Set<string>): ConceptMatch {
 function overlapRatio(
   reference: string,
   student: Set<string>,
+  near: Set<string>,
 ): { ratio: number; hit: number; total: number } {
   const want = tokenize(reference);
   if (want.size === 0) return { ratio: 0, hit: 0, total: 0 };
   let hit = 0;
-  for (const w of want) if (student.has(w)) hit++;
+  for (const w of want) if (student.has(w) || near.has(skeleton(w))) hit++;
   return { ratio: hit / want.size, hit, total: want.size };
 }
 
@@ -270,30 +325,47 @@ export function gradeLocally(opts: GradeOptions): GradeResult {
   }
 
   const student = tokenize(answer);
-  const reference = String(opts.correctAnswer || "").trim();
+  const near = skeletons(student);
+  const rawReference = String(opts.correctAnswer || "").trim();
+  const reference = looksLikeQuestionEcho(opts.question, rawReference) ? "" : rawReference;
   const clusters = clustersForQuestion(opts.question, opts.concepts);
-  const concepts = clusters.map((c) => matchCluster(c, student));
+  const concepts = clusters.map((c) => matchCluster(c, student, near));
   const coverage = clusters.length ? concepts.filter((c) => c.matched).length / clusters.length : 0;
-  const { ratio: refRatio } = reference ? overlapRatio(reference, student) : { ratio: 0 };
+  const {
+    ratio: refRatio,
+    hit,
+    total,
+  } = reference ? overlapRatio(reference, student, near) : { ratio: 0, hit: 0, total: 0 };
 
+  // Jibu la marejeo likiwepo, ndilo linaamua alama: mwalimu amesema jibu ni
+  // nini. Dhana za mada zinaweza tu kuongeza alama, kamwe kupunguza — swali la
+  // mada fulani (mfano "Hadith") halina maana ya kuuliza maana ya mada hiyo
+  // kila mara, kwa hiyo rubric isiwe adhabu.
   let ratio: number;
-  if (reference && clusters.length) ratio = 0.6 * refRatio + 0.4 * coverage;
-  else if (reference) ratio = refRatio;
-  else if (clusters.length) ratio = coverage;
-  else ratio = 0;
+  if (reference) {
+    // Jibu la marejeo refu (insha) hutakiwa kufanana kidogo tu; jibu fupi
+    // hutakiwa kufanana zaidi. Bila kigezo hiki, insha nzuri hupata alama 0.
+    const expected = total > 12 ? 0.35 : 0.7;
+    const norm = Math.min(1, refRatio / expected);
+    // Dhana za mada zinaongeza tu, hazipunguzi.
+    ratio = clusters.length ? Math.max(norm, 0.7 * norm + 0.3 * coverage) : norm;
+  } else {
+    ratio = coverage;
+  }
 
-  // Jibu refu lenye dhana chache bado halipasi: mwanafunzi anaweza kuandika
-  // mengi bila kugusa jibu.
   const score = Number((Math.max(0, Math.min(1, ratio)) * points).toFixed(2));
   const isCorrect = score >= points * 0.6;
 
-  const missed = concepts.filter((c) => !c.matched).map((c) => c.concept);
   const got = concepts.filter((c) => c.matched).map((c) => c.concept);
   const parts: string[] = [isCorrect ? "✅ Sahihi" : "❌ Si sahihi"];
-  if (got.length) parts.push(`Umetaja: ${got.slice(0, 4).join(", ")}`);
-  if (missed.length) parts.push(`Hukutaja: ${missed.slice(0, 4).join(", ")}`);
-  if (!clusters.length && reference)
-    parts.push(`Maneno yaliyolingana ${Math.round(refRatio * 100)}%`);
+  if (reference) {
+    parts.push(`Maneno yaliyolingana ${hit}/${total} (${Math.round(refRatio * 100)}%)`);
+    if (got.length) parts.push(`Umetaja: ${got.slice(0, 3).join(", ")}`);
+  } else {
+    const missed = concepts.filter((c) => !c.matched).map((c) => c.concept);
+    if (got.length) parts.push(`Umetaja: ${got.slice(0, 4).join(", ")}`);
+    if (missed.length) parts.push(`Hukutaja: ${missed.slice(0, 4).join(", ")}`);
+  }
 
   return {
     score,

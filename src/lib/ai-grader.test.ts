@@ -139,3 +139,52 @@ test("the score never leaves the 0..points range", () => {
   });
   assert.ok(r.score >= 0 && r.score <= 7, `alama ${r.score} ilitoka nje ya 0..7`);
 });
+
+// Kesi halisi kutoka hifadhidata ya uzalishaji: tahajia za Kiarabu zinatofautiana
+// kati ya jibu la mwalimu na la mwanafunzi.
+test("Arabic transliteration variants count as the same word", () => {
+  const r = gradeLocally({
+    question: "Mention four classifications of Hadith based on the reliability of reporters",
+    correctAnswer:
+      "Sahih (authentic), Hasan (good), Dha\u2018if (weak), and Maudhu\u2018 (fabricated).",
+    studentAnswer: "Sahih, Hasan, Dhaif, and Maudu (fabricated).",
+    points: 1,
+  });
+  assert.ok(r.isCorrect, `alama ${r.score} — tahajia tofauti zilikataliwa`);
+});
+
+test("an answer echoing the question is not treated as a reference", () => {
+  const q = "Mention five (5) methods that can be used to preserve the Qur\u2019an and Sunnah";
+  const r = gradeLocally({
+    question: q,
+    correctAnswer: q,
+    studentAnswer:
+      "Memorisation, writing, recitation, teaching, and review of the Qur'an and Sunnah.",
+    points: 3,
+  });
+  assert.ok(r.isCorrect, `alama ${r.score} — rubric ya mada haikutosha`);
+});
+
+test("a long reference answer does not demand full word overlap", () => {
+  const r = gradeLocally({
+    question: "Discuss the challenges facing contemporary Muslim societies.",
+    correctAnswer:
+      "INTRODUCTION One of the defining features of Islamic civilization is the integration of " +
+      "knowledge and faith. Social change, economic inequality and globalisation each shape how " +
+      "Muslim communities respond today. This essay examines three challenges and proposes solutions.",
+    studentAnswer:
+      "Social change and economic inequality are major challenges, and globalisation makes them worse.",
+    points: 15,
+  });
+  assert.ok(r.isCorrect, `alama ${r.score}/15 — insha fupi lakini sahihi ilikataliwa`);
+});
+
+test("a wrong answer still scores nothing", () => {
+  const r = gradeLocally({
+    question: "What mainly determines the final classification of a Hadith?",
+    correctAnswer: "the reliability and memory of the reporters",
+    studentAnswer: "The colour of the paper it was written on.",
+    points: 1,
+  });
+  assert.ok(!r.isCorrect, `alama ${r.score} — jibu baya limepita`);
+});

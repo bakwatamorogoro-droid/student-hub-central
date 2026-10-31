@@ -242,6 +242,14 @@ export function normalizeArabic(text: string): string {
  * `correct_answer` — mfumo unapima kama jibu limegusa mawazo ya mada.
  */
 export const TOPIC_RUBRICS: Record<string, string[][]> = {
+  // Kuhifadhi Qur'an na Sunnah — mada ya kawaida ya mitihani.
+  preserve: [
+    ["kukariri", "memorisation", "memorization", "memorise", "recitation", "recite"],
+    ["kuandika", "writing", "maandishi", "record", "kuandika"],
+    ["kufundisha", "teaching", "kueneza", "propagation", "kufundisha"],
+    ["review", "marudio", "revision", "kukagua", "kuhesabu"],
+    ["compilation", "ukusanyaji", "kukusanya", "book", "vitabu"],
+  ],
   hadith: [
     ["maneno", "matendo", "usemi", "maelezo", "kukiri"],
     ["mtume", "muhammad", "nabii", "rasuli"],
@@ -404,20 +412,29 @@ export const TOPIC_RUBRICS: Record<string, string[][]> = {
 export function clustersForQuestion(question: string, explicit?: string[]): string[][] {
   if (Array.isArray(explicit) && explicit.length > 0) return explicit.map((c) => [c]);
   const q = normalizeArabic(question).toLowerCase();
-  const clusters: string[][] = [];
-  const seen = new Set<string>();
+
+  // Mada moja tu — ile inayolingana zaidi — hutumika. Kuchanganya mada zote
+  // zinazotajwa hufanya rubrics zisizohusiana na swali ziongeze vigezo vya
+  // uongo. Neno refu zaidi lililolingana ndilo linaamua, kwa sababu neno
+  // mahususi ("preserve") hueleza mada kuliko jina la jumla ("sunnah").
+  let best: string[][] = [];
+  let bestLongest = 0;
+  let bestTotal = 0;
   for (const [topic, rubric] of Object.entries(TOPIC_RUBRICS)) {
-    // Mada inatambulika kwa jina lake au kwa kisawe chake kwenye swali.
+    // Set huondoa marudio: `synonymsOf` inaweza kurudia neno lenyewe, na
+    // marudio yangevimba alama ya mada.
     const terms = new Set([topic, ...synonymsOf(topic)]);
-    if (![...terms].some((t) => q.includes(t))) continue;
-    for (const cluster of rubric) {
-      const key = cluster.join("|");
-      if (seen.has(key)) continue;
-      seen.add(key);
-      clusters.push(cluster);
+    const hits = [...terms].filter((t) => q.includes(t));
+    if (hits.length === 0) continue;
+    const longest = Math.max(...hits.map((t) => t.length));
+    const totalLen = hits.reduce((a, t) => a + t.length, 0);
+    if (longest > bestLongest || (longest === bestLongest && totalLen > bestTotal)) {
+      bestLongest = longest;
+      bestTotal = totalLen;
+      best = rubric;
     }
   }
-  return clusters;
+  return best;
 }
 
 /** Jina la kundi linaloonyeshwa kwa mwanafunzi. */
