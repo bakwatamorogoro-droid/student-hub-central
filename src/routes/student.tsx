@@ -247,7 +247,7 @@ function Page() {
       const yearNow = student.study_year == null ? "" : String(student.study_year);
       if ((edit.new_study_year || "") !== yearNow) acad.study_year = edit.new_study_year;
       if ((edit.new_semester || "") !== (student.semester || "")) acad.semester = edit.new_semester;
-      const { error: acadErr, semesterUnsupported } = await updateStudentProfile(
+      const { error: acadErr, dropped: acadDropped } = await updateStudentProfile(
         student.id,
         acad as Parameters<typeof updateStudentProfile>[1],
       );
@@ -265,10 +265,10 @@ function Page() {
           "Taarifa za msingi zimehifadhiwa",
           "Kozi/mwaka haukuhifadhiwa: " + acadErr.message,
         );
-      } else if (semesterUnsupported) {
+      } else if (acadDropped.length) {
         await alertWarning(
           "Imehifadhiwa",
-          "Semester bado haijawashwa kwenye mfumo (admin aendeshe migration 0004).",
+          `${acadDropped.join(", ")} bado haijawashwa kwenye mfumo (admin aendeshe supabase/APPLY_PENDING.sql).`,
         );
       } else {
         await alertSuccess(t("saved_title"), t("saved_body"));

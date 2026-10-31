@@ -121,6 +121,8 @@ function Page() {
           setCourseList((d.course_list as string[]) || []);
           setStudyYears(studyYearsFor(d.program_years ?? 2));
         };
+        // Three of these columns can be missing at once, and a select names only
+        // one per response, so trim them one at a time.
         if (error && isMissingColumnError(error)) {
           supabase
             .from("app_settings")
@@ -218,7 +220,7 @@ function Page() {
 
   const saveEdit = async () => {
     if (!editing) return;
-    const { error, semesterUnsupported } = await updateStudentProfile(editing.id, {
+    const { error, columnsUnsupported, dropped } = await updateStudentProfile(editing.id, {
       full_name: editing.full_name,
       phone: editing.phone,
       course: editing.course,
@@ -237,8 +239,10 @@ function Page() {
       } as any)
       .eq("id", editing.id);
     if (groupErr) return toast.error(groupErr.message);
-    if (semesterUnsupported) {
-      toast.warning("Imehifadhiwa — Semester bado haijawashwa (admin aendeshe migration 0004).");
+    if (columnsUnsupported) {
+      toast.warning(
+        `Imehifadhiwa, lakini ${dropped.join(", ")} haijahifadhiwa — endesha supabase/APPLY_PENDING.sql.`,
+      );
     } else {
       toast.success("Imehifadhiwa");
     }

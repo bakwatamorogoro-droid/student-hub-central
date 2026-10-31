@@ -57,18 +57,22 @@ function normalize(payload: ProfileUpdatePayload) {
 export async function updateStudentProfile(
   studentId: string,
   payload: ProfileUpdatePayload,
-): Promise<{ error: Error | null; semesterUnsupported: boolean }> {
+): Promise<{ error: Error | null; columnsUnsupported: boolean; dropped: string[] }> {
   const body = normalize(payload);
 
   // Drops whichever column the database says it does not have, one per attempt.
   // A single fixed retry was not enough: both `semester` and `academic_year` can
   // be absent, and PostgREST names only one of them.
   const { last, dropped } = await retryWithoutMissingColumns(body, (working) =>
-    supabase.from("students").update(working as any).eq("id", studentId),
+    supabase
+      .from("students")
+      .update(working as any)
+      .eq("id", studentId),
   );
 
   return {
     error: last.error ? (last.error as unknown as Error) : null,
-    semesterUnsupported: dropped.length > 0,
+    columnsUnsupported: dropped.length > 0,
+    dropped,
   };
 }

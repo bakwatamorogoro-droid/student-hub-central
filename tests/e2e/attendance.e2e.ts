@@ -724,6 +724,56 @@ check(
   JSON.stringify(e3),
 );
 
+// --- E5: approving a request must not quietly drop the columns that do exist.
+// `semester` is absent, and PostgREST rejects the whole PATCH when one column is
+// unknown, so course and study_year used to be lost with it — while the admin was
+// told the request had been approved.
+const probeStudent = (
+  (await rest("students?select=id,reg_no,course,study_year&limit=1")).body as Array<{
+    id: string;
+    reg_no: string;
+    course: string | null;
+    study_year: number | null;
+  }> | null
+)?.[0];
+
+if (!probeStudent) {
+  check("E5 skipped: no student to probe", false, "the project has no students");
+} else {
+  const before = { course: probeStudent.course, study_year: probeStudent.study_year };
+  // Exactly the academic block admin.requests.tsx builds, with `semester` absent.
+  const acad = {
+    course: before.course,
+    study_year: before.study_year,
+    semester: "Semester ya Kwanza",
+  };
+  const { last, dropped } = await retryWithoutMissingColumns(acad, async (body) => {
+    const r = await rest("students?id=eq." + probeStudent.id, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    const err =
+      r.body && typeof r.body === "object" && "code" in (r.body as object) ? r.body : null;
+    return { error: err };
+  });
+  check(
+    "E5 the academic block is saved by dropping only the absent column",
+    !last.error && dropped.length === 1 && dropped[0] === "semester",
+    JSON.stringify({ error: last.error, dropped }),
+  );
+  const after = (
+    (await rest("students?select=course,study_year&id=eq." + probeStudent.id)).body as Array<{
+      course: string | null;
+      study_year: number | null;
+    }> | null
+  )?.[0];
+  check(
+    "E5b course and study_year are still there afterwards",
+    after?.course === before.course && after?.study_year === before.study_year,
+    JSON.stringify({ before, after }),
+  );
+}
+
 // A permission error must not be mistaken for a missing column and retried.
 check(
   "E4 a real error is not treated as a missing column",

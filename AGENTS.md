@@ -497,6 +497,19 @@ touches an optional column goes through it.
 The proper fix is to run `supabase/APPLY_PENDING.sql`; this keeps the app usable
 until then, and the banner on `/admin/settings` already names the pending columns.
 
+### Approving a request silently dropped course and study_year
+
+`admin.requests.tsx` wrote the academic fields as one PATCH containing
+`semester`, which does not exist. PostgREST rejected the whole PATCH, and the
+`isMissingColumnError` guard then swallowed the failure — so course and
+study_year were lost while the admin was told "Ombi limekubaliwa". Verified
+against production: patching `{course, study_year, semester}` left both columns
+unchanged. The same block now retries through `retryWithoutMissingColumns` and
+names the fields that did not save.
+
+`/admin/settings` gained a "Nakili SQL" button, so the migration can be applied
+from that page instead of hunting for the file.
+
 ### A forged QR code used to answer "expired_token"
 
 `tokenIsLive` compared the token's expiry before its digest, so any _other_ open
