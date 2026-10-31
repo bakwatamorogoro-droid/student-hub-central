@@ -28,7 +28,8 @@ import {
 } from "lucide-react";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
-import { updateStudentProfile, isMissingColumnError } from "@/lib/studentProfile";
+import { updateStudentProfile } from "@/lib/studentProfile";
+import { retryWithoutMissingColumns } from "@/lib/schema-retry";
 import {
   CURRENT_ACADEMIC_YEAR,
   GROUPS,
@@ -202,23 +203,20 @@ function Page() {
       new_academic_year: CURRENT_ACADEMIC_YEAR,
       changed_fields: changed,
     };
-    let { data: inserted, error } = await (supabase as any)
-      .from("profile_update_requests")
-      .insert(detailPayload)
-      .select()
-      .single();
-    if (error && isMissingColumnError(error)) {
-      const retry = await (supabase as any)
+    type InsertResult = { error: { message?: string } | null; data: unknown };
+    const { last } = await retryWithoutMissingColumns(detailPayload, async (body) => {
+      const r = await (supabase as any)
         .from("profile_update_requests")
-        .insert(basePayload)
+        .insert(body)
         .select()
         .single();
-      inserted = retry.data;
-      error = retry.error;
-    }
+      return r as InsertResult;
+    });
+    const inserted = last.data;
+    const error = last.error;
     if (error) {
       setSubmitting(false);
-      return toast.error(error.message);
+      return toast.error(error.message || "Imeshindikana kuwasilisha ombi. Jaribu tena.");
     }
 
     if (autoApprove) {
@@ -299,7 +297,7 @@ function Page() {
       message: issue.message,
     });
     setSubmitting(false);
-    if (error) return toast.error(error.message);
+    if (error) return toast.error(error.message || "Imeshindikana kuwasilisha ombi. Jaribu tena.");
     toast.success(t("issue_received"));
     setIssue({ category: "test1", message: "", phone: "", email: "" });
     if (student) lookup(student.reg_no);

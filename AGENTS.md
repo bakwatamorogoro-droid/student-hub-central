@@ -476,6 +476,36 @@ name disagrees with it. A shared name with a different number asks the student t
 confirm and then proceeds. That module exists so the rule can be tested — its
 failure mode is invisible in the UI.
 
+### Saving while the database is missing columns
+
+Six columns the UI writes (`course_list`, `program_years`,
+`current_academic_year`, `current_semester`, `academic_years_list`, `semester`)
+come from migrations that have never been applied to production. PostgREST
+refuses the whole write when any one is unknown, and — this is the part that bit
+us — it names **one** column per response:
+
+    {"code":"PGRST204",
+     "message":"Could not find the 'course_list' column of 'app_settings' ..."}
+
+The old code retried once, dropping a single hard-coded column. With five
+missing, the retry failed on the second name and the admin's save was reported
+as an error: "Could not find the 'current_semester' column". `src/lib/schema-retry.ts`
+now drops whatever the database names, one per attempt, up to a bound, and
+returns the list so the UI can say which fields did not save. Every write that
+touches an optional column goes through it.
+
+The proper fix is to run `supabase/APPLY_PENDING.sql`; this keeps the app usable
+until then, and the banner on `/admin/settings` already names the pending columns.
+
+### A forged QR code used to answer "expired_token"
+
+`tokenIsLive` compared the token's expiry before its digest, so any _other_ open
+session whose token had timed out answered "expired" for a code that was not
+even its own. Because the caller returns on the first "expired", a genuinely
+matching session further down the list was never reached. The digest is now
+compared first, so "expired" only ever describes a token that really belongs to
+the session being checked.
+
 ### Forgot PIN
 
 `resetStudentPin(phone, lastName)` in `studentAccount.ts` issues a new PIN when a

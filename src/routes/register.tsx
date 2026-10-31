@@ -100,24 +100,23 @@ function RegisterPage() {
       setGeo(data);
     };
     // These columns arrive with drizzle/migrations/0004_add_semester.sql; if they
-    // are not there yet, still load everything else.
-    supabase
-      .from("app_settings")
-      .select(`${base}, ${optional}`)
-      .eq("id", 1)
-      .single()
-      .then(({ data, error }: { data: any; error: any }) => {
-        if (error && isMissingColumnError(error)) {
-          supabase
-            .from("app_settings")
-            .select(base)
-            .eq("id", 1)
-            .single()
-            .then(({ data: d2 }: { data: any }) => apply(d2));
-          return;
-        }
-        apply(data);
-      });
+    // are not there yet, still load everything else. A select names only one
+    // unknown column, so trim them one at a time rather than assuming a single
+    // retry is enough.
+    const loadSettings = async (columns: string[]): Promise<void> => {
+      for (let i = 0; i <= columns.length; i++) {
+        const wanted = [base, ...columns.slice(i)].join(", ");
+        const { data, error } = await supabase
+          .from("app_settings")
+          .select(wanted)
+          .eq("id", 1)
+          .single();
+        if (!error) return apply(data);
+        if (!isMissingColumnError(error)) return;
+      }
+    };
+    const optionalColumns = optional.split(", ");
+    void loadSettings(optionalColumns);
   }, []);
 
   const distanceM = (a: number, b: number, c: number, d: number) => {

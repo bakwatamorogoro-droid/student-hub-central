@@ -666,6 +666,71 @@ check(
   JSON.stringify(ambWrongReg),
 );
 
+// --- E1..E4: saving settings while the database is missing columns
+// The admin's save failed with "Could not find the 'current_semester' column".
+// The cause is that PostgREST names only one unknown column per response, so a
+// retry that drops a single fixed column never gets past the second name. These
+// checks run against the real project, where five of those columns are absent.
+const { retryWithoutMissingColumns, missingColumnFrom } = await import("@/lib/schema-retry");
+
+const settingsPayload = {
+  semina_list: ["Semina 1"],
+  group_list: ["Group A"],
+  course_list: [],
+  academic_years_list: [],
+  program_years: 2,
+  current_academic_year: "2025/2026",
+  current_semester: "Semester ya Kwanza",
+  global_camera: true,
+  global_gps: true,
+  global_audio: false,
+  admin_username: "1234",
+  admin_password: "abdi77",
+};
+
+// `rest` answers {status, body}; the helper looks for `error`, so translate.
+const saveSettings = async (body: Record<string, unknown>) => {
+  const r = await rest("app_settings?id=eq.1", { method: "PATCH", body: JSON.stringify(body) });
+  const err = r.body && typeof r.body === "object" && "code" in (r.body as object) ? r.body : null;
+  return { error: err, status: r.status };
+};
+
+const e1 = await retryWithoutMissingColumns(settingsPayload, saveSettings);
+check(
+  "E1 saving settings succeeds despite the missing columns",
+  !e1.last.error,
+  JSON.stringify(e1.last.error),
+);
+check(
+  "E1b the missing columns are reported to the admin",
+  e1.dropped.length >= 1 && e1.dropped.includes("current_semester"),
+  JSON.stringify(e1.dropped),
+);
+
+// The settings that do exist must actually have been written, not just "no error".
+const readBack = await rest("app_settings?id=eq.1&select=semina_list,group_list,global_audio");
+const row = (readBack.body as Array<Record<string, unknown>> | null)?.[0] ?? {};
+check(
+  "E2 the columns that do exist were saved",
+  Array.isArray(row.semina_list) && row.global_audio === false,
+  JSON.stringify(row),
+);
+
+// One column missing is the easy case; it must still work.
+const e3 = await retryWithoutMissingColumns({ global_audio: false }, saveSettings);
+check(
+  "E3 a save with no missing column is not retried",
+  !e3.last.error && e3.dropped.length === 0,
+  JSON.stringify(e3),
+);
+
+// A permission error must not be mistaken for a missing column and retried.
+check(
+  "E4 a real error is not treated as a missing column",
+  missingColumnFrom({ code: "42501", message: "permission denied" }) === null,
+  "permission errors must pass through",
+);
+
 // --- cleanup
 clearStudentToken();
 // Delete only this run's rows. Namespace-wide deletes here would wipe the

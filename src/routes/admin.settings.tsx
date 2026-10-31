@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "@/lib/toast";
 import { Trash2, Upload, FileText, Lock, Copy, Unlock, AlertTriangle } from "lucide-react";
 import { eatLocalInputToUtcIso, utcIsoToEatLocalInput } from "@/lib/time";
-import { isMissingColumnError } from "@/lib/studentProfile";
+import { retryWithoutMissingColumns } from "@/lib/schema-retry";
 import { ACADEMIC_YEARS, SEMESTERS, isSemesterActive } from "@/lib/academicTargeting";
 import {
   Select,
@@ -72,40 +72,22 @@ function Page() {
       admin_username: s.admin_username,
       admin_password: s.admin_password,
     };
-    // course_list and the academic-calendar columns arrive with
-    // drizzle/migrations/0004_add_semester.sql. Until that migration is applied,
-    // keep saving whatever the database does accept instead of failing outright.
-    let { error } = await supabase
-      .from("app_settings")
-      .update(payload as any)
-      .eq("id", 1);
-    if (error && isMissingColumnError(error)) {
-      const optional = [
-        "course_list",
-        "academic_years_list",
-        "program_years",
-        "current_academic_year",
-        "current_semester",
-      ];
-      const missing = optional.filter((k) => String(error?.message || "").includes(k));
-      const drop = missing.length ? missing : ["course_list"];
-      const rest: Record<string, unknown> = { ...payload };
-      drop.forEach((k) => delete rest[k]);
-      const retry = await supabase
+    // Five of these columns arrive with drizzle/migrations/0004_add_semester.sql
+    // and are absent from production. PostgREST names only one unknown column per
+    // response, so the retry has to drop them one at a time — dropping a fixed
+    // list of one, as this used to, fails on the second name and loses the save.
+    const { last, dropped } = await retryWithoutMissingColumns(payload, (body) =>
+      supabase
         .from("app_settings")
-        .update(rest as any)
-        .eq("id", 1);
-      error = retry.error;
-      if (!error) {
-        toast.warning(
-          `Mipangilio imehifadhiwa, lakini ${drop.join(", ")} haijahifadhiwa — endesha migration 0004_add_semester.sql.`,
-        );
-        loadAll();
-        return;
-      }
-    }
-    if (error) toast.error(error.message);
-    else toast.success("Mipangilio imehifadhiwa");
+        .update(body as any)
+        .eq("id", 1),
+    );
+    if (last.error) toast.error((last.error as Error).message);
+    else if (dropped.length) {
+      toast.warning(
+        `Mipangilio imehifadhiwa, lakini ${dropped.join(", ")} haijahifadhiwa — endesha migration 0004_add_semester.sql.`,
+      );
+    } else toast.success("Mipangilio imehifadhiwa");
     loadAll();
   };
 
@@ -162,25 +144,18 @@ function Page() {
       image_url: newAnn.image_url || null,
       expires_at: newAnn.expires_at || null,
     };
-    let { error } = await supabase.from("announcements").insert(payload as any);
     // image_url arrives with drizzle/migrations/0004_add_semester.sql; save the
     // rest of the announcement rather than losing it entirely.
-    if (error && isMissingColumnError(error)) {
-      const { image_url: _drop, ...rest } = payload;
-      const retry = await supabase.from("announcements").insert(rest as any);
-      error = retry.error;
-      if (!error) {
-        toast.warning(
-          "Tangazo limeongezwa, lakini picha haijahifadhiwa — endesha migration 0004_add_semester.sql.",
-        );
-        setNewAnn({ message: "", title: "", expires_at: "", pdf_url: "", image_url: "" });
-        loadAll();
-        return;
-      }
-    }
-    if (error) return toast.error(error.message);
+    const { last, dropped } = await retryWithoutMissingColumns(payload, (body) =>
+      supabase.from("announcements").insert(body as any),
+    );
+    if (last.error) return toast.error((last.error as Error).message);
     setNewAnn({ message: "", title: "", expires_at: "", pdf_url: "", image_url: "" });
-    toast.success("Tangazo limeongezwa");
+    if (dropped.length) {
+      toast.warning(
+        `Tangazo limeongezwa, lakini ${dropped.join(", ")} haijahifadhiwa — endesha migration 0004_add_semester.sql.`,
+      );
+    } else toast.success("Tangazo limeongezwa");
     loadAll();
   };
 

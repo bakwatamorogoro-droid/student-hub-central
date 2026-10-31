@@ -367,8 +367,15 @@ async function tokenIsLive(
 
   const p = parse<TokenPayload>((data[0] as { semina: string | null }).semina);
   if (!p || p.t !== "token") return "wrong";
+  // The digest is compared before the clock, so "expired" is only ever reported
+  // for a token that really belongs to this session. Checking the clock first
+  // made any unrelated open session whose token had timed out answer
+  // "expired_token" for a forged code, which is the wrong message and, because
+  // the caller returns on the first "expired", hid the session that would have
+  // matched.
+  if (!digestsEqual(await hashSecret(scanned, p.salt), p.hash)) return "wrong";
   if (new Date(p.expires_at).getTime() <= Date.now()) return "expired";
-  return digestsEqual(await hashSecret(scanned, p.salt), p.hash) ? "ok" : "wrong";
+  return "ok";
 }
 
 // ---------------------------------------------------------------
