@@ -737,7 +737,30 @@ The lesson generalises: **a missing column must degrade a feature, never disable
 user depends on.** Prefer `retryRowsWithoutMissingColumns` over sending a column that may not
 exist, and give every optional column a fallback read.
 
-### The CI build is not the Vercel build
+  ### A token with `repo` scope still cannot push a workflow change
+
+  GitHub refuses **any** push that adds or modifies a file under `.github/workflows/` unless the
+  credential carries the `workflow` scope, and the refusal is not partial — the whole push fails:
+
+  ```
+  ! [remote rejected] ... (refusing to allow a Personal Access Token to create or update
+    workflow `.github/workflows/build.yml` without `workflow` scope)
+  ```
+
+  A fine-grained/`repo`-scoped PAT shows `x-oauth-scopes: repo` and writes ordinary files fine
+  (proved by creating and deleting a probe ref, and by `PUT /contents/<path>` returning `201`),
+  yet the same `PUT` against `.github/workflows/probe.yml` returns `404`. The Git Data API does
+  not route around it either: `POST /git/trees` with a workflow path returns `404` even though the
+  blob creation succeeded.
+
+  **The check is on the net diff against the base branch, not on the commit history.** A branch
+  whose history *touches* a workflow file but whose final tree matches the base pushes cleanly —
+  verified by amending the workflow file back to `origin/main`'s copy and cherry-picking the rest,
+  then pushing successfully. So when a workflow fix must land and the token lacks the scope,
+  either rewrite the branch to drop the change, or have the owner add `workflow` scope. Do not
+  loop on retries; the refusal is deterministic.
+
+  ### The CI build is not the Vercel build
 
 `vite build` succeeding locally proves little — `node_modules` is already populated. Reproduce
 what Vercel does on a clean tree:
