@@ -25,6 +25,7 @@ import {
   startAttendanceSession,
 } from "@/lib/attendance";
 import { GROUPS } from "@/lib/academicTargeting";
+import { loadDirectory } from "@/lib/directory";
 import { toast } from "@/lib/toast";
 import { Crosshair, Loader2, Play, Square, Users } from "lucide-react";
 
@@ -44,6 +45,7 @@ export function AttendanceSessionPanel({ onSessionChange }: { onSessionChange?: 
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
   const [seminaList, setSeminaList] = useState<string[]>([]);
+  const [groupList, setGroupList] = useState<string[]>([]);
   const [useFixed, setUseFixed] = useState(true);
 
   const [session, setSession] = useState<PanelSession | null>(null);
@@ -61,24 +63,34 @@ export function AttendanceSessionPanel({ onSessionChange }: { onSessionChange?: 
   const [joinCode, setJoinCode] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Default coordinates come from the admin's saved attendance point.
+  // The dropdowns must offer every seminar and group that students actually
+  // belong to, not just what the admin typed into settings: the seed list says
+  // "Semina 1" while the imported cohort uses SEMINA 1..16, and a teacher who
+  // cannot pick SEMINA 7 cannot open a session for it.
   useEffect(() => {
-    supabase
-      .from("app_settings")
-      .select("attendance_lat, attendance_lng, attendance_radius_m, semina_list")
-      .eq("id", 1)
-      .maybeSingle()
-      .then(({ data }) => {
-        const s = data as {
-          attendance_lat: number | null;
-          attendance_lng: number | null;
-          attendance_radius_m: number | null;
-          semina_list: string[] | null;
-        } | null;
-        if (s?.attendance_lat != null) setLat(s.attendance_lat);
-        if (s?.attendance_lng != null) setLng(s.attendance_lng);
-        setSeminaList(s?.semina_list || []);
+    (async () => {
+      const { data } = await supabase
+        .from("app_settings")
+        .select("attendance_lat, attendance_lng, attendance_radius_m, semina_list, group_list")
+        .eq("id", 1)
+        .maybeSingle();
+      const s = data as {
+        attendance_lat: number | null;
+        attendance_lng: number | null;
+        attendance_radius_m: number | null;
+        semina_list: string[] | null;
+        group_list: string[] | null;
+      } | null;
+      if (s?.attendance_lat != null) setLat(s.attendance_lat);
+      if (s?.attendance_lng != null) setLng(s.attendance_lng);
+      if (s?.attendance_radius_m != null) setRadius(s.attendance_radius_m);
+      const directory = await loadDirectory({
+        semina_list: s?.semina_list ?? null,
+        group_list: s?.group_list ?? null,
       });
+      setSeminaList(directory.semina);
+      setGroupList(directory.groups);
+    })();
   }, []);
 
   const captureLocation = () => {
@@ -223,7 +235,7 @@ export function AttendanceSessionPanel({ onSessionChange }: { onSessionChange?: 
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Wote</SelectItem>
-                  {GROUPS.map((g) => (
+                  {(groupList.length ? groupList : GROUPS).map((g) => (
                     <SelectItem key={g} value={g}>
                       {g}
                     </SelectItem>

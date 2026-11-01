@@ -10,8 +10,8 @@
 export type ReportSession = {
   id: string;
   title: string;
-  /** "Darasa" or "Semina" — the two kinds of sitting this centre records. */
-  kind: "darasa" | "semina";
+  /** The Friday lecture, a seminar, or an ordinary class. */
+  kind: "darasa" | "semina" | "lecture";
   semina: string | null;
   studentGroup: string | null;
   startedAt: string | null;
@@ -61,7 +61,7 @@ export type MatrixRow = {
 export type SessionTotal = {
   sessionId: string;
   title: string;
-  kind: "darasa" | "semina";
+  kind: "darasa" | "semina" | "lecture";
   present: number;
   /** Percent of the roster that turned up. */
   percent: number;

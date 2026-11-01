@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { QrAttendanceCheckIn } from "@/components/QrAttendanceCheckIn";
+import { FridayLectureCard } from "@/components/FridayLectureCard";
 import {
   fetchMyCheckIns,
   listOpenSessions,
@@ -140,7 +141,9 @@ function Page() {
           </div>
         )}
 
-        {!loading && token && open.length > 0 && (
+        {!loading && token && <FridayLectureCard onCheckedIn={reload} />}
+
+          {!loading && token && open.length > 0 && (
           <Card className="border-teal-500/40 bg-gradient-to-br from-teal-500/10 to-transparent">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-base">
@@ -155,7 +158,9 @@ function Page() {
                 >
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold">{s.title}</div>
-                    <div className="text-[11px] text-muted-foreground">{s.semina || "—"}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                        {s.kind === "lecture" ? "Wanafunzi wote" : s.semina || "—"}
+                      </div>
                   </div>
                   <Badge className="shrink-0 bg-teal-600 text-[10px] uppercase">Live</Badge>
                 </div>
