@@ -213,8 +213,18 @@ export type GpsFlag = "implausibly_accurate" | "identical_fixes" | "stale" | "to
 
 /** Accuracy better than this is not achievable on a phone, so it reads as fake. */
 const IMPLAUSIBLE_ACCURACY_M = 1;
-/** Accuracy worse than this cannot place a student inside a 300 m fence. */
-const MAX_USABLE_ACCURACY_M = 500;
+/**
+ * Accuracy worse than this is a flag for the teacher, never a refusal.
+ *
+ * This used to be 500 m and it locked students out. A phone indoors frequently has
+ * no GPS chip fix at all and falls back to a network estimate reporting 800-1500 m,
+ * which means "somewhere in this district", not "somewhere else". Refusing that
+ * turned a working phone in a classroom into a dead start button. The ceiling now
+ * only excludes readings that place the student nowhere at all.
+ */
+const MAX_USABLE_ACCURACY_M = 3000;
+/** At or below this the fix is good enough to trust the fence without comment. */
+const GOOD_ACCURACY_M = 500;
 
 /**
  * Turns several fixes into one judgement.
@@ -244,10 +254,17 @@ export function assessGpsSamples(samples: GpsSample[], now = Date.now()): GpsAss
   const flags: GpsFlag[] = [];
   if (best.accuracy < IMPLAUSIBLE_ACCURACY_M) flags.push("implausibly_accurate");
   if (valid.length >= 3 && spreadM < 0.05) flags.push("identical_fixes");
-  if (best.accuracy > MAX_USABLE_ACCURACY_M) flags.push("too_vague");
+  if (best.accuracy > GOOD_ACCURACY_M) flags.push("too_vague");
   if (now - best.at > 60000) flags.push("stale");
 
-  const usable = !flags.includes("too_vague") && !flags.includes("stale");
+  /**
+   * `too_vague` and `stale` are reported to the teacher but only a fix that cannot
+   * be placed anywhere at all refuses the student. A coarse reading is normal
+   * indoors — the phone falls back to a network estimate when it has no chip fix —
+   * and the fence then subtracts the phone's own error margin (see `checkArea`).
+   * A stale fix stays a refusal: it does not prove where the student is now.
+   */
+  const usable = !flags.includes("stale") && best.accuracy <= MAX_USABLE_ACCURACY_M;
   return { best, spreadM, flags, usable };
 }
 

@@ -94,11 +94,19 @@ test("assessGpsSamples rejects a stale fix as unusable", () => {
   assert.ok(a.flags.includes("stale"));
 });
 
-test("assessGpsSamples rejects a hopelessly vague fix", () => {
+test("assessGpsSamples flags a coarse indoor fix but still lets it through", () => {
+  // 2 km is a network estimate, which is what a phone reports indoors with no chip
+  // fix. It must be flagged for the teacher, not turned into a locked door.
   const a = assessGpsSamples([sample(-6.8, 37.6, 2000)]);
   assert.ok(a);
-  assert.equal(a.usable, false);
+  assert.equal(a.usable, true);
   assert.ok(a.flags.includes("too_vague"));
+});
+
+test("assessGpsSamples rejects a fix that places the student nowhere", () => {
+  const a = assessGpsSamples([sample(-6.8, 37.6, 9000)]);
+  assert.ok(a);
+  assert.equal(a.usable, false);
 });
 
 test("assessGpsSamples returns null when there is no usable input", () => {

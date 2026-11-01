@@ -164,6 +164,10 @@ function ExamPage() {
             lng: (row.attendance_lng as number | null) ?? null,
             radiusM: Number(row.exam_radius_m) || 300,
           });
+          // Only an explicit `false` turns the fence off. `exam_gps_required`
+          // arrives with a migration production has not applied, so the key is
+          // simply absent there — treating that as "off" is what let a student
+          // start an exam from anywhere. Absent means the safe default.
           setExamGpsRequired(row.exam_gps_required !== false);
         }
       } catch {}
@@ -335,6 +339,16 @@ function ExamPage() {
     };
   }, [started]);
 
+  // Attach the live stream to the preview once the element exists. The start
+  // handler cannot do this: it runs before the <video> is rendered, so the ref is
+  // still null there and the preview stayed black for the whole exam.
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !streamRef.current) return;
+    if (el.srcObject !== streamRef.current) el.srcObject = streamRef.current;
+    void el.play().catch(() => {});
+  }, [camOk, started]);
+
   // Camera presence: a covered lens and a scene that never changes are the two
   // signals worth reporting. The verdict is shown to the student immediately so
   // it reads as a reminder, not a trap.
@@ -434,7 +448,7 @@ function ExamPage() {
       // so the spread and the reported accuracy tell the two apart. See
       // `assessGpsSamples`.
       const samples: GpsSample[] = [];
-      const takeFix = () =>
+      const takeFix = (highAccuracy: boolean) =>
         new Promise<GpsSample | null>((resolve) => {
           if (typeof navigator === "undefined" || !navigator.geolocation) {
             resolve(null);
@@ -449,14 +463,26 @@ function ExamPage() {
                 at: Date.now(),
               }),
             () => resolve(null),
-            { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
+            { enableHighAccuracy: highAccuracy, timeout: 15000, maximumAge: 0 },
           );
         });
 
-      for (let i = 0; i < 3; i++) {
-        const fix = await takeFix();
-        if (fix) samples.push(fix);
-        if (i < 2) await new Promise((r) => setTimeout(r, 700));
+      // Three fixes at once, not one after another: the old 700 ms gap added a
+      // second and a half to every start and told us nothing extra.
+      samples.push(
+        ...(await Promise.all([takeFix(true), takeFix(true), takeFix(true)])).filter(
+          (x): x is GpsSample => !!x,
+        ),
+      );
+      // A classroom often yields nothing from the GPS chip but a usable network
+      // fix. Falling back keeps a covered room examinable; the reading is coarser
+      // and its accuracy says so.
+      if (samples.length === 0) {
+        samples.push(
+          ...(await Promise.all([takeFix(false), takeFix(false)])).filter(
+            (x): x is GpsSample => !!x,
+          ),
+        );
       }
 
       const assessment = assessGpsSamples(samples);
@@ -471,25 +497,35 @@ function ExamPage() {
       }
 
       if (!assessment || !assessment.usable) {
+        // The fence only stops a student when there is a centre to measure from AND
+        // the teacher asked for GPS. Otherwise a missing fix is a flag, not a locked
+        // door: refusing here is how "washa mtihani" became a dead button on a phone
+        // whose location was switched off.
         if (examGpsRequired && area && area.lat != null) {
           setAreaVerdict({ status: "missing_fix" });
           toast.error(
             assessment?.flags.includes("too_vague")
               ? "GPS yako ni hafifu mno. Toka nje kidogo au washa GPS sahihi."
-              : "Ruhusu GPS (location) ili mfumo upime eneo lako.",
+              : "Ruhusu GPS (location) ili mfumo upime eneo lako, kisha ujaribu tena.",
           );
           return;
         }
-        if (exam.require_gps) {
-          toast.error("Lazima uruhusu GPS kuendelea");
-          return;
-        }
+        setGpsFlags((f) =>
+          f.includes("hakuna kipimo cha GPS") ? f : [...f, "hakuna kipimo cha GPS"],
+        );
       } else if (area && area.lat != null && area.lng != null) {
-        const verdict = checkArea(area, { lat: assessment.best.lat, lng: assessment.best.lng });
+        const verdict = checkArea(area, {
+          lat: assessment.best.lat,
+          lng: assessment.best.lng,
+          accuracy: assessment.best.accuracy,
+        });
         setAreaVerdict(verdict);
         if (verdict.status === "outside") {
           toast.error(areaMessage(verdict));
           return;
+        }
+        if (verdict.status === "near_edge") {
+          setGpsFlags((f) => (f.includes("mpakani wa eneo") ? f : [...f, "mpakani wa eneo"]));
         }
       }
     }
@@ -500,11 +536,28 @@ function ExamPage() {
           audio: exam.require_audio,
         });
         streamRef.current = stream;
-        if (videoRef.current && exam.require_camera) videoRef.current.srcObject = stream;
         setCamOk(exam.require_camera);
         setAudioOk(exam.require_audio);
-      } catch {
-        toast.error("Lazima uruhusu kamera/sauti kuendelea");
+      } catch (err) {
+        // Name the permission that failed and what to do about it. The old single
+        // sentence left a student with a blocked camera and a permanently dead start
+        // button, with no idea which of the two to unblock.
+        const name = (err as { name?: string })?.name ?? "";
+        if (name === "NotAllowedError" || name === "SecurityError") {
+          toast.error(
+            exam.require_camera && exam.require_audio
+              ? "Kamera na sauti zimezuiwa. Fungua lock ya kizindua (address bar) na ruhusu Kamera na Maikrofoni, kisha ujaribu tena."
+              : exam.require_camera
+                ? "Kamera imezuiwa. Fungua lock ya kizindua na ruhusu Kamera, kisha ujaribu tena."
+                : "Maikrofoni imezuiwa. Fungua lock ya kizindua na ruhusu Maikrofoni, kisha ujaribu tena.",
+          );
+        } else if (name === "NotFoundError" || name === "OverconstrainedError") {
+          toast.error("Hakuna kamera/maikrofoni iliyopatikana kwenye kifaa hiki.");
+        } else if (name === "NotReadableError") {
+          toast.error("Kamera inatumiwa na app nyingine. Funga app nyingine, kisha ujaribu tena.");
+        } else {
+          toast.error("Imeshindwa kufungua kamera/sauti. Jaribu tena.");
+        }
         return;
       }
     }
