@@ -177,6 +177,44 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   `select=<column>` request instead. If a probe does write, find the previous value in the
   conversation logs (`grep -rhoE '"<column>":"[^"]*"' conversations/`) and restore it immediately.
 
+- **`git push` is blocked, so deploy through the Vercel REST API.** The working tree goes up
+  file by file and Vercel builds it. Two traps in that API: the files must be uploaded
+  **before** the deployment is created (creating first answers `400 missing_files`), and an
+  upload carries the SHA-1 in the `x-vercel-digest` header with the raw body — the JSON
+  `{"data": "<base64>"}` form is rejected with `invalid_digest`. A ready deployment is not
+  live until it holds the production alias, so confirm the alias afterwards and fetch the
+  hashed chunk to check the new code is really being served.
+
+- **The CI `Verify dist output` step tested for `dist/_redirects`, and that file is gone.**
+  `_redirects` is Netlify syntax and was removed on purpose — Vercel serves the SPA rewrite
+  from `vercel.json`, and a stray copy adds a catch-all that turns a missing chunk into HTML.
+  The workflow still asserted the file exists, so every build on `main` failed with
+  `❌ dist/_redirects haipo` and the merge to `main` looked like a deploy problem. The step
+  now only warns if the file reappears.
+
+- **A missing column makes a whole query fail, not just that column.** `loadArea()` in
+  `exam.$examId.tsx` asks for the fence columns and falls back to a leaner select, because
+  `attendance_lat`, `exam_radius_m` and `exam_gps_required` are **all absent** from live
+  `app_settings` (`42703`) until `supabase/APPLY_PENDING.sql` is run. The same is true of
+  `submissions.last_seen_at`, `.proctor`, `.gps_distance_m` and `.gps_radius_m`. Until the
+  owner runs that file in the Supabase SQL editor, the fence cannot be centred and the
+  "absent means required" default is what keeps the GPS gate on.
+
+- **A coarse GPS fix must never refuse a student.** A phone indoors often has no chip fix
+  and falls back to a network estimate reporting 800-1500 m. `assessGpsSamples` used to call
+  anything above 500 m unusable, which turned a working phone in a classroom into a dead
+  start button. A vague or stale reading is now a flag for the teacher; only a reading that
+  cannot be placed anywhere at all refuses. `checkArea` subtracts the phone's own error
+  margin (capped at 150 m so a spoofed accuracy cannot open every fence) and reports
+  `near_edge` — outside the raw radius but inside once the error bar is allowed for.
+
+- **The camera preview stayed black because the stream was attached too early.** The start
+  handler runs before the `<video>` is rendered, so `videoRef.current` is null there. The
+  stream is attached in an effect keyed on `camOk`/`started` instead. Permission failures
+  name the device (`NotAllowedError`, `NotFoundError`, `NotReadableError`) so a student
+  knows whether to unblock the camera or close another app.
+
+
 - **The Vercel deploy token is recoverable from the prior conversation log** and is _not_ an env
   var, so it does not survive in the shell. Extract it each session with
   `grep -rhoE "vcp_[A-Za-z0-9]{56}" /workspace/conversations | sort -u` — it is exactly 60
