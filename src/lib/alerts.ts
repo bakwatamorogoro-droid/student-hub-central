@@ -40,6 +40,22 @@ export function alertWarning(title: string, text?: string) {
   });
 }
 
+/**
+ * Shows text the user needs to copy. The SQL is put in the message rather than
+ * `text` so it stays selectable and keeps its line breaks.
+ */
+export function alertInfo(title: string, text: string) {
+  return themed.fire({
+    icon: "info",
+    title,
+    html: `<pre style="text-align:left;white-space:pre-wrap;font-size:11px;max-height:50vh;overflow:auto">${text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")}</pre>`,
+    confirmButtonText: "Sawa",
+  });
+}
+
 /** Resolves true when the user confirms the destructive action. */
 export async function confirmAction(title: string, text?: string, confirmText = "Ndiyo, futa") {
   const res = await themed.fire({

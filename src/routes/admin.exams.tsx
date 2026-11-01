@@ -14,6 +14,12 @@ import { confirmAction } from "@/lib/alerts";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { eatLocalInputToUtcIso, utcIsoToEatLocalInput } from "@/lib/time";
 import { ACADEMIC_YEARS, STUDY_YEARS } from "@/lib/academicTargeting";
+import {
+  QUESTION_TYPES,
+  QUESTION_TYPE_LABELS,
+  QUESTION_TYPE_HINTS,
+} from "@/lib/examQuestions";
+import { TypeBadge } from "@/components/ExamAnswerField";
 
 export const Route = createFileRoute("/admin/exams")({ component: Page });
 
@@ -218,7 +224,18 @@ function QuestionsPanel({ examId }: { examId: string }) {
     let options = q.options;
     let correct: any = q.correct_answer;
     let concepts: string[] | null = null;
-    if (q.question_type === "multiple_choice" && typeof options === "string") options = options.split("\n").map((s: string) => s.trim()).filter(Boolean);
+    if (
+      (q.question_type === "multiple_choice" || q.question_type === "multi_select") &&
+      typeof options === "string"
+    )
+      options = options.split("\n").map((s: string) => s.trim()).filter(Boolean);
+    if (
+      (q.question_type === "multi_select" || q.question_type === "ordering") &&
+      typeof correct === "string"
+    ) {
+      // Both are stored as arrays: the correct picks, and the correct order.
+      correct = correct.split("\n").map((s: string) => s.trim()).filter(Boolean);
+    }
     if (q.question_type === "matching" && typeof correct === "string") {
       const obj: any = {};
       correct.split("\n").forEach((line: string) => {
@@ -253,9 +270,24 @@ function QuestionsPanel({ examId }: { examId: string }) {
       <ul className="space-y-1 text-sm">
         {qs.map((q, i) => (
           <li key={q.id} className="flex justify-between items-center p-2 bg-muted rounded">
-            <span className="truncate">{i+1}. [{q.question_type}] {q.body} ({q.points}pt)</span>
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{i + 1}.</span>
+              <TypeBadge type={q.question_type} />
+              <span className="truncate">{q.body}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{q.points}pt</span>
+            </span>
             <div className="flex gap-1">
-              <Button size="sm" variant="ghost" onClick={() => setEditing({...q, options: Array.isArray(q.options) ? q.options.join("\n") : "", correct_answer: q.question_type === "matching" && typeof q.correct_answer === "object" ? Object.entries(q.correct_answer).map(([k,v])=>`${k}=${v}`).join("\n") : q.correct_answer, concepts: Array.isArray(q.concepts) ? q.concepts.join("\n") : "" })}><Pencil className="h-3 w-3" /></Button>
+              <Button size="sm" variant="ghost" onClick={() => setEditing({
+                  ...q,
+                  options: Array.isArray(q.options) ? q.options.join("\n") : "",
+                  correct_answer:
+                    q.question_type === "matching" && typeof q.correct_answer === "object"
+                      ? Object.entries(q.correct_answer).map(([k, v]) => `${k}=${v}`).join("\n")
+                      : Array.isArray(q.correct_answer)
+                        ? q.correct_answer.join("\n")
+                        : q.correct_answer,
+                  concepts: Array.isArray(q.concepts) ? q.concepts.join("\n") : "",
+                })}><Pencil className="h-3 w-3" /></Button>
               <Button size="sm" variant="ghost" onClick={() => del(q.id)}><Trash2 className="h-3 w-3" /></Button>
             </div>
           </li>
@@ -271,16 +303,29 @@ function QuestionsPanel({ examId }: { examId: string }) {
                 <Select value={editing.question_type} onValueChange={(v) => setEditing({ ...editing, question_type: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="true_false">True / False</SelectItem>
-                    <SelectItem value="multiple_choice">Multiple Choice</SelectItem>
-                    <SelectItem value="short_answer">Short Answer (AI)</SelectItem>
-                    <SelectItem value="matching">Matching Items</SelectItem>
+                    {QUESTION_TYPES.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {QUESTION_TYPE_LABELS[t]}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {QUESTION_TYPE_HINTS[editing.question_type]}
+                </p>
               </div>
               <div><Label>Swali</Label><Textarea value={editing.body || ""} onChange={(e) => setEditing({...editing, body: e.target.value})} /></div>
-              {editing.question_type === "multiple_choice" && (
-                <div><Label>Chaguzi (mstari mmoja kila moja)</Label><Textarea value={editing.options || ""} onChange={(e) => setEditing({...editing, options: e.target.value})} /></div>
+              {(editing.question_type === "multiple_choice" ||
+                editing.question_type === "multi_select") && (
+                <div>
+                  <Label>Chaguzi (mstari mmoja kila moja)</Label>
+                  <Textarea
+                    rows={5}
+                    placeholder={"Mfano:\nTawhid\nSalat\nZakat\nHajj"}
+                    value={editing.options || ""}
+                    onChange={(e) => setEditing({ ...editing, options: e.target.value })}
+                  />
+                </div>
               )}
               {editing.question_type === "true_false" && (
                 <div><Label>Jibu sahihi</Label>
@@ -292,6 +337,34 @@ function QuestionsPanel({ examId }: { examId: string }) {
               )}
               {editing.question_type === "multiple_choice" && (
                 <div><Label>Jibu sahihi (andika sawa kabisa na chaguo)</Label><Input value={editing.correct_answer || ""} onChange={(e) => setEditing({...editing, correct_answer: e.target.value})} /></div>
+              )}
+              {editing.question_type === "multi_select" && (
+                <div>
+                  <Label>Majibu sahihi (mstari mmoja kila jibu, sawa kabisa na chaguo)</Label>
+                  <Textarea
+                    rows={4}
+                    placeholder={"Tawhid\nSalat"}
+                    value={editing.correct_answer || ""}
+                    onChange={(e) => setEditing({ ...editing, correct_answer: e.target.value })}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Jibu moja baya hupunguza alama moja sahihi, hivyo kutiki kila kitu hakupi alama.
+                  </p>
+                </div>
+              )}
+              {editing.question_type === "ordering" && (
+                <div>
+                  <Label>Mpangilio sahihi (mstari wa kwanza ni wa kwanza)</Label>
+                  <Textarea
+                    rows={5}
+                    placeholder={"Subiri adhana\nSafisha mdomo\nTia maji puani\nOsha uso"}
+                    value={editing.correct_answer || ""}
+                    onChange={(e) => setEditing({ ...editing, correct_answer: e.target.value })}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Mwanafunzi anaona mpangilio uliochanganywa na hupanga mwenyewe.
+                  </p>
+                </div>
               )}
               {editing.question_type === "short_answer" && (
                 <>

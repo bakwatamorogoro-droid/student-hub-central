@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { retryWithoutMissingColumns } from "@/lib/schema-retry";
 
 export type AcademicFields = {
   course?: string | null;
@@ -56,25 +57,22 @@ function normalize(payload: ProfileUpdatePayload) {
 export async function updateStudentProfile(
   studentId: string,
   payload: ProfileUpdatePayload,
-): Promise<{ error: Error | null; semesterUnsupported: boolean }> {
+): Promise<{ error: Error | null; columnsUnsupported: boolean; dropped: string[] }> {
   const body = normalize(payload);
-  const withSemester = "semester" in body;
 
-  const first = await supabase
-    .from("students")
-    .update(body as any)
-    .eq("id", studentId);
-  if (!first.error) return { error: null, semesterUnsupported: false };
-
-  if (withSemester && isMissingColumnError(first.error)) {
-    const { semester: _drop, ...withoutSemester } = body;
-    const retry = await supabase
+  // Drops whichever column the database says it does not have, one per attempt.
+  // A single fixed retry was not enough: both `semester` and `academic_year` can
+  // be absent, and PostgREST names only one of them.
+  const { last, dropped } = await retryWithoutMissingColumns(body, (working) =>
+    supabase
       .from("students")
-      .update(withoutSemester as any)
-      .eq("id", studentId);
-    if (!retry.error) return { error: null, semesterUnsupported: true };
-    return { error: retry.error as unknown as Error, semesterUnsupported: true };
-  }
+      .update(working as any)
+      .eq("id", studentId),
+  );
 
-  return { error: first.error as unknown as Error, semesterUnsupported: false };
+  return {
+    error: last.error ? (last.error as unknown as Error) : null,
+    columnsUnsupported: dropped.length > 0,
+    dropped,
+  };
 }

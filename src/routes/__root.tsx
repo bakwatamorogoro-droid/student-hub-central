@@ -89,8 +89,16 @@ function SiteFooter() {
   const { t } = useI18n();
   return (
     <footer className="mt-12 border-t border-primary/10 bg-card/60 backdrop-blur-xl">
-      <div className="container mx-auto px-4 py-6 text-center text-xs text-muted-foreground">
-        {t("footer_note")}
+      <div className="container mx-auto space-y-3 px-4 py-8 text-center">
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-sm font-black tracking-tight text-foreground">
+            {t("system_full_name")}
+          </span>
+          <span className="text-[11px] uppercase tracking-[0.25em] text-primary">
+            {t("founder_title")} · {t("founder_name")}
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground">{t("footer_note")}</p>
       </div>
     </footer>
   );

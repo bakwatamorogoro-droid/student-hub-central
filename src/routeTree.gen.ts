@@ -12,7 +12,9 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AttendanceRouteImport } from './routes/attendance'
 import { Route as ExamsRouteImport } from './routes/exams'
+import { Route as NewsRouteImport } from './routes/news'
 import { Route as PdfQuizRouteImport } from './routes/pdf-quiz'
 import { Route as QuizRouteImport } from './routes/quiz'
 import { Route as RegisterRouteImport } from './routes/register'
@@ -46,9 +48,19 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AttendanceRoute = AttendanceRouteImport.update({
+  id: '/attendance',
+  path: '/attendance',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ExamsRoute = ExamsRouteImport.update({
   id: '/exams',
   path: '/exams',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NewsRoute = NewsRouteImport.update({
+  id: '/news',
+  path: '/news',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PdfQuizRoute = PdfQuizRouteImport.update({
@@ -141,7 +153,9 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/admin': typeof AdminRouteWithChildren
+  '/attendance': typeof AttendanceRoute
   '/exams': typeof ExamsRoute
+  '/news': typeof NewsRoute
   '/pdf-quiz': typeof PdfQuizRoute
   '/quiz': typeof QuizRoute
   '/register': typeof RegisterRoute
@@ -163,7 +177,9 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
+  '/attendance': typeof AttendanceRoute
   '/exams': typeof ExamsRoute
+  '/news': typeof NewsRoute
   '/pdf-quiz': typeof PdfQuizRoute
   '/quiz': typeof QuizRoute
   '/register': typeof RegisterRoute
@@ -187,7 +203,9 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/admin': typeof AdminRouteWithChildren
+  '/attendance': typeof AttendanceRoute
   '/exams': typeof ExamsRoute
+  '/news': typeof NewsRoute
   '/pdf-quiz': typeof PdfQuizRoute
   '/quiz': typeof QuizRoute
   '/register': typeof RegisterRoute
@@ -212,7 +230,9 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/admin'
+    | '/attendance'
     | '/exams'
+    | '/news'
     | '/pdf-quiz'
     | '/quiz'
     | '/register'
@@ -234,7 +254,9 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/account'
+    | '/attendance'
     | '/exams'
+    | '/news'
     | '/pdf-quiz'
     | '/quiz'
     | '/register'
@@ -257,7 +279,9 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/admin'
+    | '/attendance'
     | '/exams'
+    | '/news'
     | '/pdf-quiz'
     | '/quiz'
     | '/register'
@@ -281,7 +305,9 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountRoute: typeof AccountRoute
   AdminRoute: typeof AdminRouteWithChildren
+  AttendanceRoute: typeof AttendanceRoute
   ExamsRoute: typeof ExamsRoute
+  NewsRoute: typeof NewsRoute
   PdfQuizRoute: typeof PdfQuizRoute
   QuizRoute: typeof QuizRoute
   RegisterRoute: typeof RegisterRoute
@@ -315,11 +341,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/attendance': {
+      id: '/attendance'
+      path: '/attendance'
+      fullPath: '/attendance'
+      preLoaderRoute: typeof AttendanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/exams': {
       id: '/exams'
       path: '/exams'
       fullPath: '/exams'
       preLoaderRoute: typeof ExamsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/news': {
+      id: '/news'
+      path: '/news'
+      fullPath: '/news'
+      preLoaderRoute: typeof NewsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pdf-quiz': {
@@ -474,7 +514,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRoute: AccountRoute,
   AdminRoute: AdminRouteWithChildren,
+  AttendanceRoute: AttendanceRoute,
   ExamsRoute: ExamsRoute,
+  NewsRoute: NewsRoute,
   PdfQuizRoute: PdfQuizRoute,
   QuizRoute: QuizRoute,
   RegisterRoute: RegisterRoute,

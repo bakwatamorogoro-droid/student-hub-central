@@ -16,6 +16,13 @@ dist-ssr
 .nitro
 *.local
 
+# Environment files. `.env` holds the Supabase URL and publishable key for the
+# project this checkout talks to, so it differs per environment and must not be
+# committed. Copy `.env.example` and fill it in instead.
+.env
+.env.*
+!.env.example
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars
@@ -33,3 +40,6 @@ dist-ssr
 
 # Vercel CLI local link
 .vercel
+tests/e2e/.build/
+tests/e2e/.mk*/
+tests/e2e/_mk*.ts

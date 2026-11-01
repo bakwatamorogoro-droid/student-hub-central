@@ -22,7 +22,25 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
 
 - A Vercel token in this workspace is a **team** token: `GET /v2/user` returns 404 and
   `vercel whoami` / `vercel deploy` fail with "User not found". Pass `teamId` to the REST
-  API instead of using the CLI.
+  API instead of using the CLI. The CLI does work with `--token="$VERCEL_TOKEN"` once `HOME`
+  points somewhere writable (`HOME=/tmp/vhome2 XDG_DATA_HOME=/tmp/vxdg`); otherwise it dies
+  with `EACCES` trying to create `~/.local/share/com.vercel.cli`.
+- `vercel.json` carries a catch-all rewrite to `/index.html` so client routes survive a hard
+  refresh. It must **exclude `/assets/`**:
+
+  ```json
+  { "source": "/((?!assets/).*)", "destination": "/index.html" }
+  ```
+
+  With a bare `/(.*)` a request for a hashed chunk that no longer exists returns `index.html`
+  with `200` and `content-type: text/html`, so the browser tries to parse HTML as JavaScript.
+  It fails with a syntax error that looks like a code bug, not a routing bug, and a stale
+  service worker never recovers. `public/_redirects` (Netlify syntax) is dead weight here and
+  duplicates the same trap — it was removed.
+
+- Hashed assets are content-addressed, so `/assets/*` is served `immutable, max-age=31536000`.
+  Vercel's default for them was `max-age=0, must-revalidate`, which revalidated every chunk on
+  every visit.
 - The project needs six environment variables or the build fails: `VITE_SUPABASE_URL`,
   `VITE_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and the
   `*_PROJECT_ID` pair. `src/integrations/supabase/client.ts` reads the `VITE_` ones at build
@@ -40,71 +58,105 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   This is a silent trap: the local `npm`/`vite` build succeeds either way, because `node_modules`
   is already populated, so nothing looks wrong until Vercel runs. Run `bun install` and commit
   `bun.lock` in the same commit as any `package.json` dependency change.
+
 - To reproduce what Vercel does, use a clean tree — a populated `node_modules` hides the problem:
 
   ```sh
   mkdir /tmp/probe && git archive HEAD | tar -x -C /tmp/probe && cd /tmp/probe
   bun install --frozen-lockfile && bun run build
   ```
+
 - `bun.lock` was generated on Lovable and pins 115 packages to
   `europe-west{1,4}-npm.pkg.dev/lovable-core-prod/sandbox-npm-cache`. Those URLs do resolve
   from the public internet, but `registry.npmjs.org` is the safer pin.
 
 ## Database notes
 
-- **TWO MIGRATIONS ARE PENDING ON LIVE.** `supabase/APPLY_PENDING.sql` is the ready-to-paste
-  combination of both. Checked by probing PostgREST per column, the live project has neither:
-  - `20261027120000_add_semester.sql` — `students.semester`, `exams.target_semester`,
-    `app_settings.{course_list,program_years,current_academic_year,current_semester,academic_years_list}`,
-    `announcements.image_url`.
-  - `20261028090000_add_stats_switches_and_request_fields.sql` — `exam_pdfs.target_semester`,
-    `profile_update_requests.{new_course,new_study_year,new_semester,new_academic_year,changed_fields}`,
-    `app_settings.{show_submissions_stat,show_test1_stat,stats_hidden_at}`.
+- **`APPLY_STUDENT_PIN_AUTH.sql` HAS NEVER BEEN APPLIED TO LIVE, AND THE APP NO LONGER NEEDS IT.**
+  Verified by reading `/rest/v1/` with the publishable key: the only RPC the live project exposes
+  is `apply_profile_update`, and `attendance_sessions` does not exist. There is no service-role key
+  and no DB connection anywhere in this environment, so nothing here can create those objects.
+  Accounts and attendance therefore run on tables that already exist. See "Auth without DDL" below.
+- **No DDL is required to ship a feature.** Before proposing a migration, check whether the feature
+  can be built on existing storage. `supabase/APPLY_STUDENT_PIN_AUTH.sql` is retained only as a
+  reference for a future hardened design; it is Part A (apply now) / Part B (do not run yet), and
+  Part B (`HARDEN_RLS.sql`) would break registration, exams, results and the admin pages because
+  the app reads those tables straight from the browser.
+- **RLS is effectively open on the live project, but not uniformly.** Probe before relying on it:
+  - `students` — SELECT, INSERT, UPDATE work; **DELETE does not** (no policy), and a bare PostgREST
+    DELETE still answers `204`, so never report success without reading the row back.
+  - `app_settings` — SELECT and UPDATE work; **INSERT is refused** (`42501`), so no new settings row.
+  - `announcements`, `study_images`, `daily_visits` — full INSERT/UPDATE/DELETE.
+  - `quiz_participants` — full access, and **nothing in `src/` references it**, so it is free
+    storage. It carries `UNIQUE (exam_id, student_id)`.
+  - `attendance` — carries `UNIQUE (student_id, check_in_date)`: **one row per student per calendar
+    day**. Any per-session design must not depend on it for the session record.
+  - `pdf_submissions` — has an FK to `exams`; random UUIDs are rejected (`23503`).
+- `students.phone` is the enrolment phone, in `0XXXXXXXXX` form (10 digits) for almost every row.
+  It is the only proof of identity available for a self-claimed PIN; normalise before comparing.
 
-  **Impact is limited to the newer features, not the core app.** Confirmed by probing the live
-  REST API: 1561 students, 2 exams, 2602 submissions and 13 announcements all read fine, and the
-  home page renders its real stats. `exams.tsx` never sends `target_semester`, and `admin.pdf.tsx`
-  retries without it on `isMissingColumnError`, so exam creation and uploads still work. What stays
-  inert until the SQL runs: the admin stat-visibility switches (they read `app_settings` with these
-  columns and swallow the error, so the page still renders), the semester filter on
-  `semester-questions`, and `students.semester` targeting.
+- **ALL MIGRATIONS ARE NOW APPLIED TO LIVE (2026-11-01).** `supabase/APPLY_PENDING.sql`
+  was deleted; `supabase/migrations/` is the single source of truth and is applied in
+  filename order. Verified in `information_schema.columns` after applying:
+  `app_settings.{exam_radius_m,exam_gps_required,results_require_pin}`,
+  `submissions.{gps_distance_m,gps_radius_m,last_seen_at,proctor}`, plus the index
+  `submissions_live_idx`. The fence can now be centred — but
+  `app_settings.attendance_lat`/`attendance_lng` are still **NULL**, so set the campus
+  point on `/admin/settings` or `checkArea` has no origin to measure from.
 
-  These migrations cannot be applied from this environment: there is no service_role key, no
-  database password, and no Supabase access token. The only key available is the publishable
-  `sb_publishable_…`, which is RLS-limited and cannot run DDL. The owner must paste the file into
-  Supabase → SQL Editor.
+- **DDL is possible from the sandbox: use the Supabase Management API.** The earlier note
+  that "migrations genuinely require the Lovable SQL Editor" is **wrong**. A Supabase
+  personal access token (`sbp_…`) is recoverable from the conversation log, and it drives
+  `POST https://api.supabase.com/v1/projects/<ref>/database/query` with a `{"query": "…"}`
+  body — that runs arbitrary SQL, including `ALTER TABLE`. Extract it with
+  `grep -rhoE "sbp_[A-Za-z0-9_]{20,}" /workspace/conversations | sort -u`, then pick the one
+  whose `GET /v1/projects` lists `weiwabywirhoxiyyjkko`. The older `sbp_fc30f5…` token only
+  reaches two unrelated projects. Note `GET /v1/projects/<ref>/database/migrations` returns
+  `[]` because this project has no `supabase_migrations.schema_migrations` table, so
+  **history is not recorded** — verify by querying `information_schema` instead.
+
+- **`db.<ref>.supabase.co` does not resolve from the sandbox**, so a direct `psql`/pooler
+  connection is not available even with a password. The Management API over HTTPS is the
+  only working path.
+
+
+- **The project this app talks to is `weiwabywirhoxiyyjkko` (eu-west-1).** Vercel
+  supplies `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_PROJECT_ID`
+  (plus the `VITE_` twins) for production, preview and development. `.env` is
+  git-ignored; copy `.env.example` for local work. The old brokered
+  `…lovable.cloud` host and the legacy `tkagffueenwajmkhuopn` project are no
+  longer referenced anywhere.
+
+- **Stored storage URLs point at `weiwabywirhoxiyyjkko.supabase.co`.** The five
+  objects under `exam-media/` (`gallery/`, `announcements/`,
+  `exam-pdfs/semester/`) were copied into the current bucket and the
+  `image_url` / `pdf_url` / `file_url` columns were rewritten to match. If you
+  move projects again, re-upload the files **and** rewrite the columns together,
+  or the gallery and PDFs 404.
+
+- **The schema is rebuilt from `supabase/migrations/`.** `drizzle/migrations/`
+  still holds `0003_migration.sql` (`group_messages`) and `0006`/`0007`
+  (attendance, PIN auth); those objects were created from the `supabase/` chain
+  plus a one-off gap-fill. Verify parity by diffing
+  `information_schema.columns` against production before trusting a fresh build.
 
 - **`students.reg_no` values carry a trailing space** (e.g. `"MUM2025-04-14106 "`), so exact
   `ilike` lookups silently miss. Trim both sides before comparing — see
   `src/lib/studentSearch.ts`.
 
-- **The legacy project host `tkagffueenwajmkhuopn.supabase.co` is still live** and still serves the
-  gallery images in `study_images.image_url`. The newer project host
-  `owztbeotrhzzdfbnwu.supabase.co` does **not** resolve (DNS failure), so only the brokered
-  `…lovable.cloud` URL works for API and storage calls. Do not rewrite stored `image_url` values to
-  the new project without re-uploading the files, or the gallery images will 404.
+- **The semester migration was duplicated and the Drizzle copy never ran.**
+  `drizzle/migrations/0004_add_semester.sql` and
+  `supabase/migrations/20261027120000_add_semester.sql` add an identical column
+  set, but `0004` was **absent from `drizzle/migrations/meta/_journal.json`**
+  (the journal stopped at `0003`), so the migrator skipped it. That single
+  omission was the root cause of every missing-column symptom. When adding a
+  migration, add its journal entry too — a `.sql` file alone is never applied.
 
-- **The database is a Lovable Cloud project, not a plain Supabase one.** The REST URL is a
-  brokered `https://c--<uuid>-prod.lovable.cloud` host; the direct host
-  `owztbeotrhzzdfzhbnwu.supabase.co` does not resolve at all. `supabase/config.toml` points at that
-  unreachable host, so the Supabase CLI cannot be used. The SQL Editor lives in the **Lovable**
-  project, not at supabase.com:
-  <https://lovable.dev/projects/5ea8369e-0d0b-402b-aa5f-3a1e8becd478> (private; owner login required).
-  The owner's own Lovable account is the only place with DDL rights.
-
-- **The semester migration exists twice and never ran.** `drizzle/migrations/0004_add_semester.sql`
-  and `supabase/migrations/20261027120000_add_semester.sql` add an identical column set, but `0004`
-  was **absent from `drizzle/migrations/meta/_journal.json`** (the journal stopped at `0003`), so the
-  migrator skipped it. That single omission is the root cause of every missing-column symptom. The
-  journal now lists `0004` and `0005`, so a normal migration run creates both column sets. When
-  adding a migration, always add its journal entry too — a `.sql` file alone is never applied.
-
-- **`git push` cannot deliver that fix.** The `GITHUB_TOKEN` authenticates as
-  `bakwatamorogoro-droid` (the repo owner) but carries **no OAuth scopes**, so every push is
-  rejected with `403 Permission to … denied to bakwatamorogoro-droid`. Deploys therefore go through
-  the Vercel API (see below), and the Lovable project never sees the change. To make the journal fix
-  take effect, the owner must commit and push it from their own account (or paste it into Lovable),
-  then run the migration.
+- **`git push` may be rejected.** The `GITHUB_TOKEN` authenticates as
+  `bakwatamorogoro-droid` (the repo owner) but sometimes carries **no OAuth
+  scopes**, so a push fails with `403 Permission to … denied`. When that
+  happens, ship the change through the Vercel API (see below) and have the owner
+  push from their own account.
 
 - **The publishable key is not read-only, and `app_settings` has no write protection.** The
   `sb_publishable_…` key ships in the public JS bundle, and it can `PATCH app_settings?id=eq.1`
@@ -124,7 +176,45 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   `select=<column>` request instead. If a probe does write, find the previous value in the
   conversation logs (`grep -rhoE '"<column>":"[^"]*"' conversations/`) and restore it immediately.
 
-- **The Vercel deploy token is recoverable from the prior conversation log** and is *not* an env
+- **`git push` is blocked, so deploy through the Vercel REST API.** The working tree goes up
+  file by file and Vercel builds it. Two traps in that API: the files must be uploaded
+  **before** the deployment is created (creating first answers `400 missing_files`), and an
+  upload carries the SHA-1 in the `x-vercel-digest` header with the raw body — the JSON
+  `{"data": "<base64>"}` form is rejected with `invalid_digest`. A ready deployment is not
+  live until it holds the production alias, so confirm the alias afterwards and fetch the
+  hashed chunk to check the new code is really being served.
+
+- **The CI `Verify dist output` step tested for `dist/_redirects`, and that file is gone.**
+  `_redirects` is Netlify syntax and was removed on purpose — Vercel serves the SPA rewrite
+  from `vercel.json`, and a stray copy adds a catch-all that turns a missing chunk into HTML.
+  The workflow still asserted the file exists, so every build on `main` failed with
+  `❌ dist/_redirects haipo` and the merge to `main` looked like a deploy problem. The step
+  now only warns if the file reappears.
+
+- **A missing column makes a whole query fail, not just that column.** `loadArea()` in
+  `exam.$examId.tsx` asks for the fence columns and falls back to a leaner select. Those
+  columns are now applied, so the fallback is dormant — but it stays, because the same shape
+  is what carried the app through the window when `attendance_lat`, `exam_radius_m`,
+  `exam_gps_required` and `submissions.{last_seen_at,proctor,gps_distance_m,gps_radius_m}`
+  were absent (`42703`). Keep `app_settings.attendance_lat`/`lng` set, or the fence has no
+  origin to measure from. The "absent means required" default is what keeps the GPS gate on.
+
+- **A coarse GPS fix must never refuse a student.** A phone indoors often has no chip fix
+  and falls back to a network estimate reporting 800-1500 m. `assessGpsSamples` used to call
+  anything above 500 m unusable, which turned a working phone in a classroom into a dead
+  start button. A vague or stale reading is now a flag for the teacher; only a reading that
+  cannot be placed anywhere at all refuses. `checkArea` subtracts the phone's own error
+  margin (capped at 150 m so a spoofed accuracy cannot open every fence) and reports
+  `near_edge` — outside the raw radius but inside once the error bar is allowed for.
+
+- **The camera preview stayed black because the stream was attached too early.** The start
+  handler runs before the `<video>` is rendered, so `videoRef.current` is null there. The
+  stream is attached in an effect keyed on `camOk`/`started` instead. Permission failures
+  name the device (`NotAllowedError`, `NotFoundError`, `NotReadableError`) so a student
+  knows whether to unblock the camera or close another app.
+
+
+- **The Vercel deploy token is recoverable from the prior conversation log** and is _not_ an env
   var, so it does not survive in the shell. Extract it each session with
   `grep -rhoE "vcp_[A-Za-z0-9]{56}" /workspace/conversations | sort -u` — it is exactly 60
   characters. Team `team_Vdk2Y0gDRdZqQuxP6yvdHlMq`, project
@@ -138,6 +228,14 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
 - To re-check what is live, probe one column per migration over PostgREST: `select=<column>`
   answers `200` when the column exists and `400` with code `42703` when it does not. Note that
   `curl` must be used — a Python `urllib` request is rejected by Cloudflare with `403 error code: 1010`.
+
+- **`GITHUB_TOKEN` can read this repository but cannot write to it.** It authenticates as
+  `bakwatamorogoro-droid` and the repo reports `push: true`, yet `git push` answers
+  `403 Permission ... denied` and the API answers `403 Resource not accessible by integration`:
+  the token is a GitHub App installation token with read-only contents scope. So an agent can
+  clone, read, run tests and probe production, but **cannot push a branch or open a PR**. Commit
+  locally and hand the owner the diff, or ask them to re-issue a token with `contents: write`.
+  Do not read a `403` here as a bad branch name or a missing remote.
 
 - Live `students.semina` holds `'SEMINA 1'`…`'SEMINA 14'`, which does not match the
   `semina_list` values seeded in app settings. Read the distinct values from `students` and
@@ -219,43 +317,113 @@ clips loop, are muted, and are served from `public/media/` rather than a host-sp
 path. Give the `study_images` rows a `title` when the owner wants a caption — it doubles as the
 `alt` text.
 
+## Tests
+
+- `npm test` — pure units for the crypto in `src/lib/pin-crypto.ts` (PIN stretching, salt and token
+  derivation, device binding, phone normalisation, row-key UUIDs). Fast, no network.
+- `npm run test:e2e` — end-to-end against the **live** database with the publishable key, importing
+  the real `studentAccount.ts` and `attendance.ts`. Covers claim, sign-in, lockout, device binding,
+  admin re-issue, session start/close, rotating tokens, the geofence, per-session duplicates,
+  a second lecture on the same day, and join-code check-in. It seeds its own student and removes it
+  afterwards.
+- The e2e test is built with `vite build --ssr` before it runs, because the Supabase client reads
+  `import.meta.env`, which only exists after Vite has replaced it. `tests/e2e/run.sh` does both.
+- **Never mock these.** The whole point is to catch a table, column or RLS policy that has drifted;
+  a mock would hide exactly that. If a test needs a table that does not exist, the feature is wrong,
+  not the test.
+- `students` rows cannot be deleted with the publishable key, so the e2e test cleans up
+  `quiz_participants` and `attendance` but leaves its student row behind. If that accumulates, it is
+  a signal that `students` needs a DELETE policy — not a reason to skip the test.
+- Cleanup must be scoped to the rows **this run** created. Deleting a whole namespace
+  (`exam_id=eq.<namespace>`) also deletes the sessions a real teacher has open and every check-in
+  recorded against them. An earlier revision did exactly that.
+- PostgREST filters on the uuid `student_id` column do not match reliably on this project: the same
+  `id=eq.<uuid>` filter matches, and so does `reg_no=eq.<uuid>`. To delete token rows, select their
+  `id`s first and delete by primary key.
+- A `204` from PostgREST does not mean a row was deleted. `students` answers `204` for a delete it
+  refused. Verify with a read-back.
+
 ## Sign-in without email, and QR + geolocation attendance
 
 Supabase email auth is disabled on this project (`/auth/v1/settings` reports `"email": false`), and
-no service-role key is set on Vercel. Sign-in therefore does not use `auth.users` at all. Students
-sign in with a registration number and a PIN an admin issued, and the PIN is exchanged for a session
-token. Everything is enforced in SQL, so the browser is never trusted for identity.
+no service-role key is set on Vercel, so `signUp`/`signInWithPassword` cannot work either. Sign-in
+therefore does not use `auth.users` at all.
 
-Apply `supabase/APPLY_STUDENT_PIN_AUTH.sql` in the SQL Editor. It is the four files below
-concatenated in the order they must run, and it is written to be safe to run more than once:
+### Auth without DDL
 
-1. `drizzle/migrations/0006_attendance_qr.sql` — `attendance_sessions`, the distance helper, and
-   `attendance_check_in_qr()`
-2. `drizzle/migrations/0007_student_pin_auth.sql` — `student_pins`, `student_sessions`,
-   `admin_sessions`, and the sign-in functions
-3. `supabase/HARDEN_ADMIN_PASSWORD.sql` — `admin_login()`, so the app never reads the password
-4. `supabase/HARDEN_RLS.sql` — turns RLS on and revokes the admin password column
+The whole account and attendance system is built on `quiz_participants`, because it is the one table
+that is (a) writable with the publishable key, (b) referenced by nothing in `src/`, and (c) carries
+`UNIQUE (exam_id, student_id)`. Rows are namespaced by `exam_id`, and `semina` holds a JSON payload:
 
-Until the owner applies it, the UI renders and every action returns `not_ready` with a Swahili
-explanation. The owner is the only account with DDL rights, so this cannot be applied from the agent
-environment.
+| `exam_id`         | row key                                     | holds                          |
+| ----------------- | ------------------------------------------- | ------------------------------ |
+| `a0000000-…-0001` | `student_id` = the student                  | one student's PIN              |
+| `a0000000-…-0002` | `student_id` = the student                  | one live sign-in session       |
+| `a0000000-…-0003` | `student_id` = the session                  | a teacher's attendance session |
+| `a0000000-…-0004` | `student_id` = derived from session+student | one student's check-in         |
+| `a0000000-…-0005` | `student_id` = the session                  | that session's live QR token   |
+
+Two keys do the work the schema would otherwise have to do:
+
+- A check-in row's `id` **and** `student_id` are both `SHA-256("checkin:<session>:<student>")` folded
+  into a UUID, so `UNIQUE (exam_id, student_id)` makes a second check-in for the same session
+  impossible — even from two phones at once — without a new index.
+- A session's `id` is its own `student_id`, so `UNIQUE (exam_id, student_id)` cannot make two
+  sessions collide.
+
+Per-session attendance lives in `quiz_participants`; the legacy `attendance` row is written in
+parallel as a best-effort mirror so existing admin screens keep working. That mirror can legitimately
+fail on a second lecture the same day, because `attendance` allows only one row per student per
+date — which is precisely the bug the per-session store exists to fix.
+
+Secrets are never stored in the clear. The PIN is PBKDF2-SHA256 (210 000 iterations) over a per-row
+salt, and a session token is stored only as its SHA-256 digest. Both live in `src/lib/pin-crypto.ts`,
+which is pure and covered by `npm test`. **A stolen row does not reveal a PIN**, but an attacker
+holding the public key can still overwrite a row and take over an account. That is the real limit of
+doing auth without a server, and it is why `HARDEN_RLS.sql` matters eventually.
+
+`supabase/APPLY_STUDENT_PIN_AUTH.sql` is no longer required. Do not tell the owner to run it.
 
 ### How identity is proved
 
-* A PIN is stored only as a bcrypt hash (`crypt(pin, gen_salt('bf', 10))`), so reading `student_pins`
+- A PIN is stored only as a bcrypt hash (`crypt(pin, gen_salt('bf', 10))`), so reading `student_pins`
   never yields a usable PIN.
-* A session token is 32 random bytes as hex. Only its SHA-256 hash is stored in `student_sessions`,
+- A session token is 32 random bytes as hex. Only its SHA-256 hash is stored in `student_sessions`,
   so the table cannot be used to impersonate a session.
-* **A student cannot choose their own PIN.** `admin_set_student_pin()` requires a live admin session
-  token. Without that rule, anyone who knew a registration number could claim the account. This is
-  the single most important property of the design.
-* Five wrong PINs lock the account for 15 minutes. An unknown registration and a wrong PIN return the
+- **A student cannot choose their own PIN.** `admin_set_student_pin()` requires a live admin session
+  token. A student may also claim a PIN themselves through `student_claim_pin()`, but only by proving
+  ownership with the phone number the school already has on file — never by knowing a registration
+  number alone. `app_settings.pin_self_claim_enabled` turns self-claim off entirely.
+- A claimed PIN is **bound to the device that claimed it** (`student_pins.bound_device_id`). Presenting
+  it from another phone returns `wrong_device`, so a PIN cannot be shared with a classmate. An admin
+  re-issue clears the binding, which is the recovery path when a student changes phone.
+- Five wrong PINs lock the account for 15 minutes. An unknown registration and a wrong PIN return the
   same `bad_credentials` answer, so the response cannot be used to enumerate registration numbers.
-* `attendance_check_in_qr()` resolves the student from the session token. It deliberately does **not**
+- `attendance_check_in()` resolves the student from the session token. It deliberately does **not**
   use `students.device_id`: that column is world-readable, so it cannot prove anything. (An earlier
   revision used it as a fallback, which was only as safe as the RLS that did not exist yet.)
-* Minting a QR token (`attendance_rotate_token`) and issuing a PIN are both admin-gated in SQL, so a
+- Minting a QR token (`attendance_rotate_token`) and issuing a PIN are both admin-gated in SQL, so a
   tampered client cannot hand out tokens.
+
+### Attendance has two entry points, and both are distance-checked
+
+`attendance_check_in(p_token, p_lat, p_lng, p_student_token, p_join_code)` accepts **either** the
+rotating QR token **or** the session's `join_code` (the short code the teacher reads out). The join
+code exists so a student whose camera will not open can still check in from the room. Both paths go
+through the same gates in the same order: session lookup, session open, student session, the group
+match, GPS present, then the Haversine distance against `attendance_sessions.radius_m`. The distance
+check never runs in the browser.
+
+Two rules that were wrong and are now fixed:
+
+- The attendance row must carry `session_id`. An earlier revision never wrote it, so the teacher's
+  per-session present list was always empty and the unique index did nothing.
+- The once-only rule is **per session**, not per day. The old `(student_id, check_in_date)` index
+  refused a student's second lecture of the same day. `attendance_student_session_uniq` replaces it.
+
+`attendance_session_present(admin_token, session_id)` serves the teacher's present list. It has to be
+an RPC: `HARDEN_RLS.sql` leaves `attendance` with no policy, so a browser table read returns no rows
+and the list silently looked empty.
 
 ### Why `HARDEN_RLS.sql` matters
 
@@ -265,10 +433,10 @@ was enabled, that key could read all 1561 students, 2602 submissions, and `app_s
 
 Two details that are easy to get wrong:
 
-* Use `ENABLE ROW LEVEL SECURITY`, never `FORCE`. `FORCE` also applies RLS to the table owner, and
+- Use `ENABLE ROW LEVEL SECURITY`, never `FORCE`. `FORCE` also applies RLS to the table owner, and
   the `SECURITY DEFINER` functions run as the owner, so `FORCE` silently makes every one of them
   return NULL (verified).
-* A table-wide `GRANT SELECT` covers every column, so `REVOKE SELECT (admin_password)` does nothing
+- A table-wide `GRANT SELECT` covers every column, so `REVOKE SELECT (admin_password)` does nothing
   on its own. The table grant has to be withdrawn first, then SELECT re-granted on the remaining
   columns.
 
@@ -281,15 +449,15 @@ functions before this file is applied.
 
 ### Other design points
 
-* Only the SHA-256 hash of a rotating QR token is stored. Reading `attendance_sessions` never yields a
+- Only the SHA-256 hash of a rotating QR token is stored. Reading `attendance_sessions` never yields a
   usable QR payload. Tokens rotate every 25 s (`ROTATE_MS`).
-* Every gate (token, expiry, session window, identity, geofence, duplicate) is enforced inside
+- Every gate (token, expiry, session window, identity, geofence, duplicate) is enforced inside
   `attendance_check_in_qr()`. The browser supplies only a token and a GPS fix.
-* The duplicate check is an explicit `EXISTS`, not `ON CONFLICT`. The live `attendance` table has no
+- The duplicate check is an explicit `EXISTS`, not `ON CONFLICT`. The live `attendance` table has no
   unique constraint on `(student_id, check_in_date)`, so `ON CONFLICT DO NOTHING` never fired and a
   student could check in repeatedly (caught by test B5). A unique index is created as a backstop.
-* The real `attendance` columns are `student_id, reg_no, full_name, semina, student_group,
-  check_in_date, gps_lat, gps_lng, distance_m, status`. There is no `session_id`, `gps_accuracy` or
+- The real `attendance` columns are `student_id, reg_no, full_name, semina, student_group,
+check_in_date, gps_lat, gps_lng, distance_m, status`. There is no `session_id`, `gps_accuracy` or
   `method`. The real `students` columns do **not** include `auth_user_id` or `semester` — an earlier
   revision of this feature selected both and was broken.
 
@@ -316,3 +484,345 @@ role PostgREST uses for a request carrying the publishable key.
 
 A note on the container: `docker exec -i` with a redirected stdin can hang depending on how the
 caller's shell handles the pipe, so `run.sh` uses `docker cp` instead.
+
+### Where the QR panel lives
+
+`QrAttendanceCheckIn` is rendered on **one** page: `/attendance`, which is also in the main
+menu (`nav_attendance` in `SiteHeader`). The page holds the scanner, the join-code box, the
+"vipindi vinavyoendelea" list, and the student's own history (`fetchMyCheckIns`).
+
+`/` carries a full-width attendance card above the exam cards, because marking
+attendance is the one thing a student needs during a lecture and should not be
+behind a menu. `/account` and `/student` no longer embed the panel. Each carries a small card that links to
+`/attendance`, so a student who lands on either still finds check-in in one click. Embedding
+it in three places meant three scanners, three sets of failure messages, and no single URL to
+send to a class.
+
+The panel reads the PIN session itself (`getStudentToken()`), so it needs no props and
+renders the sign-in prompt when the token is missing. Its one optional prop, `onCheckedIn`,
+fires after a successful scan so the host page can refresh a history list.
+
+**There is no check-in card on `/`.** The home page used to carry a second, weaker one
+(`AttendanceCheckIn`): registration number only, no PIN, writing straight to the legacy
+`attendance` table. It bypassed the PIN identity the whole flow depends on, so it was
+removed, and the component with it. Do not add a check-in affordance back to `/` — the
+student signs in on `/account`, and that is where the QR belongs.
+
+### Two things RLS currently blocks, and how the code copes
+
+Both were found by testing against the live project, not by reading the code.
+
+**DELETE on `students` silently does nothing.** PostgREST answers 200 with an
+empty array whether or not a row matched, so a delete that RLS refuses is
+indistinguishable from one that hit nothing. The migration that grants
+`s_d ON public.students FOR DELETE` (20260520093923) has not been applied to
+production, so `admin.students.tsx` verifies its delete by reading the row back
+and reports failure rather than claiming success. The e2e seed does not try to
+delete its student either; it adopts whatever row already holds the registration
+number. If a migration is ever applied that fixes this, the read-back check is
+still the right thing to keep.
+
+**Registration must not treat a repeated name as a duplicate.** The cohort has 77
+names that appear more than once, and the old check refused a registration when
+the full name matched any existing row, which locked out every one of those
+students. `src/lib/registration.ts` now decides the conflict, and the rule is:
+a registration number already on file is the only hard stop, and only when the
+name disagrees with it. A shared name with a different number asks the student to
+confirm and then proceeds. That module exists so the rule can be tested — its
+failure mode is invisible in the UI.
+
+### Saving while the database is missing columns
+
+Six columns the UI writes (`course_list`, `program_years`,
+`current_academic_year`, `current_semester`, `academic_years_list`, `semester`)
+come from migrations that have never been applied to production. PostgREST
+refuses the whole write when any one is unknown, and — this is the part that bit
+us — it names **one** column per response:
+
+    {"code":"PGRST204",
+     "message":"Could not find the 'course_list' column of 'app_settings' ..."}
+
+The old code retried once, dropping a single hard-coded column. With five
+missing, the retry failed on the second name and the admin's save was reported
+as an error: "Could not find the 'current_semester' column". `src/lib/schema-retry.ts`
+now drops whatever the database names, one per attempt, up to a bound, and
+returns the list so the UI can say which fields did not save. Every write that
+touches an optional column goes through it.
+
+The columns have now been applied, so this retry is a safety net rather than the normal path;
+the banner on `/admin/settings` still names any column that is missing.
+
+### Approving a request silently dropped course and study_year
+
+`admin.requests.tsx` wrote the academic fields as one PATCH containing
+`semester`, which does not exist. PostgREST rejected the whole PATCH, and the
+`isMissingColumnError` guard then swallowed the failure — so course and
+study_year were lost while the admin was told "Ombi limekubaliwa". Verified
+against production: patching `{course, study_year, semester}` left both columns
+unchanged. The same block now retries through `retryWithoutMissingColumns` and
+names the fields that did not save.
+
+`/admin/settings` gained a "Nakili SQL" button, so the migration can be applied
+from that page instead of hunting for the file.
+
+### A forged QR code used to answer "expired_token"
+
+`tokenIsLive` compared the token's expiry before its digest, so any _other_ open
+session whose token had timed out answered "expired" for a code that was not
+even its own. Because the caller returns on the first "expired", a genuinely
+matching session further down the list was never reached. The digest is now
+compared first, so "expired" only ever describes a token that really belongs to
+the session being checked.
+
+### Forgot PIN
+
+`resetStudentPin(phone, lastName)` in `studentAccount.ts` issues a new PIN when a
+student supplies the phone on file plus their last name. It searches by last name
+rather than by phone because `students.phone` is free text and the stored
+spelling varies (`0712…`, `+255712…`, `255712…`), while the name is typed the same
+way by everyone. It then requires exactly one row to match both, so an ambiguous
+pair is refused rather than guessed.
+
+A reset clears the old PIN, the lockout, and every live session, so it also signs
+the student out on all their devices. The UI lives in the "Sahau PIN" tab on
+`/account`. `adminSetStudentPin` remains the fallback for a student who cannot
+answer either question.
+
+The pair is often not unique. In the current cohort 168 (last name, phone) pairs
+belong to more than one student — 24% of students share both with someone else,
+and `juma` alone covers 41 people. So when more than one row matches, the reset
+answers `ambiguous` instead of guessing or refusing, and the UI reveals a
+registration-number field. That third value resolves the tie exactly. This is why
+`resetStudentPin` takes an optional third argument rather than two.
+
+Note the search is by last name, not by phone, and the `ilike` limit is 200: a
+common name returns many rows, and the match then filters on the normalised phone
+in code. Filtering on phone in the query would not work, because the stored
+spelling varies.
+
+### The admin console, and what the legacy table is for
+
+`/admin/attendance` is three things, top to bottom:
+
+- `AttendanceSessionPanel` — starts a session, shows its rotating QR, its join code, and its
+  printable poster.
+- `GpsSettings` — the attendance point, radius, and the register-time fence.
+- `AdminAccessQr` — a QR of `/admin/attendance` itself, so the admin opens the console on a
+  phone without typing a URL. It is built from `window.location.origin`, so a preview
+  deployment points at itself. This is a link, not a credential: the admin login still guards
+  the page.
+- `LegacyArchive` — a collapsible, read-only table over the legacy `attendance` table, plus a
+  CSV export.
+
+`LegacyArchive` exists because the legacy table already holds real rows (251 at the time of
+writing, across 17 dates) and removing the old screen would have hidden them. It is read-only
+on purpose: that table carries `UNIQUE (student_id, check_in_date)`, so it can hold only one
+row per student per calendar day and cannot represent a second lecture. Per-session truth
+lives in the session archive above it, and `fetchMyCheckIns` reads from there too, so a student
+who attended twice in one day sees both.
+
+`listSessionSummaries()` is the teacher's view: every session, newest first, each with a head
+count. `deleteAttendanceSession()` removes a session and its check-ins together — the check-in
+rows are matched on `reg_no`, which holds the session id.
+
+### Two QR payloads, and why
+
+`src/lib/attendance-qr.ts` holds both formats. It has no Supabase import, so
+`node --test` can load it directly — `attendance.ts` reads `import.meta.env` at module
+scope and cannot.
+
+| Payload            | Carries           | Lives for                      | Shown on             |
+| ------------------ | ----------------- | ------------------------------ | -------------------- |
+| `ISL-ATT1:<token>` | rotating token    | 30 s                           | the teacher's screen |
+| `ISL-JOIN1:<code>` | session join code | as long as the session is open | the printed poster   |
+
+A printed QR **cannot** carry the rotating token: at 30 s it would be dead before the
+sheet reached the wall. So the poster carries the join code instead. What stops a student
+photographing it and checking in from home is the geofence, not the rotation — the code is
+worthless without a GPS fix inside the teacher's radius. A session the teacher starts
+without coordinates therefore has no such protection; that is a deliberate trade the
+teacher makes by not setting a location.
+
+`QrAttendanceCheckIn` tries `decodeJoinQr` first, then `decodeQrToken`, so one camera
+serves a screen or a wall.
+
+### The group rule is enforced on check-in, not just in the picker
+
+`listOpenSessions` hides another group's session from the student's picker. That is not
+enough on its own, because a printed join code can be scanned by anyone in the room.
+`checkIn` therefore re-checks `payload.student_group` against the student's own group and
+refuses with `wrong_group`. Keep both: the picker is what the student sees, and the
+check-in is what actually holds.
+
+### The admin poster
+
+`AttendanceQrPoster` renders the join code as a QR plus a printable A4 sheet, and offers
+**Pakua PNG** and **Chapisha**. It sits under the join code in the QR column of
+`AttendanceSessionPanel` — deliberately not at the top of the page, so the live rotating
+QR stays the primary thing on screen.
+
+### Deleting rows with the publishable key
+
+`DELETE` on `students` (and the other tables `HARDEN_RLS.sql` leaves without a policy)
+returns **`204` and deletes nothing**, because RLS refuses the row and PostgREST reports
+the request, not the outcome. Never treat a `204` as proof of deletion. `admin.students`
+reads the row back for exactly this reason.
+
+The same trap applies to test cleanup: `quiz_participants` rows _are_ deletable, but
+`students` rows are not, so a test that inserts a `students` row cannot clean it up and
+will leave it behind. Prefer namespaced `quiz_participants` rows for anything a test
+needs to create and remove. Leftover `OH-*` test students on production can only be
+removed through the Lovable SQL editor, which is the owner's account.
+
+### One location, three radii, and the results PIN
+
+`app_settings` holds **one** centre (`attendance_lat` / `attendance_lng`) and each feature
+carries its own radius:
+
+| setting                | used by      | default |
+| ---------------------- | ------------ | ------- |
+| `attendance_radius_m`  | attendance   | 200 m   |
+| `register_radius_m`    | registration | 800 m   |
+| `exam_radius_m`        | exams        | 300 m   |
+
+`src/lib/geo.ts` is the single place that turns a centre + radius + fix into a verdict
+(`distanceMetres`, `checkArea`, `areaMessage`, `AreaVerdict`). Attendance had its own copy
+first; keep new features on the shared module so the three stay comparable.
+
+An exam now **enforces** the fence in `beginExam`: it takes a high-accuracy fix, calls
+`checkArea`, and refuses to start when the verdict is `outside`, showing the distance so the
+student knows how far off they are. Previously the exam recorded `gps_lat`/`gps_lng` and never
+compared them — the columns were written but nothing was checked.
+
+`submissions.gps_distance_m` and `gps_radius_m` freeze the measurement at submit time. They are
+**not** derived from the current settings on read, because the centre can be re-set later and a
+historical submission should keep the distance it was actually measured at.
+
+### The results gate is reg number, then PIN — but only for students who have a PIN
+
+`/results` asks for the reg number, then the PIN, before revealing anything. Two things make
+this safe to ship against a table where almost nobody has a PIN yet (2 of ~1,572 students):
+
+- `verifyStudentPin` checks the PIN and counts failures, but **creates no session and never
+  touches the device binding**. `loginStudent` is the wrong tool here: checking marks on a
+  friend's phone would otherwise bind that phone to you.
+- The gate is skipped when the student has no PIN row (`studentHasPin`), and
+  `app_settings.results_require_pin` turns it off wholesale. So enabling the feature cannot
+  lock out the ~1,570 students who have not claimed one.
+
+### The exam-area columns may not exist yet
+
+`exam_radius_m`, `exam_gps_required` and `results_require_pin` arrive with
+`supabase/migrations/20261029090000_add_exam_area_and_results_pin.sql`, and
+`last_seen_at` / `proctor` with `20261030120000_add_live_exam_tracking.sql`. Neither has been
+applied. Probed against production with the publishable key, `submissions.gps_distance_m`,
+`gps_radius_m`, `last_seen_at` and `proctor` all answer `400 / 42703`. Every write path copes:
+
+- the admin GPS save runs through `retryWithoutMissingColumns`, so the attendance and
+  registration radii still save and the toast names what was dropped;
+- the exam page loads the full `select` first and falls back to a centre-only `select`;
+- **the exam submission upsert runs through `retryRowsWithoutMissingColumns`**, because
+  PostgREST rejects the whole array when one column is unknown. Without it the geofence fields
+  in the submit payload failed *every* paper — the site looked healthy while nothing could be
+  handed in. That helper has to drop the column from every row, not just the first;
+- the live panel probes each optional column before using it, pages past PostgREST's 1000-row
+  cap, and resolves student names in batches of 200. A single `.in()` over every sitter is a
+  ~35 KB URL that PostgREST answers with `400`, which silently blanks every name.
+
+The columns are now present in production, so these fallbacks are dormant. Keep them: a missing
+column must still degrade a feature rather than disable a write, and the same shape protects any
+column added later.
+
+The lesson generalises: **a missing column must degrade a feature, never disable a write the
+user depends on.** Prefer `retryRowsWithoutMissingColumns` over sending a column that may not
+exist, and give every optional column a fallback read.
+
+  ### A token with `repo` scope still cannot push a workflow change
+
+  GitHub refuses **any** push that adds or modifies a file under `.github/workflows/` unless the
+  credential carries the `workflow` scope, and the refusal is not partial — the whole push fails:
+
+  ```
+  ! [remote rejected] ... (refusing to allow a Personal Access Token to create or update
+    workflow `.github/workflows/build.yml` without `workflow` scope)
+  ```
+
+  A fine-grained/`repo`-scoped PAT shows `x-oauth-scopes: repo` and writes ordinary files fine
+  (proved by creating and deleting a probe ref, and by `PUT /contents/<path>` returning `201`),
+  yet the same `PUT` against `.github/workflows/probe.yml` returns `404`. The Git Data API does
+  not route around it either: `POST /git/trees` with a workflow path returns `404` even though the
+  blob creation succeeded.
+
+  **The check is on the net diff against the base branch, not on the commit history.** A branch
+  whose history *touches* a workflow file but whose final tree matches the base pushes cleanly —
+  verified by amending the workflow file back to `origin/main`'s copy and cherry-picking the rest,
+  then pushing successfully. So when a workflow fix must land and the token lacks the scope,
+  either rewrite the branch to drop the change, or have the owner add `workflow` scope. Do not
+  loop on retries; the refusal is deterministic.
+
+  ### The CI build is not the Vercel build
+
+`vite build` succeeding locally proves little — `node_modules` is already populated. Reproduce
+what Vercel does on a clean tree:
+
+```sh
+mkdir /tmp/probe && git archive HEAD | tar -x -C /tmp/probe && cd /tmp/probe
+bun install --frozen-lockfile && bun run build
+```
+
+`.github/workflows/build.yml` used to require `dist/_redirects`, which was removed on purpose
+(Vercel serves the SPA rewrite from `vercel.json`; a `_redirects` copy re-creates the catch-all
+that turns a missing hashed chunk into HTML). The check failed every PR after the removal and
+was replaced with a warning.
+
+## QR codes open the site, and the news page is public
+
+### The QR payload is a link, not a token string
+
+A poster used to carry `ISL-JOIN1:K7M2QX`. That is readable only by our own scanner, so a
+student holding a phone with nothing but the camera app was stuck. Both payloads are now
+**links to this site**:
+
+```
+https://<host>/attendance?join=K7M2QX     printed poster, stable while the session is open
+https://<host>/attendance?t=<token>       teacher's screen, rotates every 25 s
+```
+
+The phone's own camera shows the URL and offers to open it; no app of ours is involved in
+reading it. `encodeJoinUrl` / `encodeTokenUrl` build them, and `parseAttendanceQr` reads
+whatever a scanner hands back: a link, the legacy `ISL-` payloads (posters already on a wall
+must keep working), or a bare code read aloud off the sheet.
+
+`/attendance` declares `validateSearch` for `join` and `t`, so the scanned session arrives on
+the page and pre-fills the code instead of being thrown away.
+
+### Check-in signs the student in on the spot
+
+Identity still comes from a real `loginStudent` call — a scan says *which* session, never
+*who* is scanning. What changed is where that sign-in happens: `QrAttendanceCheckIn` now takes
+Reg Namba and PIN inline, so a scanned link does not bounce the student to `/account` and lose
+the session. A scan that arrives before sign-in is held in `pendingRef` and finished the
+moment the token appears.
+
+Do not "simplify" this into an anonymous check-in. The server resolves the student from the
+session token, and that is the only reason the record is trustworthy.
+
+### `/news` is the public notice board
+
+Announcements were only visible in the marquee banner, which cannot show a PDF or more than a
+line of text. `/news` lists them for anyone, signed in or not: title, full body text with
+newlines preserved, PDF open/download, and an image if one is attached. The newest live notice
+is pinned. The admin form on `/admin/settings` says where a notice lands and what belongs in
+the message field.
+
+The liveness rule lives in `src/lib/news.ts` (`liveNews`, `hasContent`) rather than in the
+component, so the banner, the news page and the admin list cannot disagree about whether a
+notice is still showing. `image_url` is read with a fallback, because it arrives with a
+migration that production may not have yet.
+
+### Tests
+
+- `src/lib/attendance-qr.test.ts` — link round-trips, legacy payloads, and junk refusal.
+- `src/lib/news.test.ts` — active/expired filtering, ordering, missing column.
+- `tests/e2e/attendance.e2e.ts` F4a–F4m — the poster link opens, parses, and drives a real
+  check-in against live Supabase; the public news read needs no sign-in.

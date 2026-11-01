@@ -19,7 +19,7 @@ import { getDeviceId } from "@/lib/device-id";
 import { gradeShortAnswer, explainAnswer } from "@/lib/grading.functions";
 import { toast } from "@/lib/toast";
 import SignatureCanvas from "react-signature-canvas";
-import { Camera, MapPin, Mic, Clock, Eye, FileDown, Printer } from "lucide-react";
+import { Camera, MapPin, Mic, Clock, Eye, FileDown, Printer, MonitorSmartphone } from "lucide-react";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import {
   Dialog,
@@ -31,6 +31,30 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Users } from "lucide-react";
 import { formatAcademicSummary } from "@/lib/academicTargeting";
+import { areaMessage, checkArea, type AreaVerdict } from "@/lib/geo";
+import { ExamAnswerField } from "@/components/ExamAnswerField";
+import { answerRatio, isAutoGraded } from "@/lib/examQuestions";
+import { retryRowsWithoutMissingColumns } from "@/lib/schema-retry";
+import {
+  assessGpsSamples,
+  enterFullscreen,
+  exitFullscreen,
+  gpsFlagLabel,
+  isFullscreen,
+  isFullscreenSupported,
+  judgeFrame,
+  monitorCamera,
+  onFullscreenChange,
+  type CameraVerdict,
+  type GpsSample,
+} from "@/lib/proctoring";
+import { touchSubmission } from "@/lib/liveExamsApi";
+import {
+  ExamStepper,
+  ExamProgress,
+  QuestionPalette,
+  type ExamStep,
+} from "@/components/ExamStepper";
 
 export const Route = createFileRoute("/exam/$examId")({
   component: ExamPage,
@@ -52,6 +76,13 @@ function ExamPage() {
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [gps, setGps] = useState<{ lat?: number; lng?: number }>({});
+  const [area, setArea] = useState<{
+    lat: number | null;
+    lng: number | null;
+    radiusM: number;
+  } | null>(null);
+  const [areaVerdict, setAreaVerdict] = useState<AreaVerdict | null>(null);
+  const [examGpsRequired, setExamGpsRequired] = useState(true);
   const [camOk, setCamOk] = useState(false);
   const [audioOk, setAudioOk] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -69,6 +100,14 @@ function ExamPage() {
   const [forgottenQ, setForgottenQ] = useState("");
   const [forgottenResults, setForgottenResults] = useState<any[]>([]);
   const [searchingForgotten, setSearchingForgotten] = useState(false);
+  // Integrity state. `fsLost` counts how many times the student left fullscreen;
+  // it is reported to the teacher rather than blocking the exam, because a phone
+  // call or a notification legitimately drops fullscreen for a moment.
+  const [fsLost, setFsLost] = useState(0);
+  const [camVerdict, setCamVerdict] = useState<CameraVerdict | null>(null);
+  const [gpsFlags, setGpsFlags] = useState<string[]>([]);
+  const [submissionId, setSubmissionId] = useState<string | null>(null);
+  const [gpsLive, setGpsLive] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -97,6 +136,41 @@ function ExamPage() {
       }
       setExam(e);
       setTimeLeft(e.duration_minutes * 60);
+
+      // Eneo la chuo: kituo kimoja, umbali wa mtihani. Safu za eneo la mtihani
+      // huenda hazipo bado kwenye hifadhidata, kwa hivyo zikikataliwa tunarudi kwenye
+      // kituo pekee (kinachojulikana kuwepo) na umbali wa kawaida. Mtihani hauvunjiki,
+      // na geofence inaanza kufanya kazi mara kituo kinapowekwa.
+      const loadArea = async () => {
+        const full = await supabase
+          .from("app_settings")
+          .select("attendance_lat,attendance_lng,exam_radius_m,exam_gps_required")
+          .eq("id", 1)
+          .maybeSingle();
+        if (!full.error && full.data) return full.data as Record<string, unknown>;
+        const lean = await supabase
+          .from("app_settings")
+          .select("attendance_lat,attendance_lng")
+          .eq("id", 1)
+          .maybeSingle();
+        return (lean.data as Record<string, unknown> | null) ?? null;
+      };
+
+      try {
+        const row = await loadArea();
+        if (row) {
+          setArea({
+            lat: (row.attendance_lat as number | null) ?? null,
+            lng: (row.attendance_lng as number | null) ?? null,
+            radiusM: Number(row.exam_radius_m) || 300,
+          });
+          // Only an explicit `false` turns the fence off. `exam_gps_required`
+          // arrives with a migration production has not applied, so the key is
+          // simply absent there — treating that as "off" is what let a student
+          // start an exam from anywhere. Absent means the safe default.
+          setExamGpsRequired(row.exam_gps_required !== false);
+        }
+      } catch {}
       const { data: qs } = await supabase
         .from("questions")
         .select("*")
@@ -242,7 +316,91 @@ function ExamPage() {
     };
   }, [started]);
 
-  // Fullscreen imetolewa kwa ombi la mtumiaji — mfumo si fullscreen tena.
+  // Fullscreen: entered when the exam starts and re-entered when the student comes
+  // back to the tab. Every exit is counted, and the count travels with the
+  // submission so the teacher can see it. iPhone Safari will not grant fullscreen
+  // to a normal page, so a refusal is not treated as a failure.
+  useEffect(() => {
+    if (!started) return;
+    let wasFull = isFullscreen();
+    void enterFullscreen();
+    const off = onFullscreenChange(() => {
+      const now = isFullscreen();
+      if (wasFull && !now) setFsLost((n) => n + 1);
+      wasFull = now;
+    });
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void enterFullscreen();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      off();
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [started]);
+
+  // Attach the live stream to the preview once the element exists. The start
+  // handler cannot do this: it runs before the <video> is rendered, so the ref is
+  // still null there and the preview stayed black for the whole exam.
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !streamRef.current) return;
+    if (el.srcObject !== streamRef.current) el.srcObject = streamRef.current;
+    void el.play().catch(() => {});
+  }, [camOk, started]);
+
+  // Camera presence: a covered lens and a scene that never changes are the two
+  // signals worth reporting. The verdict is shown to the student immediately so
+  // it reads as a reminder, not a trap.
+  useEffect(() => {
+    if (!started || !camOk || !streamRef.current) return;
+    const stop = monitorCamera(streamRef.current, {
+      intervalMs: 5000,
+      window: 2,
+      onVerdict: (verdict) => setCamVerdict(verdict),
+    });
+    return stop;
+  }, [started, camOk]);
+
+  // GPS, kept fresh: one fix at the start proves where the student was then, not
+  // where they are now. Samples accumulate so the teacher can see the spread.
+  useEffect(() => {
+    if (!started) return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    const samples: GpsSample[] = [];
+    const read = () =>
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          samples.push({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy ?? 999,
+            at: Date.now(),
+          });
+          if (samples.length > 8) samples.shift();
+          setGpsLive({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy ?? 0,
+          });
+          const assessment = assessGpsSamples(samples);
+          if (assessment) setGpsFlags(assessment.flags.map(gpsFlagLabel));
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
+      );
+    read();
+    const timer = setInterval(read, 45000);
+    return () => clearInterval(timer);
+  }, [started]);
+
+  // Heartbeat: tells the teacher's live panel this browser is still on the page.
+  useEffect(() => {
+    if (!started || !submissionId) return;
+    void touchSubmission(submissionId);
+    const timer = setInterval(() => void touchSubmission(submissionId), 30000);
+    return () => clearInterval(timer);
+  }, [started, submissionId]);
 
   const beginExam = async () => {
     // Zuia kufanya mtihani mara mbili (kwa reg_no AU full_name)
@@ -282,15 +440,93 @@ function ExamPage() {
       }
     } catch {}
 
-    if (exam.require_gps) {
-      try {
-        const pos = await new Promise<GeolocationPosition>((res, rej) =>
-          navigator.geolocation.getCurrentPosition(res, rej, { timeout: 10000 }),
+    // GPS: chukua mahali, kisha linganisha na eneo la mwalimu. Kama mwanafunzi
+    // yuko nje ya umbali, mtihani hauanzi — ndiyo kazi ya "Eneo langu".
+    if (exam.require_gps || (area && area.lat != null)) {
+      // Three independent fixes, not one. A single reading can be a cached or a
+      // spoofed value; a real receiver jitters by a metre or two between reads,
+      // so the spread and the reported accuracy tell the two apart. See
+      // `assessGpsSamples`.
+      const samples: GpsSample[] = [];
+      const takeFix = (highAccuracy: boolean) =>
+        new Promise<GpsSample | null>((resolve) => {
+          if (typeof navigator === "undefined" || !navigator.geolocation) {
+            resolve(null);
+            return;
+          }
+          navigator.geolocation.getCurrentPosition(
+            (pos) =>
+              resolve({
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                accuracy: pos.coords.accuracy ?? 999,
+                at: Date.now(),
+              }),
+            () => resolve(null),
+            { enableHighAccuracy: highAccuracy, timeout: 15000, maximumAge: 0 },
+          );
+        });
+
+      // Three fixes at once, not one after another: the old 700 ms gap added a
+      // second and a half to every start and told us nothing extra.
+      samples.push(
+        ...(await Promise.all([takeFix(true), takeFix(true), takeFix(true)])).filter(
+          (x): x is GpsSample => !!x,
+        ),
+      );
+      // A classroom often yields nothing from the GPS chip but a usable network
+      // fix. Falling back keeps a covered room examinable; the reading is coarser
+      // and its accuracy says so.
+      if (samples.length === 0) {
+        samples.push(
+          ...(await Promise.all([takeFix(false), takeFix(false)])).filter(
+            (x): x is GpsSample => !!x,
+          ),
         );
-        setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-      } catch {
-        toast.error("Lazima uruhusu GPS kuendelea");
-        return;
+      }
+
+      const assessment = assessGpsSamples(samples);
+      if (assessment) {
+        setGps({ lat: assessment.best.lat, lng: assessment.best.lng });
+        setGpsLive({
+          lat: assessment.best.lat,
+          lng: assessment.best.lng,
+          accuracy: assessment.best.accuracy,
+        });
+        setGpsFlags(assessment.flags.map(gpsFlagLabel));
+      }
+
+      if (!assessment || !assessment.usable) {
+        // The fence only stops a student when there is a centre to measure from AND
+        // the teacher asked for GPS. Otherwise a missing fix is a flag, not a locked
+        // door: refusing here is how "washa mtihani" became a dead button on a phone
+        // whose location was switched off.
+        if (examGpsRequired && area && area.lat != null) {
+          setAreaVerdict({ status: "missing_fix" });
+          toast.error(
+            assessment?.flags.includes("too_vague")
+              ? "GPS yako ni hafifu mno. Toka nje kidogo au washa GPS sahihi."
+              : "Ruhusu GPS (location) ili mfumo upime eneo lako, kisha ujaribu tena.",
+          );
+          return;
+        }
+        setGpsFlags((f) =>
+          f.includes("hakuna kipimo cha GPS") ? f : [...f, "hakuna kipimo cha GPS"],
+        );
+      } else if (area && area.lat != null && area.lng != null) {
+        const verdict = checkArea(area, {
+          lat: assessment.best.lat,
+          lng: assessment.best.lng,
+          accuracy: assessment.best.accuracy,
+        });
+        setAreaVerdict(verdict);
+        if (verdict.status === "outside") {
+          toast.error(areaMessage(verdict));
+          return;
+        }
+        if (verdict.status === "near_edge") {
+          setGpsFlags((f) => (f.includes("mpakani wa eneo") ? f : [...f, "mpakani wa eneo"]));
+        }
       }
     }
     if (exam.require_camera || exam.require_audio) {
@@ -300,15 +536,59 @@ function ExamPage() {
           audio: exam.require_audio,
         });
         streamRef.current = stream;
-        if (videoRef.current && exam.require_camera) videoRef.current.srcObject = stream;
         setCamOk(exam.require_camera);
         setAudioOk(exam.require_audio);
-      } catch {
-        toast.error("Lazima uruhusu kamera/sauti kuendelea");
+      } catch (err) {
+        // Name the permission that failed and what to do about it. The old single
+        // sentence left a student with a blocked camera and a permanently dead start
+        // button, with no idea which of the two to unblock.
+        const name = (err as { name?: string })?.name ?? "";
+        if (name === "NotAllowedError" || name === "SecurityError") {
+          toast.error(
+            exam.require_camera && exam.require_audio
+              ? "Kamera na sauti zimezuiwa. Fungua lock ya kizindua (address bar) na ruhusu Kamera na Maikrofoni, kisha ujaribu tena."
+              : exam.require_camera
+                ? "Kamera imezuiwa. Fungua lock ya kizindua na ruhusu Kamera, kisha ujaribu tena."
+                : "Maikrofoni imezuiwa. Fungua lock ya kizindua na ruhusu Maikrofoni, kisha ujaribu tena.",
+          );
+        } else if (name === "NotFoundError" || name === "OverconstrainedError") {
+          toast.error("Hakuna kamera/maikrofoni iliyopatikana kwenye kifaa hiki.");
+        } else if (name === "NotReadableError") {
+          toast.error("Kamera inatumiwa na app nyingine. Funga app nyingine, kisha ujaribu tena.");
+        } else {
+          toast.error("Imeshindwa kufungua kamera/sauti. Jaribu tena.");
+        }
         return;
       }
     }
     startedAtRef.current = new Date();
+
+    // Create the row now, not at submit. The teacher's live panel reads
+    // "started but not submitted", so without this the student stays invisible
+    // until the moment they finish. A failure here is ignored: losing live
+    // tracking must never stop an exam.
+    try {
+      const { data: created } = await supabase
+        .from("submissions")
+        .upsert(
+          {
+            exam_id: examId,
+            student_id: student.id,
+            reg_no: student.reg_no,
+            answers: {},
+            started_at: startedAtRef.current.toISOString(),
+            submitted_at: null,
+            device_id: getDeviceId(),
+          },
+          { onConflict: "exam_id,student_id" },
+        )
+        .select("id")
+        .maybeSingle();
+      if (created?.id) setSubmissionId(created.id as string);
+    } catch {
+      /* live tracking is optional */
+    }
+
     setStarted(true);
   };
 
@@ -361,22 +641,10 @@ function ExamPage() {
       questions.map(async (q: any) => {
         maxScore += Number(q.points);
         const ans = filledAnswers[q.id];
-        if (
-          q.question_type === "true_false" ||
-          q.question_type === "multiple_choice" ||
-          q.question_type === "matching"
-        ) {
-          let ratio = 0;
-          if (q.question_type === "matching") {
-            const correct = (q.correct_answer || {}) as Record<string, string>;
-            const given = (ans as Record<string, string>) || {};
-            const keys = Object.keys(correct);
-            ratio = keys.length
-              ? keys.filter((k) => given[k] === correct[k]).length / keys.length
-              : 0;
-          } else {
-            ratio = String(ans) === String(q.correct_answer) ? 1 : 0;
-          }
+        if (isAutoGraded(q.question_type)) {
+          // One helper decides partial credit for every machine-marked type, so
+          // the builder, the student's page and the marker cannot drift apart.
+          const ratio = answerRatio(q, ans);
           autoScore += ratio * Number(q.points);
           const isCorrect = ratio === 1;
           const reason = await explainAnswer({
@@ -477,18 +745,37 @@ function ExamPage() {
       ai_confirmed: true,
       signature_data: sigData,
       gps_lat: gps.lat,
+      gps_distance_m: areaVerdict && "distanceM" in areaVerdict ? areaVerdict.distanceM : null,
+      gps_radius_m: area && area.lat != null ? area.radiusM : null,
       gps_lng: gps.lng,
       device_id: getDeviceId(),
       started_at: startedAtRef.current.toISOString(),
       submitted_at: new Date().toISOString(),
+      // Integrity signals travel with the submission, so a teacher reviewing it
+      // later sees the same picture the student saw while writing.
+      proctor: {
+        fullscreen_exits: fsLost,
+        camera: camVerdict,
+        gps_flags: gpsFlags,
+      },
     }));
-    const { error } = await supabase
-      .from("submissions")
-      .upsert(rows, { onConflict: "exam_id,student_id" });
+    // The columns the geofence writes (`gps_distance_m`, `gps_radius_m`) and the
+    // proctor blob come from migrations that may not have been applied to
+    // production. PostgREST refuses the whole array when one is unknown, which
+    // would fail *every* submission, so the unknown column is dropped and the
+    // write retried. A missing distance costs the teacher one detail; a missing
+    // column must never cost the student their paper.
+    const { last, dropped } = await retryRowsWithoutMissingColumns(rows, (body) =>
+      supabase.from("submissions").upsert(body as never, { onConflict: "exam_id,student_id" }),
+    );
+    const error = last.error;
+    if (dropped.length) {
+      console.warn("Submission saved without columns the database does not have:", dropped.join(", "));
+    }
     streamRef.current?.getTracks().forEach((t) => t.stop());
     setSubmitting(false);
     if (error) {
-      toast.error(error.message);
+      toast.error((error as Error).message);
       return;
     }
     try {
@@ -586,41 +873,98 @@ function ExamPage() {
     return <div className="min-h-screen flex items-center justify-center">Inapakia...</div>;
 
   if (!started) {
+    const steps: ExamStep[] = [
+      {
+        key: "identity",
+        label: "Tambua mwanafunzi",
+        hint: student ? `${student.full_name} · ${student.reg_no}` : "Inatafuta taarifa zako…",
+        state: student ? "done" : "busy",
+      },
+    ];
+    if (exam.require_gps || (area && area.lat != null))
+      steps.push({
+        key: "gps",
+        label: "Ruhusu mahali (GPS)",
+        hint:
+          areaVerdict && areaVerdict.status !== "no_fence"
+            ? areaMessage(areaVerdict)
+            : "Mfumo unahitaji kujua uko darasani wakati wa mtihani.",
+        state: gps.lat ? "done" : "active",
+      });
+    if (exam.require_camera)
+      steps.push({
+        key: "camera",
+        label: "Ruhusu kamera",
+        hint: "Kamera inasaidia kuthibitisha uko peke yako.",
+        state: camOk ? "done" : "active",
+      });
+    if (exam.require_audio)
+      steps.push({
+        key: "audio",
+        label: "Ruhusu sauti",
+        hint: "Sauti inasaidia kuthibitisha mazingira ya mtihani.",
+        state: audioOk ? "done" : "active",
+      });
+    steps.push({
+      key: "start",
+      label: "Anza mtihani",
+      hint: `${exam.duration_minutes} dakika · maswali ${questions.length}`,
+      state: "todo",
+    });
+
+    const blockers = steps.filter((s) => s.state !== "done" && s.key !== "start").length;
+
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/10">
         <SiteHeader />
-        <main className="container mx-auto px-4 py-8 max-w-2xl">
-          <Card>
-            <CardHeader>
-              <CardTitle>{exam.title}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p>{exam.description}</p>
-              <div className="text-sm space-y-2">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4" /> Muda: {exam.duration_minutes} dakika
-                </div>
-                <div className="text-amber-600 text-xs">
-                  ⚠️ Copy, Paste na Right-click vimezuiwa wakati wa mtihani.
-                </div>
+        <main className="container mx-auto max-w-3xl space-y-5 px-4 py-8">
+          <div className="relative overflow-hidden rounded-3xl border-2 border-primary/25 bg-gradient-to-br from-primary/12 via-card to-secondary/15 p-6 shadow-lg">
+            <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-primary/15 blur-3xl" />
+            <div className="relative">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-primary">
+                Islamic Studies Test Online
+              </span>
+              <h1 className="mt-3 text-2xl font-black tracking-tight md:text-3xl">{exam.title}</h1>
+              {exam.description && (
+                <p className="mt-1 text-sm text-muted-foreground">{exam.description}</p>
+              )}
+              <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                <span className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-background/70 px-2.5 py-1.5 font-semibold">
+                  <Clock className="h-3.5 w-3.5 text-primary" /> {exam.duration_minutes} dakika
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-background/70 px-2.5 py-1.5 font-semibold">
+                  Maswali {questions.length}
+                </span>
                 {exam.require_camera && (
-                  <div className="flex items-center gap-2">
-                    <Camera className="h-4 w-4" /> Kamera itaruhusiwa
-                  </div>
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-background/70 px-2.5 py-1.5 font-semibold">
+                    <Camera className="h-3.5 w-3.5 text-primary" /> Kamera
+                  </span>
                 )}
                 {exam.require_gps && (
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4" /> GPS itaruhusiwa
-                  </div>
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-background/70 px-2.5 py-1.5 font-semibold">
+                    <MapPin className="h-3.5 w-3.5 text-primary" /> GPS
+                  </span>
                 )}
                 {exam.require_audio && (
-                  <div className="flex items-center gap-2">
-                    <Mic className="h-4 w-4" /> Sauti itaruhusiwa
-                  </div>
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-background/70 px-2.5 py-1.5 font-semibold">
+                    <Mic className="h-3.5 w-3.5 text-primary" /> Sauti
+                  </span>
                 )}
               </div>
-              <Button onClick={beginExam} className="w-full">
-                Anza Mtihani
+            </div>
+          </div>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Hatua za Kuanza</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <ExamStepper steps={steps} />
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700">
+                ⚠️ Copy, Paste na Right-click vimezuiwa wakati wa mtihani.
+              </div>
+              <Button onClick={beginExam} className="w-full" size="lg">
+                {blockers > 0 ? "Anza Mtihani (Ruhusu kwanza)" : "Anza Mtihani"}
               </Button>
             </CardContent>
           </Card>
@@ -631,6 +975,14 @@ function ExamPage() {
 
   const mm = String(Math.floor(timeLeft / 60)).padStart(2, "0");
   const ss = String(timeLeft % 60).padStart(2, "0");
+
+  const isAnswered = (a: any) => {
+    if (a === undefined || a === null || a === "") return false;
+    if (typeof a === "object") return Object.keys(a).length > 0;
+    return true;
+  };
+  const answeredCount = questions.filter((q) => isAnswered(answers[q.id])).length;
+  const unansweredCount = questions.length - answeredCount;
 
   return (
     <div
@@ -646,15 +998,75 @@ function ExamPage() {
         </span>
       </div>
       {camOk && (
-        <video
-          ref={videoRef}
-          autoPlay
-          muted
-          playsInline
-          className="fixed bottom-4 right-4 w-32 h-24 rounded border-2 border-primary z-50 bg-black"
-        />
+        <div className="fixed bottom-4 right-4 z-50 space-y-1">
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            playsInline
+            className={`h-24 w-32 rounded-lg border-2 bg-black object-cover ${
+              camVerdict === "covered" ? "border-destructive" : "border-primary"
+            }`}
+          />
+          {camVerdict === "covered" && (
+            <p className="max-w-[8rem] rounded bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-destructive-foreground">
+              Kamera imezibwa
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Integrity strip: what the proctoring sees, in the student's own view, so
+          a warning is never a surprise at the end. */}
+      {started && (
+        <div className="flex flex-wrap items-center justify-center gap-2 border-b border-border/60 bg-card/70 px-3 py-1.5 text-[11px]">
+          <span
+            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold ${
+              isFullscreenSupported() && !isFullscreen()
+                ? "bg-amber-500/15 text-amber-700"
+                : "bg-emerald-500/15 text-emerald-700"
+            }`}
+          >
+            <MonitorSmartphone className="h-3 w-3" />
+            {isFullscreenSupported() && !isFullscreen()
+              ? "Umetoka fullscreen"
+              : "Fullscreen"}
+          </span>
+          {fsLost > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 font-semibold text-amber-700">
+              Umetoka mara {fsLost}
+            </span>
+          )}
+          {gpsLive && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 font-medium text-muted-foreground">
+              <MapPin className="h-3 w-3" /> ±{Math.round(gpsLive.accuracy)} m
+            </span>
+          )}
+          {gpsFlags.map((f) => (
+            <span
+              key={f}
+              className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 font-semibold text-amber-700"
+            >
+              {f}
+            </span>
+          ))}
+        </div>
       )}
       <main className="container mx-auto px-4 py-6 max-w-3xl space-y-4">
+        {!isAssignment && questions.length > 0 && (
+          <div className="sticky top-12 z-30 space-y-3 rounded-2xl border border-primary/20 bg-card/90 p-4 backdrop-blur">
+            <ExamProgress answered={answeredCount} total={questions.length} />
+            <QuestionPalette
+              items={questions.map((q) => ({ id: q.id, answered: isAnswered(answers[q.id]) }))}
+              onJump={(id) =>
+                document.getElementById(`q-${id}`)?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                })
+              }
+            />
+          </div>
+        )}
         {isAssignment && (
           <div className="rounded-xl border-2 border-secondary/50 bg-gradient-to-br from-secondary/10 to-primary/5 p-4">
             <div className="text-xs font-semibold uppercase tracking-wide text-secondary-foreground/80">
@@ -778,7 +1190,7 @@ function ExamPage() {
           </Card>
         )}
         {questions.map((q, i) => (
-          <Card key={q.id}>
+          <Card key={q.id} id={`q-${q.id}`} className="scroll-mt-32">
             <CardHeader>
               <CardTitle className="text-base">
                 {isAssignment ? "Swali la Assignment" : `Swali ${i + 1}`} ({q.points} alama)
@@ -788,79 +1200,20 @@ function ExamPage() {
               <p className={isAssignment ? "mb-4 font-semibold text-base" : "mb-3 font-medium"}>
                 {q.body}
               </p>
-              {q.question_type === "true_false" && (
-                <RadioGroup value={answers[q.id] || ""} onValueChange={(v) => setAns(q.id, v)}>
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem value="true" id={q.id + "t"} />
-                    <Label htmlFor={q.id + "t"}>Kweli</Label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem value="false" id={q.id + "f"} />
-                    <Label htmlFor={q.id + "f"}>Sikweli</Label>
-                  </div>
-                </RadioGroup>
-              )}
-              {q.question_type === "multiple_choice" && (
-                <RadioGroup value={answers[q.id] || ""} onValueChange={(v) => setAns(q.id, v)}>
-                  {((q.options as string[]) || []).map((opt, j) => (
-                    <div key={j} className="flex items-center gap-2">
-                      <RadioGroupItem value={opt} id={q.id + j} />
-                      <Label htmlFor={q.id + j}>{opt}</Label>
-                    </div>
-                  ))}
-                </RadioGroup>
-              )}
-              {q.question_type === "short_answer" &&
-                (isAssignment ? (
-                  <RichTextEditor
-                    value={answers[q.id] || ""}
-                    onChange={(html) => setAns(q.id, html)}
-                    placeholder="Andika kazi yako ya assignment hapa kwa undani…"
-                    minHeight={400}
-                  />
-                ) : (
-                  <Textarea
-                    value={answers[q.id] || ""}
-                    onChange={(e) => setAns(q.id, e.target.value)}
-                    onPaste={(e) => {
-                      e.preventDefault();
-                      toast.error("Paste hairuhusiwi");
-                    }}
-                    onCopy={(e) => e.preventDefault()}
-                    placeholder="Andika jibu lako..."
-                    style={{ userSelect: "text" }}
-                  />
-                ))}
-              {q.question_type === "matching" && (
-                <div className="space-y-2">
-                  {Object.keys((q.correct_answer as Record<string, string>) || {}).map((key) => {
-                    const values = Object.values(
-                      (q.correct_answer as Record<string, string>) || {},
-                    );
-                    return (
-                      <div key={key} className="grid grid-cols-2 gap-3 items-center">
-                        <span className="font-medium">{key}</span>
-                        <Select
-                          value={(answers[q.id] || {})[key] || ""}
-                          onValueChange={(v) =>
-                            setAns(q.id, { ...(answers[q.id] || {}), [key]: v })
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Chagua" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {values.map((v) => (
-                              <SelectItem key={v} value={v}>
-                                {v}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    );
-                  })}
-                </div>
+              {q.question_type === "short_answer" && isAssignment ? (
+                <RichTextEditor
+                  value={answers[q.id] || ""}
+                  onChange={(html) => setAns(q.id, html)}
+                  placeholder="Andika kazi yako ya assignment hapa kwa undani…"
+                  minHeight={400}
+                />
+              ) : (
+                <ExamAnswerField
+                  question={q}
+                  value={answers[q.id]}
+                  onChange={(v) => setAns(q.id, v)}
+                  isAssignment={isAssignment}
+                />
               )}
             </CardContent>
           </Card>
@@ -888,6 +1241,13 @@ function ExamPage() {
               </Button>
             </CardContent>
           </Card>
+        )}
+
+        {!isAssignment && questions.length > 0 && unansweredCount > 0 && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700">
+            Bado hujajibu maswali <b>{unansweredCount}</b>. Unaweza kuwasilisha, lakini maswali hayo
+            yatapata alama 0.
+          </div>
         )}
 
         <div className="flex flex-col sm:flex-row gap-2">
