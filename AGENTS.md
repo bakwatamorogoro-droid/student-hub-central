@@ -860,10 +860,13 @@ migration that production may not have yet.
   The last run on `main` (`da89e235`) fails at *Verify dist output* with `dist/_redirects haipo`.
   That check demands a Netlify file which was removed on purpose — Vercel serves the SPA rewrite
   from `vercel.json`, and a stray `_redirects` adds a catch-all that turns a missing chunk into
-  HTML. The corrected step is committed locally; pushing it needs a token with the `workflow`
-  scope, which the tokens in this workspace do not have (`ghp_…` tokens here carry only `repo`).
-  A push touching `.github/workflows/*` is rejected with *refusing to allow a Personal Access
-  Token to create or update workflow … without `workflow` scope*.
+  HTML. The corrected step replaces the `test -f` with a warning, so a stray copy is reported
+  without failing the build. It cannot be pushed from here: the tokens in this workspace carry
+  only `repo`, so a push touching `.github/workflows/*` is rejected with *refusing to allow a
+  Personal Access Token to create or update workflow … without `workflow` scope*. The Git Data
+  API is blocked the same way — a tree that rewrites a workflow path comes back `404 Not Found`
+  even though creating a blob succeeds. Fix it in the GitHub UI, or with a token that has the
+  `workflow` scope.
 
   ### The deploy is healthy; the old failures are not current
 
