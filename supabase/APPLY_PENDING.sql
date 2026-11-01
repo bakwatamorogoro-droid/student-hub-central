@@ -24,3 +24,17 @@ ALTER TABLE public.profile_update_requests ADD COLUMN IF NOT EXISTS changed_fiel
 ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS show_submissions_stat boolean DEFAULT true;
 ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS show_test1_stat boolean DEFAULT true;
 ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS stats_hidden_at timestamptz;
+
+-- From 20261029090000_add_exam_area_and_results_pin.sql
+ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS exam_radius_m integer NOT NULL DEFAULT 300;
+ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS exam_gps_required boolean NOT NULL DEFAULT true;
+ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS results_require_pin boolean NOT NULL DEFAULT true;
+ALTER TABLE public.submissions ADD COLUMN IF NOT EXISTS gps_distance_m double precision;
+ALTER TABLE public.submissions ADD COLUMN IF NOT EXISTS gps_radius_m integer;
+
+-- From 20261030120000_add_live_exam_tracking.sql
+ALTER TABLE public.submissions ADD COLUMN IF NOT EXISTS last_seen_at timestamptz;
+ALTER TABLE public.submissions ADD COLUMN IF NOT EXISTS proctor jsonb;
+CREATE INDEX IF NOT EXISTS submissions_live_idx
+  ON public.submissions (exam_id, started_at DESC)
+  WHERE submitted_at IS NULL;
