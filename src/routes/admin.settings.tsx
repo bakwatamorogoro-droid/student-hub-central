@@ -202,7 +202,7 @@ function Page() {
   };
 
   // Kept here so the admin can fix the database from this page, without
-  // hunting for the file. Mirrors supabase/APPLY_PENDING.sql.
+  // hunting for the file. Mirrors the migrations in supabase/migrations/.
   const pendingSql = [
     "ALTER TABLE public.students ADD COLUMN IF NOT EXISTS semester text;",
     "ALTER TABLE public.exams ADD COLUMN IF NOT EXISTS target_semester text;",

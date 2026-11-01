@@ -241,7 +241,7 @@ function Page() {
     if (groupErr) return toast.error(groupErr.message);
     if (columnsUnsupported) {
       toast.warning(
-        `Imehifadhiwa, lakini ${dropped.join(", ")} haijahifadhiwa — endesha supabase/APPLY_PENDING.sql.`,
+        `Imehifadhiwa, lakini ${dropped.join(", ")} haijahifadhiwa — endesha migrations zilizo kwenye supabase/migrations/.`,
       );
     } else {
       toast.success("Imehifadhiwa");

@@ -268,7 +268,7 @@ function Page() {
       } else if (acadDropped.length) {
         await alertWarning(
           "Imehifadhiwa",
-          `${acadDropped.join(", ")} bado haijawashwa kwenye mfumo (admin aendeshe supabase/APPLY_PENDING.sql).`,
+          `${acadDropped.join(", ")} bado haijawashwa kwenye mfumo (admin aendeshe migrations zilizo kwenye supabase/migrations/).`,
         );
       } else {
         await alertSuccess(t("saved_title"), t("saved_body"));

@@ -1108,8 +1108,7 @@ GRANT EXECUTE ON FUNCTION public.student_claim_pin(text, text, text) TO anon, au
 --  publishable key that ships in the public JS bundle, so anyone
 --  can read it and log into /admin.
 --
---  Paste this into the Lovable project's SQL Editor, after
---  APPLY_PENDING.sql. Then deploy the app build that calls
+--  Paste this into the Supabase SQL Editor. Then deploy the app build that calls
 --  admin_login(). Safe to run more than once.
 -- ============================================================
 

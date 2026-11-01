@@ -114,7 +114,7 @@ function Page() {
       if (dropped.length) {
         await alertWarning(
           "Ombi limekubaliwa, lakini sehemu zifuatazo hazikuhifadhiwa",
-          `${dropped.join(", ")} — msimamizi aendeshe supabase/APPLY_PENDING.sql kwenye Supabase SQL Editor.`,
+          `${dropped.join(", ")} — msimamizi aendeshe migrations zilizo kwenye supabase/migrations/.`,
         );
       }
     }
