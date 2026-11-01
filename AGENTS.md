@@ -95,24 +95,28 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
 - `students.phone` is the enrolment phone, in `0XXXXXXXXX` form (10 digits) for almost every row.
   It is the only proof of identity available for a self-claimed PIN; normalise before comparing.
 
-- **TWO MIGRATIONS ARE PENDING ON LIVE.** `supabase/APPLY_PENDING.sql` is the ready-to-paste
-  combination of both. Checked by probing PostgREST per column, the live project has neither:
-  - `20261027120000_add_semester.sql` — `students.semester`, `exams.target_semester`,
-    `app_settings.{course_list,program_years,current_academic_year,current_semester,academic_years_list}`,
-    `announcements.image_url`.
-  - `20261028090000_add_stats_switches_and_request_fields.sql` — `exam_pdfs.target_semester`,
-    `profile_update_requests.{new_course,new_study_year,new_semester,new_academic_year,changed_fields}`,
-    `app_settings.{show_submissions_stat,show_test1_stat,stats_hidden_at}`.
+- **TWO MIGRATIONS ARE PENDING ON LIVE, AND THEY ARE NOT THE TWO THE OLD NOTE NAMED.**
+  `supabase/APPLY_PENDING.sql` is the ready-to-paste combination. Re-probed per column against
+  production, the semester and stats-switch migrations **are now applied** (`students.semester`
+  and `app_settings.show_submissions_stat` both answer `200`). What is genuinely absent:
+  - `20261029090000_add_exam_area_and_results_pin.sql` — `app_settings.{exam_radius_m,
+    exam_gps_required,results_require_pin}` and `submissions.{gps_distance_m,gps_radius_m}`.
+  - `20261030120000_add_live_exam_tracking.sql` — `submissions.{last_seen_at,proctor}`.
 
-  **Impact is limited to the newer features, not the core app.** Confirmed by probing the live
-  REST API: 1561 students, 2 exams, 2602 submissions and 13 announcements all read fine, and the
-  home page renders its real stats. `exams.tsx` never sends `target_semester`, and `admin.pdf.tsx`
-  retries without it on `isMissingColumnError`, so exam creation and uploads still work. What stays
-  inert until the SQL runs: the admin stat-visibility switches (they read `app_settings` with these
-  columns and swallow the error, so the page still renders), the semester filter on
+  **These two are load-bearing, not cosmetic.** `submissions.gps_distance_m` is written by the
+  exam submit payload, and PostgREST rejects the whole write when one column is unknown — so
+  while the migration is unapplied, **no student can hand in a paper**. The code now degrades
+  (see "The exam-area columns may not exist yet") but applying the SQL is the real fix. Impact of
+  the semester/stat set is limited to newer features; see the note above for the details.
+
+  **Impact of the semester/stat set is limited to the newer features, not the core app.**
+  Confirmed by probing the live REST API: 1561 students, 2 exams, 2602 submissions and 13
+  announcements all read fine, and the home page renders its real stats. What stayed inert until
+  that SQL ran: the admin stat-visibility switches (they read `app_settings` with these columns
+  and swallow the error, so the page still rendered), the semester filter on
   `semester-questions`, and `students.semester` targeting.
 
-  These migrations are applied. They were run against the current project
+  The semester and stats-switch migrations were run against the current project
   `weiwabywirhoxiyyjkko` with `psycopg` over the pooler connection, using the
   database password chosen when the project was created. `supabase/migrations/`
   is the source of truth; run the whole directory in filename order.
@@ -187,6 +191,14 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
 - To re-check what is live, probe one column per migration over PostgREST: `select=<column>`
   answers `200` when the column exists and `400` with code `42703` when it does not. Note that
   `curl` must be used — a Python `urllib` request is rejected by Cloudflare with `403 error code: 1010`.
+
+- **`GITHUB_TOKEN` can read this repository but cannot write to it.** It authenticates as
+  `bakwatamorogoro-droid` and the repo reports `push: true`, yet `git push` answers
+  `403 Permission ... denied` and the API answers `403 Resource not accessible by integration`:
+  the token is a GitHub App installation token with read-only contents scope. So an agent can
+  clone, read, run tests and probe production, but **cannot push a branch or open a PR**. Commit
+  locally and hand the owner the diff, or ask them to re-issue a token with `contents: write`.
+  Do not read a `403` here as a bad branch name or a missing remote.
 
 - Live `students.semina` holds `'SEMINA 1'`…`'SEMINA 14'`, which does not match the
   `semina_list` values seeded in app settings. Read the distinct values from `students` and
@@ -664,14 +676,28 @@ this safe to ship against a table where almost nobody has a PIN yet (2 of ~1,572
 ### The exam-area columns may not exist yet
 
 `exam_radius_m`, `exam_gps_required` and `results_require_pin` arrive with
-`supabase/migrations/20261029090000_add_exam_area_and_results_pin.sql`, which **may not have been
-applied**. Both write paths cope:
+`supabase/migrations/20261029090000_add_exam_area_and_results_pin.sql`, and
+`last_seen_at` / `proctor` with `20261030120000_add_live_exam_tracking.sql`. Neither has been
+applied. Probed against production with the publishable key, `submissions.gps_distance_m`,
+`gps_radius_m`, `last_seen_at` and `proctor` all answer `400 / 42703`. Every write path copes:
 
 - the admin GPS save runs through `retryWithoutMissingColumns`, so the attendance and
   registration radii still save and the toast names what was dropped;
-- the exam page loads the full `select` first and falls back to a centre-only `select`.
+- the exam page loads the full `select` first and falls back to a centre-only `select`;
+- **the exam submission upsert runs through `retryRowsWithoutMissingColumns`**, because
+  PostgREST rejects the whole array when one column is unknown. Without it the geofence fields
+  in the submit payload failed *every* paper — the site looked healthy while nothing could be
+  handed in. That helper has to drop the column from every row, not just the first;
+- the live panel probes each optional column before using it, pages past PostgREST's 1000-row
+  cap, and resolves student names in batches of 200. A single `.in()` over every sitter is a
+  ~35 KB URL that PostgREST answers with `400`, which silently blanks every name.
 
-Do not "fix" either by removing the fallback: the columns are absent in production today.
+Do not "fix" any of these by removing the fallback: the columns are absent in production today.
+`supabase/APPLY_PENDING.sql` now carries all of them, so applying it retires the workarounds.
+
+The lesson generalises: **a missing column must degrade a feature, never disable a write the
+user depends on.** Prefer `retryRowsWithoutMissingColumns` over sending a column that may not
+exist, and give every optional column a fallback read.
 
 ### The CI build is not the Vercel build
 
