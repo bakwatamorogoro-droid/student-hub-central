@@ -428,6 +428,7 @@ export type Database = {
           graded_at: string | null;
           id: string;
           max_score: number | null;
+          proctor: Json | null;
           reg_no: string;
           score: number | null;
           semina: string | null;
@@ -451,6 +452,7 @@ export type Database = {
           graded_at?: string | null;
           id?: string;
           max_score?: number | null;
+          proctor?: Json | null;
           reg_no: string;
           score?: number | null;
           semina?: string | null;
@@ -474,6 +476,7 @@ export type Database = {
           graded_at?: string | null;
           id?: string;
           max_score?: number | null;
+          proctor?: Json | null;
           reg_no?: string;
           score?: number | null;
           semina?: string | null;
@@ -732,7 +735,9 @@ export type Database = {
           gps_distance_m: number | null;
           gps_radius_m: number | null;
           id: string;
+          last_seen_at: string | null;
           max_score: number | null;
+          proctor: Json | null;
           reg_no: string;
           score: number | null;
           signature_data: string | null;
@@ -753,7 +758,9 @@ export type Database = {
           gps_distance_m?: number | null;
           gps_radius_m?: number | null;
           id?: string;
+          last_seen_at?: string | null;
           max_score?: number | null;
+          proctor?: Json | null;
           reg_no: string;
           score?: number | null;
           signature_data?: string | null;
@@ -774,7 +781,9 @@ export type Database = {
           gps_distance_m?: number | null;
           gps_radius_m?: number | null;
           id?: string;
+          last_seen_at?: string | null;
           max_score?: number | null;
+          proctor?: Json | null;
           reg_no?: string;
           score?: number | null;
           signature_data?: string | null;

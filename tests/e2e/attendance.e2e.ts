@@ -671,7 +671,8 @@ check(
 // The cause is that PostgREST names only one unknown column per response, so a
 // retry that drops a single fixed column never gets past the second name. These
 // checks run against the real project, where five of those columns are absent.
-const { retryWithoutMissingColumns, missingColumnFrom } = await import("@/lib/schema-retry");
+const { retryWithoutMissingColumns, retryRowsWithoutMissingColumns, missingColumnFrom } =
+  await import("@/lib/schema-retry");
 
 const settingsPayload = {
   semina_list: ["Semina 1"],
@@ -799,6 +800,205 @@ check(
   missingColumnFrom({ code: "42501", message: "permission denied" }) === null,
   "permission errors must pass through",
 );
+
+// --- F1: the all-sessions report, built from what the database actually holds
+//
+// `loadAttendanceReport` reads the same two tables the page reads, so this fails
+// if a column name, the payload shape or the roster join drifts.
+const { loadAttendanceReport } = await import("@/lib/attendance");
+const { reportToSheet, slugify } = await import("@/lib/attendanceReport");
+
+try {
+  const report = await loadAttendanceReport();
+  check("F1a the report loads", !!report, JSON.stringify(report)?.slice(0, 200));
+  check(
+    "F1b the report lists this run's sessions",
+    report.sessions.some((x) => x.id === start.session.id),
+    "session " + start.session.id + " missing from " + report.sessions.length,
+  );
+  check(
+    "F1c the report lists the roster",
+    report.rows.length > 0,
+    "no students in the roster",
+  );
+  const row = report.rows.find((r) => r.regNo === REG);
+  check("F1d the seeded student has a row", !!row, REG + " not in the report");
+  if (row) {
+    check(
+      "F1e the row has one cell per session",
+      row.cells.length === report.sessions.length,
+      row.cells.length + " vs " + report.sessions.length,
+    );
+    check(
+      "F1f the row counts what it attended",
+      row.attended === row.cells.filter((c) => c.present).length,
+      "count mismatch",
+    );
+    check("F1g the percentage is in range", row.percent >= 0 && row.percent <= 100, String(row.percent));
+  }
+  check(
+    "F1h the per-session totals cover every session",
+    report.sessionTotals.length === report.sessions.length,
+    report.sessionTotals.length + " vs " + report.sessions.length,
+  );
+
+  // The Excel the teacher downloads is built from the same object.
+  const sheet = reportToSheet(report);
+  check("F1i the sheet has one row per student", sheet.length === report.rows.length, String(sheet.length));
+  if (sheet.length > 0) {
+    const keys = Object.keys(sheet[0]);
+    check(
+      "F1j the sheet carries the summary columns",
+      keys.includes("Alizohudhuria") && keys.includes("Asilimia"),
+      keys.join("|"),
+    );
+  }
+  check("F1k a filename slug is safe", slugify("a/b:c") === "abc", slugify("a/b:c"));
+} catch (e) {
+  check("F1 the report loads", false, String(e));
+}
+
+// --- F2: live exam tracking reads an open paper and ignores a closed one
+const { supabase } = await import("@/integrations/supabase/client");
+const { loadLiveExams, touchSubmission, forceSubmitSubmission } = await import("@/lib/liveExamsApi");
+const liveExamId = "a0000000-0000-4000-8000-0000000000f1";
+
+try {
+  await rest("exams?id=eq." + liveExamId, { method: "DELETE" });
+  await rest("exams", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      id: liveExamId,
+      title: "E2E LIVE",
+      duration_minutes: 30,
+      require_gps: false,
+      require_camera: false,
+      require_audio: false,
+    }),
+  });
+
+  // An open paper: started, never submitted.
+  const open = await rest("submissions", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      exam_id: liveExamId,
+      student_id: studentId,
+      reg_no: REG,
+      answers: { q1: "a" },
+      started_at: new Date().toISOString(),
+      submitted_at: null,
+      device_id: "e2e",
+    }),
+  });
+  const openId = open.body?.[0]?.id;
+  check("F2a an open paper was created", !!openId, JSON.stringify(open.body)?.slice(0, 200));
+
+  const exams = await loadLiveExams();
+  const group = exams.find((e) => e.examId === liveExamId);
+  check("F2b the live panel sees the exam", !!group, "exam not in " + exams.length + " groups");
+  if (group) {
+    check("F2c it counts one live student", group.live.length === 1, String(group.live.length));
+    const who = group.live[0];
+    check("F2d the reg number is carried", who?.regNo === REG, JSON.stringify(who));
+    check("F2e the name is joined from students", !!who?.fullName, JSON.stringify(who));
+    check("F2f the answer count is read", who?.answeredCount === 1, String(who?.answeredCount));
+  }
+
+  // The heartbeat only touches a paper that is still open.
+  if (openId) {
+    await touchSubmission(openId);
+    const seen = await rest("submissions?id=eq." + openId + "&select=submitted_at,last_seen_at");
+    const seenRow = seen.body?.[0];
+    // `last_seen_at` arrives with the tracking migration, which production may not
+    // have run. Either the beat is stamped, or the column is absent and the paper
+    // is simply still open — what must never happen is the beat closing the paper.
+    check(
+      "F2g the heartbeat never closes an open paper",
+      seenRow?.submitted_at == null,
+      JSON.stringify(seen),
+    );
+
+    // Closing it must take it out of the live list.
+    const closed = await forceSubmitSubmission(openId);
+    check("F2h the teacher can close a paper", closed, "forceSubmit returned false");
+    const after = await loadLiveExams();
+    const afterGroup = after.find((e) => e.examId === liveExamId);
+    check(
+      "F2i a closed paper leaves the live list",
+      !afterGroup || afterGroup.live.length === 0,
+      JSON.stringify(afterGroup?.live?.length),
+    );
+    check(
+      "F2j the heartbeat cannot reopen a closed paper",
+      (await rest("submissions?id=eq." + openId + "&select=submitted_at")).body?.[0]?.submitted_at != null,
+      "a closed paper must stay closed",
+    );
+  }
+} catch (e) {
+  check("F2 the live panel loads", false, String(e));
+} finally {
+  await rest("submissions?exam_id=eq." + liveExamId, { method: "DELETE" });
+  await rest("exams?id=eq." + liveExamId, { method: "DELETE" });
+}
+
+// --- F3: a submission survives columns the database has not been given
+//
+// This is the regression that took exam submission down in production: the geofence
+// started sending `gps_distance_m` / `gps_radius_m` / `proctor`, PostgREST refused
+// the whole write because one of them did not exist, and every student's paper was
+// rejected. The retry must drop the unknown column and still save the answers.
+try {
+  const probeExamId = "a0000000-0000-4000-8000-0000000000f3";
+  await rest("exams?id=eq." + probeExamId, { method: "DELETE" });
+  await rest("exams", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      id: probeExamId,
+      title: "E2E SUBMIT RESILIENCE",
+      duration_minutes: 30,
+      require_gps: false,
+      require_camera: false,
+      require_audio: false,
+    }),
+  });
+
+  const answers = { q1: "the answer" };
+  const { last, dropped } = await retryRowsWithoutMissingColumns(
+    [
+      {
+        exam_id: probeExamId,
+        student_id: studentId,
+        reg_no: REG,
+        answers,
+        started_at: new Date().toISOString(),
+        submitted_at: new Date().toISOString(),
+        device_id: "e2e",
+        // Deliberately not a column on the live database.
+        e2e_no_such_column: "must be dropped",
+      },
+    ],
+    (body) =>
+      supabase.from("submissions").upsert(body as never, { onConflict: "exam_id,student_id" }),
+  );
+
+  check("F3a the write succeeds despite an unknown column", !last.error, JSON.stringify(last.error));
+  check("F3b the unknown column is reported as dropped", dropped.includes("e2e_no_such_column"), dropped.join("|"));
+
+  const saved = await rest(
+    "submissions?exam_id=eq." + probeExamId + "&select=reg_no,answers,submitted_at",
+  );
+  const savedRow = saved.body?.[0];
+  check("F3c the answers were actually saved", savedRow?.answers?.q1 === "the answer", JSON.stringify(saved));
+  check("F3d the paper is marked submitted", !!savedRow?.submitted_at, JSON.stringify(savedRow));
+} catch (e) {
+  check("F3 the submission survives an unknown column", false, String(e));
+} finally {
+  await rest("submissions?exam_id=eq.a0000000-0000-4000-8000-0000000000f3", { method: "DELETE" });
+  await rest("exams?id=eq.a0000000-0000-4000-8000-0000000000f3", { method: "DELETE" });
+}
 
 // --- cleanup
 clearStudentToken();

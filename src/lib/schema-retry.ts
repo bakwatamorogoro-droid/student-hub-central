@@ -63,3 +63,37 @@ export async function retryWithoutMissingColumns<T extends { error: unknown }>(
 
   return { last, dropped };
 }
+
+/**
+ * The same rescue for a bulk write.
+ *
+ * PostgREST rejects the whole array when one column is unknown, and it names that
+ * column once. So the column has to come out of **every** row, not just the one
+ * that happened to be first — dropping it from a single row would leave the write
+ * failing on the next row that still carries it.
+ */
+export async function retryRowsWithoutMissingColumns<T extends { error: unknown }>(
+  rows: Record<string, unknown>[],
+  attempt: (rows: Record<string, unknown>[]) => PromiseLike<T>,
+  maxAttempts = 8,
+): Promise<{ last: T; dropped: string[] }> {
+  let working = rows.map((row) => ({ ...row }));
+  const dropped: string[] = [];
+  let last = await attempt(working);
+
+  for (let i = 1; i < maxAttempts && last.error; i++) {
+    const column = missingColumnFrom(last.error);
+    // Not a missing-column error, or the column is already gone: retrying would
+    // repeat the same request, so stop and hand the error back.
+    if (!column || !working.some((row) => column in row)) break;
+    working = working.map((row) => {
+      const copy = { ...row };
+      delete copy[column];
+      return copy;
+    });
+    dropped.push(column);
+    last = await attempt(working);
+  }
+
+  return { last, dropped };
+}

@@ -19,7 +19,7 @@ import { getDeviceId } from "@/lib/device-id";
 import { gradeShortAnswer, explainAnswer } from "@/lib/grading.functions";
 import { toast } from "@/lib/toast";
 import SignatureCanvas from "react-signature-canvas";
-import { Camera, MapPin, Mic, Clock, Eye, FileDown, Printer } from "lucide-react";
+import { Camera, MapPin, Mic, Clock, Eye, FileDown, Printer, MonitorSmartphone } from "lucide-react";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import {
   Dialog,
@@ -32,6 +32,23 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Users } from "lucide-react";
 import { formatAcademicSummary } from "@/lib/academicTargeting";
 import { areaMessage, checkArea, type AreaVerdict } from "@/lib/geo";
+import { ExamAnswerField } from "@/components/ExamAnswerField";
+import { answerRatio, isAutoGraded } from "@/lib/examQuestions";
+import { retryRowsWithoutMissingColumns } from "@/lib/schema-retry";
+import {
+  assessGpsSamples,
+  enterFullscreen,
+  exitFullscreen,
+  gpsFlagLabel,
+  isFullscreen,
+  isFullscreenSupported,
+  judgeFrame,
+  monitorCamera,
+  onFullscreenChange,
+  type CameraVerdict,
+  type GpsSample,
+} from "@/lib/proctoring";
+import { touchSubmission } from "@/lib/liveExamsApi";
 import {
   ExamStepper,
   ExamProgress,
@@ -83,6 +100,14 @@ function ExamPage() {
   const [forgottenQ, setForgottenQ] = useState("");
   const [forgottenResults, setForgottenResults] = useState<any[]>([]);
   const [searchingForgotten, setSearchingForgotten] = useState(false);
+  // Integrity state. `fsLost` counts how many times the student left fullscreen;
+  // it is reported to the teacher rather than blocking the exam, because a phone
+  // call or a notification legitimately drops fullscreen for a moment.
+  const [fsLost, setFsLost] = useState(0);
+  const [camVerdict, setCamVerdict] = useState<CameraVerdict | null>(null);
+  const [gpsFlags, setGpsFlags] = useState<string[]>([]);
+  const [submissionId, setSubmissionId] = useState<string | null>(null);
+  const [gpsLive, setGpsLive] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -287,7 +312,81 @@ function ExamPage() {
     };
   }, [started]);
 
-  // Fullscreen imetolewa kwa ombi la mtumiaji — mfumo si fullscreen tena.
+  // Fullscreen: entered when the exam starts and re-entered when the student comes
+  // back to the tab. Every exit is counted, and the count travels with the
+  // submission so the teacher can see it. iPhone Safari will not grant fullscreen
+  // to a normal page, so a refusal is not treated as a failure.
+  useEffect(() => {
+    if (!started) return;
+    let wasFull = isFullscreen();
+    void enterFullscreen();
+    const off = onFullscreenChange(() => {
+      const now = isFullscreen();
+      if (wasFull && !now) setFsLost((n) => n + 1);
+      wasFull = now;
+    });
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void enterFullscreen();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      off();
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [started]);
+
+  // Camera presence: a covered lens and a scene that never changes are the two
+  // signals worth reporting. The verdict is shown to the student immediately so
+  // it reads as a reminder, not a trap.
+  useEffect(() => {
+    if (!started || !camOk || !streamRef.current) return;
+    const stop = monitorCamera(streamRef.current, {
+      intervalMs: 5000,
+      window: 2,
+      onVerdict: (verdict) => setCamVerdict(verdict),
+    });
+    return stop;
+  }, [started, camOk]);
+
+  // GPS, kept fresh: one fix at the start proves where the student was then, not
+  // where they are now. Samples accumulate so the teacher can see the spread.
+  useEffect(() => {
+    if (!started) return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    const samples: GpsSample[] = [];
+    const read = () =>
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          samples.push({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy ?? 999,
+            at: Date.now(),
+          });
+          if (samples.length > 8) samples.shift();
+          setGpsLive({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy ?? 0,
+          });
+          const assessment = assessGpsSamples(samples);
+          if (assessment) setGpsFlags(assessment.flags.map(gpsFlagLabel));
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
+      );
+    read();
+    const timer = setInterval(read, 45000);
+    return () => clearInterval(timer);
+  }, [started]);
+
+  // Heartbeat: tells the teacher's live panel this browser is still on the page.
+  useEffect(() => {
+    if (!started || !submissionId) return;
+    void touchSubmission(submissionId);
+    const timer = setInterval(() => void touchSubmission(submissionId), 30000);
+    return () => clearInterval(timer);
+  }, [started, submissionId]);
 
   const beginExam = async () => {
     // Zuia kufanya mtihani mara mbili (kwa reg_no AU full_name)
@@ -330,32 +429,66 @@ function ExamPage() {
     // GPS: chukua mahali, kisha linganisha na eneo la mwalimu. Kama mwanafunzi
     // yuko nje ya umbali, mtihani hauanzi — ndiyo kazi ya "Eneo langu".
     if (exam.require_gps || (area && area.lat != null)) {
-      try {
-        const pos = await new Promise<GeolocationPosition>((res, rej) =>
-          navigator.geolocation.getCurrentPosition(res, rej, {
-            enableHighAccuracy: true,
-            timeout: 12000,
-            maximumAge: 0,
-          }),
-        );
-        const fix = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setGps(fix);
-        if (area && area.lat != null && area.lng != null) {
-          const verdict = checkArea(area, fix);
-          setAreaVerdict(verdict);
-          if (verdict.status === "outside") {
-            toast.error(areaMessage(verdict));
+      // Three independent fixes, not one. A single reading can be a cached or a
+      // spoofed value; a real receiver jitters by a metre or two between reads,
+      // so the spread and the reported accuracy tell the two apart. See
+      // `assessGpsSamples`.
+      const samples: GpsSample[] = [];
+      const takeFix = () =>
+        new Promise<GpsSample | null>((resolve) => {
+          if (typeof navigator === "undefined" || !navigator.geolocation) {
+            resolve(null);
             return;
           }
-        }
-      } catch {
+          navigator.geolocation.getCurrentPosition(
+            (pos) =>
+              resolve({
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                accuracy: pos.coords.accuracy ?? 999,
+                at: Date.now(),
+              }),
+            () => resolve(null),
+            { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
+          );
+        });
+
+      for (let i = 0; i < 3; i++) {
+        const fix = await takeFix();
+        if (fix) samples.push(fix);
+        if (i < 2) await new Promise((r) => setTimeout(r, 700));
+      }
+
+      const assessment = assessGpsSamples(samples);
+      if (assessment) {
+        setGps({ lat: assessment.best.lat, lng: assessment.best.lng });
+        setGpsLive({
+          lat: assessment.best.lat,
+          lng: assessment.best.lng,
+          accuracy: assessment.best.accuracy,
+        });
+        setGpsFlags(assessment.flags.map(gpsFlagLabel));
+      }
+
+      if (!assessment || !assessment.usable) {
         if (examGpsRequired && area && area.lat != null) {
           setAreaVerdict({ status: "missing_fix" });
-          toast.error("Ruhusu GPS (location) ili mfumo upime eneo lako.");
+          toast.error(
+            assessment?.flags.includes("too_vague")
+              ? "GPS yako ni hafifu mno. Toka nje kidogo au washa GPS sahihi."
+              : "Ruhusu GPS (location) ili mfumo upime eneo lako.",
+          );
           return;
         }
         if (exam.require_gps) {
           toast.error("Lazima uruhusu GPS kuendelea");
+          return;
+        }
+      } else if (area && area.lat != null && area.lng != null) {
+        const verdict = checkArea(area, { lat: assessment.best.lat, lng: assessment.best.lng });
+        setAreaVerdict(verdict);
+        if (verdict.status === "outside") {
+          toast.error(areaMessage(verdict));
           return;
         }
       }
@@ -376,6 +509,33 @@ function ExamPage() {
       }
     }
     startedAtRef.current = new Date();
+
+    // Create the row now, not at submit. The teacher's live panel reads
+    // "started but not submitted", so without this the student stays invisible
+    // until the moment they finish. A failure here is ignored: losing live
+    // tracking must never stop an exam.
+    try {
+      const { data: created } = await supabase
+        .from("submissions")
+        .upsert(
+          {
+            exam_id: examId,
+            student_id: student.id,
+            reg_no: student.reg_no,
+            answers: {},
+            started_at: startedAtRef.current.toISOString(),
+            submitted_at: null,
+            device_id: getDeviceId(),
+          },
+          { onConflict: "exam_id,student_id" },
+        )
+        .select("id")
+        .maybeSingle();
+      if (created?.id) setSubmissionId(created.id as string);
+    } catch {
+      /* live tracking is optional */
+    }
+
     setStarted(true);
   };
 
@@ -428,22 +588,10 @@ function ExamPage() {
       questions.map(async (q: any) => {
         maxScore += Number(q.points);
         const ans = filledAnswers[q.id];
-        if (
-          q.question_type === "true_false" ||
-          q.question_type === "multiple_choice" ||
-          q.question_type === "matching"
-        ) {
-          let ratio = 0;
-          if (q.question_type === "matching") {
-            const correct = (q.correct_answer || {}) as Record<string, string>;
-            const given = (ans as Record<string, string>) || {};
-            const keys = Object.keys(correct);
-            ratio = keys.length
-              ? keys.filter((k) => given[k] === correct[k]).length / keys.length
-              : 0;
-          } else {
-            ratio = String(ans) === String(q.correct_answer) ? 1 : 0;
-          }
+        if (isAutoGraded(q.question_type)) {
+          // One helper decides partial credit for every machine-marked type, so
+          // the builder, the student's page and the marker cannot drift apart.
+          const ratio = answerRatio(q, ans);
           autoScore += ratio * Number(q.points);
           const isCorrect = ratio === 1;
           const reason = await explainAnswer({
@@ -550,14 +698,31 @@ function ExamPage() {
       device_id: getDeviceId(),
       started_at: startedAtRef.current.toISOString(),
       submitted_at: new Date().toISOString(),
+      // Integrity signals travel with the submission, so a teacher reviewing it
+      // later sees the same picture the student saw while writing.
+      proctor: {
+        fullscreen_exits: fsLost,
+        camera: camVerdict,
+        gps_flags: gpsFlags,
+      },
     }));
-    const { error } = await supabase
-      .from("submissions")
-      .upsert(rows, { onConflict: "exam_id,student_id" });
+    // The columns the geofence writes (`gps_distance_m`, `gps_radius_m`) and the
+    // proctor blob come from migrations that may not have been applied to
+    // production. PostgREST refuses the whole array when one is unknown, which
+    // would fail *every* submission, so the unknown column is dropped and the
+    // write retried. A missing distance costs the teacher one detail; a missing
+    // column must never cost the student their paper.
+    const { last, dropped } = await retryRowsWithoutMissingColumns(rows, (body) =>
+      supabase.from("submissions").upsert(body as never, { onConflict: "exam_id,student_id" }),
+    );
+    const error = last.error;
+    if (dropped.length) {
+      console.warn("Submission saved without columns the database does not have:", dropped.join(", "));
+    }
     streamRef.current?.getTracks().forEach((t) => t.stop());
     setSubmitting(false);
     if (error) {
-      toast.error(error.message);
+      toast.error((error as Error).message);
       return;
     }
     try {
@@ -780,13 +945,59 @@ function ExamPage() {
         </span>
       </div>
       {camOk && (
-        <video
-          ref={videoRef}
-          autoPlay
-          muted
-          playsInline
-          className="fixed bottom-4 right-4 w-32 h-24 rounded border-2 border-primary z-50 bg-black"
-        />
+        <div className="fixed bottom-4 right-4 z-50 space-y-1">
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            playsInline
+            className={`h-24 w-32 rounded-lg border-2 bg-black object-cover ${
+              camVerdict === "covered" ? "border-destructive" : "border-primary"
+            }`}
+          />
+          {camVerdict === "covered" && (
+            <p className="max-w-[8rem] rounded bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-destructive-foreground">
+              Kamera imezibwa
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Integrity strip: what the proctoring sees, in the student's own view, so
+          a warning is never a surprise at the end. */}
+      {started && (
+        <div className="flex flex-wrap items-center justify-center gap-2 border-b border-border/60 bg-card/70 px-3 py-1.5 text-[11px]">
+          <span
+            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold ${
+              isFullscreenSupported() && !isFullscreen()
+                ? "bg-amber-500/15 text-amber-700"
+                : "bg-emerald-500/15 text-emerald-700"
+            }`}
+          >
+            <MonitorSmartphone className="h-3 w-3" />
+            {isFullscreenSupported() && !isFullscreen()
+              ? "Umetoka fullscreen"
+              : "Fullscreen"}
+          </span>
+          {fsLost > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 font-semibold text-amber-700">
+              Umetoka mara {fsLost}
+            </span>
+          )}
+          {gpsLive && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 font-medium text-muted-foreground">
+              <MapPin className="h-3 w-3" /> ±{Math.round(gpsLive.accuracy)} m
+            </span>
+          )}
+          {gpsFlags.map((f) => (
+            <span
+              key={f}
+              className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 font-semibold text-amber-700"
+            >
+              {f}
+            </span>
+          ))}
+        </div>
       )}
       <main className="container mx-auto px-4 py-6 max-w-3xl space-y-4">
         {!isAssignment && questions.length > 0 && (
@@ -936,79 +1147,20 @@ function ExamPage() {
               <p className={isAssignment ? "mb-4 font-semibold text-base" : "mb-3 font-medium"}>
                 {q.body}
               </p>
-              {q.question_type === "true_false" && (
-                <RadioGroup value={answers[q.id] || ""} onValueChange={(v) => setAns(q.id, v)}>
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem value="true" id={q.id + "t"} />
-                    <Label htmlFor={q.id + "t"}>Kweli</Label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem value="false" id={q.id + "f"} />
-                    <Label htmlFor={q.id + "f"}>Sikweli</Label>
-                  </div>
-                </RadioGroup>
-              )}
-              {q.question_type === "multiple_choice" && (
-                <RadioGroup value={answers[q.id] || ""} onValueChange={(v) => setAns(q.id, v)}>
-                  {((q.options as string[]) || []).map((opt, j) => (
-                    <div key={j} className="flex items-center gap-2">
-                      <RadioGroupItem value={opt} id={q.id + j} />
-                      <Label htmlFor={q.id + j}>{opt}</Label>
-                    </div>
-                  ))}
-                </RadioGroup>
-              )}
-              {q.question_type === "short_answer" &&
-                (isAssignment ? (
-                  <RichTextEditor
-                    value={answers[q.id] || ""}
-                    onChange={(html) => setAns(q.id, html)}
-                    placeholder="Andika kazi yako ya assignment hapa kwa undani…"
-                    minHeight={400}
-                  />
-                ) : (
-                  <Textarea
-                    value={answers[q.id] || ""}
-                    onChange={(e) => setAns(q.id, e.target.value)}
-                    onPaste={(e) => {
-                      e.preventDefault();
-                      toast.error("Paste hairuhusiwi");
-                    }}
-                    onCopy={(e) => e.preventDefault()}
-                    placeholder="Andika jibu lako..."
-                    style={{ userSelect: "text" }}
-                  />
-                ))}
-              {q.question_type === "matching" && (
-                <div className="space-y-2">
-                  {Object.keys((q.correct_answer as Record<string, string>) || {}).map((key) => {
-                    const values = Object.values(
-                      (q.correct_answer as Record<string, string>) || {},
-                    );
-                    return (
-                      <div key={key} className="grid grid-cols-2 gap-3 items-center">
-                        <span className="font-medium">{key}</span>
-                        <Select
-                          value={(answers[q.id] || {})[key] || ""}
-                          onValueChange={(v) =>
-                            setAns(q.id, { ...(answers[q.id] || {}), [key]: v })
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Chagua" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {values.map((v) => (
-                              <SelectItem key={v} value={v}>
-                                {v}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    );
-                  })}
-                </div>
+              {q.question_type === "short_answer" && isAssignment ? (
+                <RichTextEditor
+                  value={answers[q.id] || ""}
+                  onChange={(html) => setAns(q.id, html)}
+                  placeholder="Andika kazi yako ya assignment hapa kwa undani…"
+                  minHeight={400}
+                />
+              ) : (
+                <ExamAnswerField
+                  question={q}
+                  value={answers[q.id]}
+                  onChange={(v) => setAns(q.id, v)}
+                  isAssignment={isAssignment}
+                />
               )}
             </CardContent>
           </Card>

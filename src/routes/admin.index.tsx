@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LiveExamPanel } from "@/components/LiveExamPanel";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Users,
@@ -390,6 +391,8 @@ function Dash() {
           </CardContent>
         </Card>
       </div>
+
+        <LiveExamPanel />
 
       <Card>
         <CardHeader className="pb-3">

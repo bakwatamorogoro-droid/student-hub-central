@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { missingColumnFrom, retryWithoutMissingColumns } from "./schema-retry.ts";
+import {
+  missingColumnFrom,
+  retryRowsWithoutMissingColumns,
+  retryWithoutMissingColumns,
+} from "./schema-retry.ts";
 
 const missing = (column: string) => ({
   code: "PGRST204",
@@ -112,4 +116,46 @@ test("the attempt count is bounded", async () => {
     4,
   );
   assert.equal(calls, 4);
+});
+
+test("a bulk write drops the named column from every row", async () => {
+  const attempts: Record<string, unknown>[][] = [];
+  const { last, dropped } = await retryRowsWithoutMissingColumns(
+    [
+      { a: 1, proctor: "x" },
+      { a: 2, proctor: "y" },
+    ],
+    async (rows) => {
+      attempts.push(rows);
+      const bad = rows.some((r) => "proctor" in r);
+      return { error: bad ? { code: "PGRST204", message: "Could not find the 'proctor' column" } : null };
+    },
+  );
+  assert.equal(last.error, null);
+  assert.deepEqual(dropped, ["proctor"]);
+  assert.equal(attempts.length, 2);
+  // The first attempt legitimately carries the column; the retry must not, on
+  // any row — dropping it from one row would fail again on the next.
+  assert.deepEqual(attempts[1], [{ a: 1 }, { a: 2 }]);
+});
+
+test("a bulk write keeps rows intact when the column is already absent", async () => {
+  let calls = 0;
+  const { last, dropped } = await retryRowsWithoutMissingColumns([{ a: 1 }], async () => {
+    calls++;
+    return { error: { code: "PGRST204", message: "Could not find the 'ghost' column" } };
+  });
+  assert.equal(calls, 1);
+  assert.deepEqual(dropped, []);
+  assert.ok(last.error);
+});
+
+test("a bulk write stops on a real error instead of looping", async () => {
+  let calls = 0;
+  const { dropped } = await retryRowsWithoutMissingColumns([{ a: 1, b: 2 }], async () => {
+    calls++;
+    return { error: { code: "42501", message: "permission denied" } };
+  });
+  assert.equal(calls, 1);
+  assert.deepEqual(dropped, []);
 });

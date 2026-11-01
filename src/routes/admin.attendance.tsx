@@ -33,6 +33,7 @@ import {
 import { toast } from "@/lib/toast";
 import { confirmAction } from "@/lib/alerts";
 import { AttendanceSessionPanel } from "@/components/AttendanceSessionPanel";
+import { AttendanceReportPanel } from "@/components/AttendanceReportPanel";
 import {
   deleteAttendanceSession,
   fetchSessionPresent,
@@ -48,6 +49,9 @@ function Page() {
     <div className="space-y-4">
       {/* Starts and ends the live sessions students scan into. */}
       <SessionsAndArchive />
+
+      {/* Every session against every student, with an Excel of the same grid. */}
+      <AttendanceReportPanel />
 
       <GpsSettings />
 

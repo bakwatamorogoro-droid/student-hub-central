@@ -4,6 +4,14 @@ import { getPosition } from "@/lib/geo";
 import { resolveStudentToken } from "@/lib/studentAccount";
 import { deterministicUuid, digestsEqual, hashSecret, newSalt, randomUuid } from "@/lib/pin-crypto";
 import { getDeviceId } from "@/lib/device-id";
+import { fetchAllStudents } from "@/lib/fetchAllStudents";
+import {
+  buildAttendanceReport,
+  type AttendanceReport,
+  type ReportCheckIn,
+  type ReportSession,
+  type ReportStudent,
+} from "@/lib/attendanceReport";
 
 /**
  * Geofenced attendance, built on tables that already exist.
@@ -681,6 +689,94 @@ export async function fetchMyCheckIns(studentToken: string): Promise<SessionSumm
     });
   }
   return out.sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""));
+}
+
+// ---------------------------------------------------------------
+// Full-term report (every session x every student)
+// ---------------------------------------------------------------
+
+/**
+ * Everything the reporting screen and the Excel export need.
+ *
+ * One query for the sessions and one for every check-in, then the pure builder
+ * in `attendanceReport.ts` does the grouping. Fetching per session would be a
+ * round trip per lecture, which on a phone on campus data is the difference
+ * between a report that loads and one that does not.
+ */
+export async function loadAttendanceReport(): Promise<AttendanceReport> {
+  const { data: sessionRows } = await supabase
+    .from("quiz_participants")
+    .select("id, semina, joined_at")
+    .eq("exam_id", SESSION_NS);
+
+  const sessions: ReportSession[] = [];
+  for (const row of (sessionRows ?? []) as Array<{
+    id: string;
+    semina: string | null;
+    joined_at: string;
+  }>) {
+    const p = parse<SessionPayload>(row.semina);
+    if (!p || p.t !== "session") continue;
+    sessions.push({
+      id: row.id,
+      title: p.title,
+      // A session that names a seminar is a seminar; one that does not is a
+      // normal class. That is the distinction the office asks about.
+      kind: p.semina ? "semina" : "darasa",
+      semina: p.semina,
+      studentGroup: p.student_group,
+      startedAt: row.joined_at,
+      radiusM: p.radius_m,
+    });
+  }
+
+  const { data: checkInRows } = await supabase
+    .from("quiz_participants")
+    .select("reg_no, full_name, semina, joined_at")
+    .eq("exam_id", CHECKIN_NS);
+
+  const checkIns: ReportCheckIn[] = [];
+  for (const row of (checkInRows ?? []) as Array<{
+    reg_no: string | null;
+    full_name: string | null;
+    semina: string | null;
+    joined_at: string;
+  }>) {
+    const p = parse<CheckInPayload>(row.semina);
+    if (!p || p.t !== "checkin") continue;
+    checkIns.push({
+      sessionId: p.session_id,
+      studentId: p.student_id,
+      regNo: p.reg_no || row.reg_no || "",
+      fullName: row.full_name || "",
+      method: p.method,
+      distanceM: p.distance_m,
+      at: p.check_in_at ?? row.joined_at,
+    });
+  }
+
+  let roster: ReportStudent[] = [];
+  try {
+    const students = await fetchAllStudents<{
+      id: string;
+      reg_no: string;
+      full_name: string;
+      student_group: string | null;
+      semina: string | null;
+    }>("id, reg_no, full_name, student_group, semina");
+    roster = students.map((s) => ({
+      studentId: s.id,
+      regNo: s.reg_no,
+      fullName: s.full_name,
+      studentGroup: s.student_group,
+      semina: s.semina,
+    }));
+  } catch {
+    // The check-ins still produce a usable report without the roster; students
+    // who never attended are simply absent from it.
+  }
+
+  return buildAttendanceReport(sessions, checkIns, roster);
 }
 
 /** A short, unambiguous code the teacher can read out. */
