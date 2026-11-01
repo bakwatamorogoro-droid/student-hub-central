@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Download, Loader2, Printer, QrCode } from "lucide-react";
 import { toast } from "@/lib/toast";
-import { encodeJoinQr } from "@/lib/attendance-qr";
+import { encodeJoinUrl } from "@/lib/attendance-qr";
 
 export type PosterSession = {
   title: string;
@@ -40,7 +40,7 @@ export function AttendanceQrPoster({
       return;
     }
     let cancelled = false;
-    QRCode.toDataURL(encodeJoinQr(joinCode), {
+    QRCode.toDataURL(encodeJoinUrl(joinCode, window.location.origin), {
       width: 900,
       margin: 2,
       errorCorrectionLevel: "M",
@@ -103,11 +103,11 @@ export function AttendanceQrPoster({
   <div class="code-label">Msimbo wa kujiunga</div>
   <div class="code">${escapeHtml(joinCode)}</div>
   <ol>
-    <li>Ingia kwenye akaunti yako kwa Reg Namba na PIN.</li>
-    <li>Fungua kamera, kisha skani QR hii — au andika msimbo ulio juu.</li>
+    <li>Skani QR hii kwa kamera ya simu yako — inafungua ukurasa wa mahudhurio.</li>
+    <li>Weka Reg Namba yako na PIN kwenye ukurasa uliofunguka.</li>
     <li>Ruhusu GPS. Unatakiwa uwe darasani (ndani ya mita ${session.radiusM}).</li>
   </ol>
-  <div class="foot">Mahudhurio yanarekodiwa mara moja kwa kipindi.</div>
+  <div class="foot">Huna kamera? Andika msimbo <b>${escapeHtml(joinCode)}</b> kwenye ukurasa /attendance.<br>Mahudhurio yanarekodiwa mara moja kwa kipindi.</div>
 </div>
 <script>window.onload=function(){setTimeout(function(){window.print()},350)}<\/script>
 </body></html>`);

@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { QrCodeDisplay } from "@/components/QrCodeDisplay";
-import { encodeQrToken } from "@/lib/attendance-qr";
+import { encodeTokenUrl } from "@/lib/attendance-qr";
 import { AttendanceQrPoster } from "@/components/AttendanceQrPoster";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -121,7 +121,7 @@ export function AttendanceSessionPanel({ onSessionChange }: { onSessionChange?: 
       toast.error("Imeshindikana kutengeneza QR. Jaribu tena.");
       return false;
     }
-    setToken(encodeQrToken(res.token));
+    setToken(encodeTokenUrl(res.token, window.location.origin));
     setExpiresAt(res.expiresAt);
     return true;
   }, []);

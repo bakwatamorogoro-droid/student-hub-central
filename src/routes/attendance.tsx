@@ -25,6 +25,12 @@ import {
 
 export const Route = createFileRoute("/attendance")({
   component: Page,
+  // A poster's QR opens this page directly, so the session it carries arrives as
+  // a query string: `?join=K7M2QX` for a printed code, `?t=…` for a live token.
+  validateSearch: (s: Record<string, unknown>): { join?: string; t?: string } => ({
+    join: typeof s.join === "string" ? s.join.toUpperCase() : undefined,
+    t: typeof s.t === "string" ? s.t : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Mahudhurio — Islamic Studies Test Online" },
@@ -39,6 +45,7 @@ export const Route = createFileRoute("/attendance")({
 
 function Page() {
   const { t } = useI18n();
+  const { join, t: tokenParam } = Route.useSearch();
   const [token, setToken] = useState<string | null>(null);
   const [history, setHistory] = useState<SessionSummary[]>([]);
   const [open, setOpen] = useState<OpenSession[]>([]);
@@ -176,7 +183,11 @@ function Page() {
           </div>
         )}
 
-        <QrAttendanceCheckIn onCheckedIn={reload} />
+        <QrAttendanceCheckIn
+          onCheckedIn={reload}
+          initialJoinCode={join ?? null}
+          initialToken={tokenParam ?? null}
+        />
 
         <Card>
           <CardHeader className="pb-3">

@@ -78,7 +78,9 @@ const {
 } = await import("@/lib/attendance");
 const { getStudentToken, setStudentToken, clearStudentToken } =
   await import("@/lib/student-session");
-const { decodeJoinQr, encodeJoinQr } = await import("@/lib/attendance-qr");
+const { decodeJoinQr, encodeJoinQr, encodeJoinUrl, parseAttendanceQr } =
+  await import("@/lib/attendance-qr");
+const { liveNews, hasContent } = await import("@/lib/news");
 
 let pass = 0,
   fail = 0;
@@ -816,11 +818,7 @@ try {
     report.sessions.some((x) => x.id === start.session.id),
     "session " + start.session.id + " missing from " + report.sessions.length,
   );
-  check(
-    "F1c the report lists the roster",
-    report.rows.length > 0,
-    "no students in the roster",
-  );
+  check("F1c the report lists the roster", report.rows.length > 0, "no students in the roster");
   const row = report.rows.find((r) => r.regNo === REG);
   check("F1d the seeded student has a row", !!row, REG + " not in the report");
   if (row) {
@@ -834,7 +832,11 @@ try {
       row.attended === row.cells.filter((c) => c.present).length,
       "count mismatch",
     );
-    check("F1g the percentage is in range", row.percent >= 0 && row.percent <= 100, String(row.percent));
+    check(
+      "F1g the percentage is in range",
+      row.percent >= 0 && row.percent <= 100,
+      String(row.percent),
+    );
   }
   check(
     "F1h the per-session totals cover every session",
@@ -844,7 +846,11 @@ try {
 
   // The Excel the teacher downloads is built from the same object.
   const sheet = reportToSheet(report);
-  check("F1i the sheet has one row per student", sheet.length === report.rows.length, String(sheet.length));
+  check(
+    "F1i the sheet has one row per student",
+    sheet.length === report.rows.length,
+    String(sheet.length),
+  );
   if (sheet.length > 0) {
     const keys = Object.keys(sheet[0]);
     check(
@@ -860,7 +866,8 @@ try {
 
 // --- F2: live exam tracking reads an open paper and ignores a closed one
 const { supabase } = await import("@/integrations/supabase/client");
-const { loadLiveExams, touchSubmission, forceSubmitSubmission } = await import("@/lib/liveExamsApi");
+const { loadLiveExams, touchSubmission, forceSubmitSubmission } =
+  await import("@/lib/liveExamsApi");
 const liveExamId = "a0000000-0000-4000-8000-0000000000f1";
 
 try {
@@ -932,7 +939,8 @@ try {
     );
     check(
       "F2j the heartbeat cannot reopen a closed paper",
-      (await rest("submissions?id=eq." + openId + "&select=submitted_at")).body?.[0]?.submitted_at != null,
+      (await rest("submissions?id=eq." + openId + "&select=submitted_at")).body?.[0]
+        ?.submitted_at != null,
       "a closed paper must stay closed",
     );
   }
@@ -984,14 +992,26 @@ try {
       supabase.from("submissions").upsert(body as never, { onConflict: "exam_id,student_id" }),
   );
 
-  check("F3a the write succeeds despite an unknown column", !last.error, JSON.stringify(last.error));
-  check("F3b the unknown column is reported as dropped", dropped.includes("e2e_no_such_column"), dropped.join("|"));
+  check(
+    "F3a the write succeeds despite an unknown column",
+    !last.error,
+    JSON.stringify(last.error),
+  );
+  check(
+    "F3b the unknown column is reported as dropped",
+    dropped.includes("e2e_no_such_column"),
+    dropped.join("|"),
+  );
 
   const saved = await rest(
     "submissions?exam_id=eq." + probeExamId + "&select=reg_no,answers,submitted_at",
   );
   const savedRow = saved.body?.[0];
-  check("F3c the answers were actually saved", savedRow?.answers?.q1 === "the answer", JSON.stringify(saved));
+  check(
+    "F3c the answers were actually saved",
+    savedRow?.answers?.q1 === "the answer",
+    JSON.stringify(saved),
+  );
   check("F3d the paper is marked submitted", !!savedRow?.submitted_at, JSON.stringify(savedRow));
 } catch (e) {
   check("F3 the submission survives an unknown column", false, String(e));
@@ -1000,12 +1020,119 @@ try {
   await rest("exams?id=eq.a0000000-0000-4000-8000-0000000000f3", { method: "DELETE" });
 }
 
+// --- F4: a poster a phone's own camera app can open, and the public news page
+//
+// The point of the link format is that the student needs no app of ours to read
+// the poster: the camera shows the URL and the phone offers to open it.
+const ORIGIN = "https://www.islamicstudiestest.online";
+const posterLink = posterSession.ok ? encodeJoinUrl(posterSession.session.joinCode, ORIGIN) : "";
+check(
+  "F4a the poster QR is a link the phone camera can open",
+  posterSession.ok && posterLink === ORIGIN + "/attendance?join=" + posterSession.session.joinCode,
+  posterLink,
+);
+const queryParam = (u: string, k: string): string | null => {
+  const m = u.match(new RegExp("[?&]" + k + "=([^&]*)"));
+  return m ? decodeURIComponent(m[1]) : null;
+};
+check(
+  "F4b the link carries the join code, not just the code",
+  posterSession.ok && queryParam(posterLink, "join") === posterSession.session.joinCode,
+  posterLink,
+);
+check(
+  "F4c the scanner reads that link back to the same code",
+  posterSession.ok &&
+    JSON.stringify(parseAttendanceQr(posterLink)) ===
+      JSON.stringify({ kind: "join", joinCode: posterSession.session.joinCode }),
+  posterLink,
+);
+check(
+  "F4d a poster already on a wall still scans, because the old format is kept",
+  posterSession.ok &&
+    decodeJoinQr(encodeJoinQr(posterSession.session.joinCode)) === posterSession.session.joinCode,
+  posterRaw,
+);
+const tokenLink = ORIGIN + "/attendance?t=" + "a".repeat(24);
+check(
+  "F4e a token link is read as a token",
+  JSON.stringify(parseAttendanceQr(tokenLink)) ===
+    JSON.stringify({ kind: "token", token: "a".repeat(24) }),
+  tokenLink,
+);
+check(
+  "F4f a link to somewhere else is refused, not guessed at",
+  parseAttendanceQr("https://evil.example/?join=") === null,
+);
+
+// The whole path a student's phone takes: the poster link is parsed, and what
+// comes out of the parser is fed straight to check-in.
+const linkSession = await startAttendanceSession({
+  title: "E2E Link",
+  semina: "Semina 2",
+  studentGroup: null,
+  lat: LAT,
+  lng: LNG,
+  radiusM: 50,
+  joinCode: makeJoinCode(),
+});
+// A9 logged the student out and C5 rotated their PIN, so sign in again with
+// whatever PIN is current. The scan path needs a live session, exactly as a
+// student's phone would.
+const linkLogin = await loginStudent(REG, reset.ok ? reset.pin : "778899");
+check("F4g the student can sign in again for the scan", linkLogin.ok, JSON.stringify(linkLogin));
+const linkScanned = linkSession.ok
+  ? parseAttendanceQr(encodeJoinUrl(linkSession.session.joinCode, ORIGIN))
+  : null;
+check(
+  "F4h a scanned poster link parses to a join code",
+  linkScanned?.kind === "join",
+  JSON.stringify(linkScanned),
+);
+const viaLink =
+  linkSession.ok && linkScanned?.kind === "join"
+    ? await checkIn({
+        studentToken: linkLogin.ok ? linkLogin.token : login.token,
+        joinCode: linkScanned.joinCode,
+        lat: LAT,
+        lng: LNG,
+      })
+    : { ok: false, reason: "setup failed" };
+check("F4i a check-in driven by the scanned link succeeds", viaLink.ok, JSON.stringify(viaLink));
+
+// The public news page reads announcements with the anon key and no sign-in.
+const newsRows = await rest(
+  "announcements?select=id,title,message,pdf_url,image_url,created_at,expires_at,active&active=eq.true&order=created_at.desc",
+);
+check(
+  "F4j the public news read is allowed without signing in",
+  newsRows.status < 300,
+  newsRows.status,
+);
+const live = liveNews(newsRows.body as Parameters<typeof liveNews>[0]);
+check(
+  "F4k every item the page shows is active and unexpired",
+  live.every((n) => !n.expiresAt || new Date(n.expiresAt).getTime() > Date.now()),
+  String(live.length),
+);
+check(
+  "F4l nothing shown is blank",
+  live.every((n) => hasContent(n)),
+  String(live.length),
+);
+const pdfRow = live.find((n) => n.pdfUrl);
+check(
+  "F4m a PDF announcement exposes a link",
+  pdfRow === undefined || /^https?:\/\//.test(pdfRow.pdfUrl || ""),
+  pdfRow ? String(pdfRow.pdfUrl) : "no pdf posted yet",
+);
+
 // --- cleanup
 clearStudentToken();
 // Delete only this run's rows. Namespace-wide deletes here would wipe the
 // sessions a real teacher has open, and the check-ins recorded against them.
 const NS = "a0000000-0000-4000-8000-0000000000";
-const sessionIds = [start, start2, start3, start3b, start3c, start4, posterSession]
+const sessionIds = [start, start2, start3, start3b, start3c, start4, posterSession, linkSession]
   .filter((r) => r.ok)
   .map((r) => r.session.id);
 for (const sid of sessionIds) {

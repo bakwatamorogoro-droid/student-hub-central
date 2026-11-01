@@ -713,3 +713,55 @@ bun install --frozen-lockfile && bun run build
 (Vercel serves the SPA rewrite from `vercel.json`; a `_redirects` copy re-creates the catch-all
 that turns a missing hashed chunk into HTML). The check failed every PR after the removal and
 was replaced with a warning.
+
+## QR codes open the site, and the news page is public
+
+### The QR payload is a link, not a token string
+
+A poster used to carry `ISL-JOIN1:K7M2QX`. That is readable only by our own scanner, so a
+student holding a phone with nothing but the camera app was stuck. Both payloads are now
+**links to this site**:
+
+```
+https://<host>/attendance?join=K7M2QX     printed poster, stable while the session is open
+https://<host>/attendance?t=<token>       teacher's screen, rotates every 25 s
+```
+
+The phone's own camera shows the URL and offers to open it; no app of ours is involved in
+reading it. `encodeJoinUrl` / `encodeTokenUrl` build them, and `parseAttendanceQr` reads
+whatever a scanner hands back: a link, the legacy `ISL-` payloads (posters already on a wall
+must keep working), or a bare code read aloud off the sheet.
+
+`/attendance` declares `validateSearch` for `join` and `t`, so the scanned session arrives on
+the page and pre-fills the code instead of being thrown away.
+
+### Check-in signs the student in on the spot
+
+Identity still comes from a real `loginStudent` call — a scan says *which* session, never
+*who* is scanning. What changed is where that sign-in happens: `QrAttendanceCheckIn` now takes
+Reg Namba and PIN inline, so a scanned link does not bounce the student to `/account` and lose
+the session. A scan that arrives before sign-in is held in `pendingRef` and finished the
+moment the token appears.
+
+Do not "simplify" this into an anonymous check-in. The server resolves the student from the
+session token, and that is the only reason the record is trustworthy.
+
+### `/news` is the public notice board
+
+Announcements were only visible in the marquee banner, which cannot show a PDF or more than a
+line of text. `/news` lists them for anyone, signed in or not: title, full body text with
+newlines preserved, PDF open/download, and an image if one is attached. The newest live notice
+is pinned. The admin form on `/admin/settings` says where a notice lands and what belongs in
+the message field.
+
+The liveness rule lives in `src/lib/news.ts` (`liveNews`, `hasContent`) rather than in the
+component, so the banner, the news page and the admin list cannot disagree about whether a
+notice is still showing. `image_url` is read with a fallback, because it arrives with a
+migration that production may not have yet.
+
+### Tests
+
+- `src/lib/attendance-qr.test.ts` — link round-trips, legacy payloads, and junk refusal.
+- `src/lib/news.test.ts` — active/expired filtering, ordering, missing column.
+- `tests/e2e/attendance.e2e.ts` F4a–F4m — the poster link opens, parses, and drives a real
+  check-in against live Supabase; the public news read needs no sign-in.

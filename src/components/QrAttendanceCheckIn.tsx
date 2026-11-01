@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { QrScanner } from "@/components/QrScanner";
-import { decodeJoinQr, decodeQrToken } from "@/lib/attendance-qr";
+import { parseAttendanceQr, type ScannedAttendance } from "@/lib/attendance-qr";
 import {
   checkIn,
   getPosition,
@@ -12,9 +12,10 @@ import {
   type AttendanceFailure,
   type OpenSession,
 } from "@/lib/attendance";
-import { CheckCircle2, Loader2, MapPin, QrCode, ShieldAlert, XCircle } from "lucide-react";
+import { loginStudent } from "@/lib/studentAccount";
+import { CheckCircle2, Loader2, LogIn, MapPin, QrCode, ShieldAlert, XCircle } from "lucide-react";
 import { toast } from "@/lib/toast";
-import { getStudentToken } from "@/lib/student-session";
+import { getStudentToken, setStudentToken } from "@/lib/student-session";
 
 /** Messages the student sees when a check-in is refused. */
 const FAILURE_TEXT: Record<AttendanceFailure, string> = {
@@ -23,7 +24,7 @@ const FAILURE_TEXT: Record<AttendanceFailure, string> = {
   invalid_token: "QR au msimbo haitambuliki. Hakikisha ni wa kipindi kinachoendelea.",
   expired_token: "QR hii imeisha muda wake. Scan tena QR ya sasa.",
   session_closed: "Kipindi hiki kimefungwa. Huwezi kuhudhuria kipindi kilichofungwa.",
-  not_registered: "Haujatambuliwa kama mwanafunzi. Ingia kwenye akaunti yako kwanza.",
+  not_registered: "Haujatambuliwa kama mwanafunzi. Weka Reg Namba na PIN yako kisha ujaribu tena.",
   gps_required:
     "Umbali hauwezi kuthibitishwa. Ruhusu GPS, na hakikisha kipindi kina eneo la darasa.",
   outside_area: "Uko nje ya eneo lililoruhusiwa la darasa. Sogeza karibu na mwalimu.",
@@ -35,11 +36,22 @@ type Done = { fullName: string; distanceM: number; checkInAt: string; semina: st
 
 /**
  * `onCheckedIn` fires after a successful check-in so a host page can refresh
- * whatever it shows about attendance — the history list on /attendance, for
- * one. Optional, so the component still drops onto a page with nothing to
- * refresh.
+ * whatever it shows about attendance — the history list on /attendance, for one.
+ * Optional, so the component still drops onto a page with nothing to refresh.
+ *
+ * `initialJoinCode` / `initialToken` come from a scanned poster link, so opening
+ * `/attendance?join=K7M2QX` lands the student already holding that session's
+ * code instead of asking them to type it.
  */
-export function QrAttendanceCheckIn({ onCheckedIn }: { onCheckedIn?: () => void } = {}) {
+export function QrAttendanceCheckIn({
+  onCheckedIn,
+  initialJoinCode,
+  initialToken,
+}: {
+  onCheckedIn?: () => void;
+  initialJoinCode?: string | null;
+  initialToken?: string | null;
+} = {}) {
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Done | null>(null);
@@ -48,10 +60,24 @@ export function QrAttendanceCheckIn({ onCheckedIn }: { onCheckedIn?: () => void 
     distanceM?: number;
     radiusM?: number;
   } | null>(null);
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(initialJoinCode ?? "");
   const [sessions, setSessions] = useState<OpenSession[]>([]);
+  const [studentToken, setTokenState] = useState<string | null>(() => getStudentToken());
 
-  const studentToken = getStudentToken();
+  // Sign-in happens on this page rather than sending the student to /account and
+  // back: a scanned link arrives with a session to join, and a detour loses it.
+  const [regNo, setRegNo] = useState("");
+  const [pin, setPin] = useState("");
+  const [signingIn, setSigningIn] = useState(false);
+
+  // A scan that arrived before sign-in waits here until the student is signed in.
+  const pendingRef = useRef<ScannedAttendance | null>(
+    initialToken
+      ? { kind: "token", token: initialToken }
+      : initialJoinCode
+        ? { kind: "join", joinCode: initialJoinCode }
+        : null,
+  );
 
   const refreshSessions = useCallback(async () => {
     const token = getStudentToken();
@@ -99,50 +125,86 @@ export function QrAttendanceCheckIn({ onCheckedIn }: { onCheckedIn?: () => void 
     [onCheckedIn],
   );
 
-  const handleToken = useCallback(
-    async (raw: string) => {
-      setScanning(false);
-      // A printed poster carries the session's join code, a live screen carries a
-      // rotating token. Accept both so one scanner serves either.
-      const joinCode = decodeJoinQr(raw);
-      const token = joinCode ? null : decodeQrToken(raw);
-      if (!joinCode && !token) {
-        setFailure({ reason: "invalid_token" });
-        return;
-      }
-      // Identity comes from the PIN sign-in session. Without it the server has
-      // no trustworthy way to tell who is scanning, so ask the student to sign
-      // in rather than sending anything the browser could choose.
-      const st = getStudentToken();
-      if (!st) {
-        toast.error("Ingia kwenye akaunti yako kwanza (/account), kisha skani QR.");
-        return;
-      }
+  const runScan = useCallback(
+    async (scanned: ScannedAttendance, st: string) => {
       await record((fix) =>
-        checkIn(
-          joinCode
-            ? { studentToken: st, joinCode, lat: fix.lat, lng: fix.lng }
-            : { studentToken: st, token, lat: fix.lat, lng: fix.lng },
-        ),
+        scanned.kind === "join"
+          ? checkIn({ studentToken: st, joinCode: scanned.joinCode, lat: fix.lat, lng: fix.lng })
+          : checkIn({ studentToken: st, token: scanned.token, lat: fix.lat, lng: fix.lng }),
       );
     },
     [record],
   );
 
+  const handleToken = useCallback(
+    async (raw: string) => {
+      setScanning(false);
+      const scanned = parseAttendanceQr(raw);
+      if (!scanned) {
+        setFailure({ reason: "invalid_token" });
+        return;
+      }
+      // Identity still comes from a real sign-in; the scan only says which
+      // session. A scanned link just spares the student the trip to /account.
+      const st = getStudentToken();
+      if (!st) {
+        pendingRef.current = scanned;
+        if (scanned.kind === "join") setCode(scanned.joinCode);
+        toast.error("Weka Reg Namba na PIN yako hapa chini, kisha mahudhurio yataendelea.");
+        return;
+      }
+      await runScan(scanned, st);
+    },
+    [runScan],
+  );
+
+  // Finishes a scan that was waiting on sign-in.
+  useEffect(() => {
+    if (!studentToken || !pendingRef.current || busy) return;
+    const scanned = pendingRef.current;
+    pendingRef.current = null;
+    void runScan(scanned, studentToken);
+  }, [studentToken, busy, runScan]);
+
+  const signIn = useCallback(async () => {
+    if (!regNo.trim()) return toast.error("Weka Reg Namba yako");
+    if (!/^[0-9]{4,10}$/.test(pin)) return toast.error("PIN inatakiwa tarakimu 4 hadi 10");
+    setSigningIn(true);
+    try {
+      const res = await loginStudent(regNo.trim(), pin);
+      if (!res.ok) {
+        const msg =
+          res.reason === "locked"
+            ? "Akaunti imefungwa kwa muda. Jaribu tena baadaye."
+            : res.reason === "wrong_device"
+              ? "PIN ni sahihi lakini simu hii si ile uliyotumia. Omba msimamizi akuwezeshe."
+              : res.reason === "not_ready"
+                ? "Mfumo haujawa tayari. Mwambie msimamizi."
+                : "Reg Namba au PIN si sahihi.";
+        toast.error(msg);
+        return;
+      }
+      setStudentToken(res.token);
+      setTokenState(res.token);
+      setPin("");
+      toast.success(`Karibu ${res.fullName}`);
+    } finally {
+      setSigningIn(false);
+    }
+  }, [regNo, pin]);
+
   const handleCode = useCallback(async () => {
     const st = getStudentToken();
     if (!st) {
-      toast.error("Ingia kwenye akaunti yako kwanza (/account).");
+      toast.error("Weka Reg Namba na PIN yako hapa chini kwanza.");
       return;
     }
     if (code.trim().length < 4) {
       toast.error("Andika msimbo wa kipindi");
       return;
     }
-    await record((fix) =>
-      checkIn({ studentToken: st, joinCode: code.trim(), lat: fix.lat, lng: fix.lng }),
-    );
-  }, [code, record]);
+    await runScan({ kind: "join", joinCode: code.trim() }, st);
+  }, [code, runScan]);
 
   if (done) {
     return (
@@ -174,20 +236,10 @@ export function QrAttendanceCheckIn({ onCheckedIn }: { onCheckedIn?: () => void 
           <QrCode className="h-4 w-4" /> Hudhuria kwa QR Code
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Ingia kwa Reg Namba na PIN, kisha scan QR ya kipindi ukiwa darasani. Umbali unaotakiwa
-          unawekwa na mwalimu.
+          Skani QR ya kipindi ukiwa darasani. Umbali unaotakiwa unawekwa na mwalimu.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!studentToken && (
-          <div className="flex gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
-            <ShieldAlert className="h-5 w-5 shrink-0 text-primary" />
-            <p className="text-sm">
-              Ingia kwenye akaunti yako kwanza: nenda <b>/account</b> uweke Reg Namba na PIN yako.
-            </p>
-          </div>
-        )}
-
         {failure && (
           <div className="flex gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
             <XCircle className="h-5 w-5 shrink-0 text-destructive" />
@@ -205,6 +257,58 @@ export function QrAttendanceCheckIn({ onCheckedIn }: { onCheckedIn?: () => void 
                 </p>
               )}
             </div>
+          </div>
+        )}
+
+        {!studentToken && (
+          <div className="space-y-3 rounded-xl border border-primary/30 bg-primary/5 p-3">
+            <div className="flex gap-2">
+              <ShieldAlert className="h-5 w-5 shrink-0 text-primary" />
+              <div className="text-sm">
+                <p className="font-medium">Jitambulishe kwa Reg Namba na PIN</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Mahudhurio huhifadhiwa kwa jina lako, kwa hiyo tunahitaji kuthibitisha ni wewe.
+                  Ukishajitambulisha hapa, skani yako itaendelea moja kwa moja.
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="qr-reg" className="text-xs">
+                  Reg Namba
+                </Label>
+                <Input
+                  id="qr-reg"
+                  value={regNo}
+                  onChange={(e) => setRegNo(e.target.value)}
+                  placeholder="Mfano MUM2025-04-14106"
+                  autoComplete="username"
+                />
+              </div>
+              <div>
+                <Label htmlFor="qr-pin" className="text-xs">
+                  PIN
+                </Label>
+                <Input
+                  id="qr-pin"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ""))}
+                  inputMode="numeric"
+                  type="password"
+                  placeholder="Tarakimu 4–10"
+                  autoComplete="current-password"
+                  maxLength={10}
+                />
+              </div>
+            </div>
+            <Button onClick={signIn} disabled={signingIn} className="w-full gap-1">
+              {signingIn ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <LogIn className="h-4 w-4" />
+              )}
+              Jitambulishe
+            </Button>
           </div>
         )}
 
@@ -240,7 +344,7 @@ export function QrAttendanceCheckIn({ onCheckedIn }: { onCheckedIn?: () => void 
           />
         ) : (
           <>
-            <Button onClick={() => setScanning(true)} className="w-full" disabled={!studentToken}>
+            <Button onClick={() => setScanning(true)} className="w-full">
               <QrCode className="h-4 w-4" /> Fungua kamera kuscan QR
             </Button>
 
@@ -256,13 +360,8 @@ export function QrAttendanceCheckIn({ onCheckedIn }: { onCheckedIn?: () => void 
                   placeholder="Mfano K7M2QX"
                   className="font-mono tracking-widest"
                   maxLength={12}
-                  disabled={!studentToken}
                 />
-                <Button
-                  variant="outline"
-                  onClick={handleCode}
-                  disabled={!studentToken || code.trim().length < 4}
-                >
+                <Button variant="outline" onClick={handleCode} disabled={code.trim().length < 4}>
                   Hudhuria
                 </Button>
               </div>

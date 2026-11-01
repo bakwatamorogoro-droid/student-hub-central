@@ -546,6 +546,14 @@ function Page() {
       <Card>
         <CardHeader>
           <CardTitle>Matangazo</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Tangazo lolote linalowashwa linaonekana kwenye ukurasa wa wazi{" "}
+            <a href="/news" target="_blank" rel="noreferrer" className="text-primary underline">
+              /news
+            </a>{" "}
+            kwa kila mtu, bila kuingia kwenye akaunti. Andika maelekezo kwenye "Maelezo", na
+            ambatanisha PDF ikiwa ipo.
+          </p>
         </CardHeader>
         <CardContent className="space-y-3">
           <div>
@@ -556,14 +564,21 @@ function Page() {
             />
           </div>
           <div>
-            <Label>Maelezo</Label>
+            <Label>Maelezo / Maelekezo</Label>
             <Textarea
               value={newAnn.message}
               onChange={(e) => setNewAnn({ ...newAnn, message: e.target.value })}
+              rows={5}
+              placeholder={
+                "Eleza hatua kwa hatua, mstari mmoja kwa kila hatua:\n1. Ingia kwenye akaunti yako\n2. Fungua ukurasa wa mitihani\n3. Fuata maelekezo"
+              }
             />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Kila mstari unaonekana kama mstari wake kwenye ukurasa wa habari.
+            </p>
           </div>
           <div>
-            <Label>Pakia PDF (hiari)</Label>
+            <Label>Pakia PDF (hiari) — nyaraka, ratiba, fomu</Label>
             <div className="flex gap-2 items-center">
               <Input
                 type="file"

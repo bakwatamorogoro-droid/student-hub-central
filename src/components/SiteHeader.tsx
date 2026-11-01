@@ -9,6 +9,7 @@ import {
   FileText,
   LogIn,
   CalendarCheck,
+  Newspaper,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
@@ -59,6 +60,11 @@ export function SiteHeader() {
                 to: "/semester-questions",
                 label: t("nav_semester_qs"),
                 icon: <FileText className="h-3.5 w-3.5" />,
+              },
+              {
+                to: "/news",
+                label: t("nav_news"),
+                icon: <Newspaper className="h-3.5 w-3.5" />,
               },
               { to: "/results", label: t("results") },
               {

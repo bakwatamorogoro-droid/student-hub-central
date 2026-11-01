@@ -75,6 +75,7 @@ const dict: Record<string, { sw: string; en: string }> = {
   nav_account: { sw: "Akaunti", en: "My account" },
   nav_semester_qs: { sw: "Maswali ya Semester", en: "Semester Questions" },
   nav_attendance: { sw: "Mahudhurio", en: "Attendance" },
+  nav_news: { sw: "Habari", en: "News" },
   attendance_card_sub: {
     sw: "Skani QR au weka msimbo wa kipindi kuhudhuria. Hapa pia unaona historia yako.",
     en: "Scan a QR or enter a session code to check in. Your history lives here too.",
@@ -85,6 +86,39 @@ const dict: Record<string, { sw: string; en: string }> = {
   att_sub: {
     sw: "Hudhuria kipindi kwa kuscan QR au kwa msimbo. Historia yako yote iko hapa chini.",
     en: "Check in with a QR scan or a session code. Your full history sits below.",
+  },
+  // --- habari (ukurasa wa wazi) --------------------------------------------
+  news_title: { sw: "Habari na Matangazo", en: "News & Announcements" },
+  news_headline: { sw: "Habari za Chuo", en: "College News" },
+  news_sub: {
+    sw: "Matangazo, maelekezo na nyaraka muhimu. Ukurasa huu ni wa wazi \u2014 huhitaji kuingia kwenye akaunti.",
+    en: "Notices, guidance and important documents. This page is open \u2014 no sign-in needed.",
+  },
+  news_public_note: { sw: "Wazi kwa kila mtu", en: "Open to everyone" },
+  news_refresh: { sw: "Onyesha upya", en: "Refresh" },
+  news_new: { sw: "Mpya", en: "New" },
+  news_older: { sw: "Matangazo yaliyopita", en: "Earlier notices" },
+  news_untitled: { sw: "Tangazo", en: "Notice" },
+  news_empty: { sw: "Hakuna tangazo kwa sasa", en: "No announcements right now" },
+  news_empty_body: {
+    sw: "Matangazo mapya yataonekana hapa mara tu ofisi inapoyatangaza.",
+    en: "New notices appear here as soon as the office posts them.",
+  },
+  news_open_pdf: { sw: "Fungua PDF", en: "Open PDF" },
+  news_download_pdf: { sw: "Pakua", en: "Download" },
+  news_no_attachment: { sw: "Hakuna kiambatisho", en: "No attachment" },
+  news_help_title: { sw: "Maelekezo", en: "Guidance" },
+  news_help_pdf: {
+    sw: "Kwa nyaraka (PDF): bofya \u201cFungua PDF\u201d kusoma hapa, au \u201cPakua\u201d kuisave kwenye simu yako.",
+    en: "For documents (PDF): tap \u201cOpen PDF\u201d to read here, or \u201cDownload\u201d to save it on your phone.",
+  },
+  news_help_attend: {
+    sw: "Kwa mahudhurio: nenda Mahudhurio, skani QR ya mwalimu au andika msimbo wa kipindi.",
+    en: "For attendance: open Attendance, scan the teacher's QR or enter the session code.",
+  },
+  news_help_notice: {
+    sw: "Tangazo linalokwisha muda wake huondolewa kiotomatiki \u2014 hivyo unachokiona hapa ni cha sasa.",
+    en: "A notice past its expiry is removed automatically, so what you see here is current.",
   },
   att_present_today: { sw: "Umehudhuria leo", en: "Present today" },
   att_total: { sw: "Jumla ya Vipindi", en: "Sessions attended" },
@@ -105,14 +139,14 @@ const dict: Record<string, { sw: string; en: string }> = {
   },
   att_present: { sw: "Alikuwepo", en: "Present" },
   att_need_account: {
-    sw: "Ingia kwenye akaunti yako kwanza.",
-    en: "Sign in to your account first.",
+    sw: "Jitambulishe ili kuhudhuria.",
+    en: "Identify yourself to check in.",
   },
   att_need_account_body: {
-    sw: "Weka Reg Namba na PIN yako kwenye Akaunti, kisha urudi hapa kuhudhuria.",
-    en: "Set your Reg number and PIN under Account, then come back to check in.",
+    sw: "Weka Reg Namba na PIN yako kwenye kisanduku cha “Hudhuria kwa QR Code” hapa chini — huhitaji kuondoka kwenye ukurasa huu.",
+    en: "Enter your Reg number and PIN in the “Check in with QR Code” box below — no need to leave this page.",
   },
-  att_go_account: { sw: "Nenda kwenye Akaunti", en: "Go to Account" },
+  att_go_account: { sw: "Fungua Akaunti", en: "Open Account" },
   att_confirmed: { sw: "Mahudhurio yamethibitishwa", en: "Attendance confirmed" },
   att_distance: { sw: "Umbali", en: "Distance" },
   att_time: { sw: "Muda", en: "Time" },
