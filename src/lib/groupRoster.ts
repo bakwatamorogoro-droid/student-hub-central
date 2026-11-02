@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllStudents } from "@/lib/fetchAllStudents";
-import { retryWithoutMissingColumns } from "@/lib/schema-retry";
+import { retryWithoutMissingColumns, missingColumnFrom } from "@/lib/schema-retry";
 import {
   GROUP_SIZE,
   buildSeminarReports,
@@ -9,6 +9,7 @@ import {
   normalizeGroupName,
   normalizeSeminar,
   planAssignments,
+  planMoves,
   searchMembers,
   type GroupMember,
   type MyGroup,
@@ -19,10 +20,32 @@ import {
 export type { MyGroup, SeminarReport };
 
 /** The columns the group logic reads. */
-export const ROSTER_COLUMNS = "id, reg_no, full_name, semina, gender, student_group";
+export const ROSTER_COLUMNS =
+  "id, reg_no, full_name, semina, gender, student_group, phone, group_confirmed_at";
+
+/**
+ * The roster columns, newest first. `group_confirmed_at` arrives with the confirmation
+ * migration, so a database that has not run it yet rejects the whole select with a
+ * missing-column error. Dropping the unknown names and retrying keeps every other page
+ * working until the migration is applied.
+ */
+const ROSTER_FALLBACKS = [
+  ROSTER_COLUMNS,
+  "id, reg_no, full_name, semina, gender, student_group, phone",
+  "id, reg_no, full_name, semina, gender, student_group",
+];
 
 export async function loadRoster(): Promise<RosterEntry[]> {
-  return fetchAllStudents<RosterEntry>(ROSTER_COLUMNS, { orderBy: "reg_no" });
+  let lastError: unknown = null;
+  for (const columns of ROSTER_FALLBACKS) {
+    try {
+      return await fetchAllStudents<RosterEntry>(columns, { orderBy: "reg_no" });
+    } catch (e) {
+      lastError = e;
+      if (!missingColumnFrom(e)) throw e;
+    }
+  }
+  throw lastError;
 }
 
 export type AssignOutcome = {
@@ -69,23 +92,16 @@ async function writeByTarget(
   return { updated, dropped: [...dropped] };
 }
 
-/** Picks out the rows whose stored seminar/group differs from the plan. */
+/**
+ * Picks out the rows whose stored seminar/group differs from the plan, skipping any
+ * confirmed seat. The rule itself lives in `planMoves` so it can be tested directly.
+ */
 function changedRows(
   roster: RosterEntry[],
   plan: ReturnType<typeof planAssignments>,
   onlySemina?: string,
 ): Map<string, { semina: string; student_group: string }> {
-  const wanted = new Map<string, { semina: string; student_group: string }>();
-  for (const s of roster) {
-    const semina = plan.seminars[s.id] ?? normalizeSeminar(s.semina);
-    const group = plan.groups[s.id];
-    if (!semina || !group) continue;
-    if (onlySemina && semina !== onlySemina) continue;
-    if (normalizeSeminar(s.semina) === semina && normalizeGroupName(s.student_group) === group)
-      continue;
-    wanted.set(s.id, { semina, student_group: group });
-  }
-  return wanted;
+  return planMoves(roster, plan, onlySemina);
 }
 
 /**
@@ -146,6 +162,66 @@ export async function removeMemberFromGroup(studentId: string): Promise<Error | 
     .from("students")
     .update({ student_group: null } as any)
     .eq("id", studentId);
+  return (error as unknown as Error) ?? null;
+}
+
+export type ConfirmOutcome = {
+  /** This call is the one that confirmed the seat. */
+  confirmed: boolean;
+  /** The seat was already confirmed before this call. */
+  alreadyConfirmed: boolean;
+  /** The confirmation RPC is not on this database yet. */
+  needsMigration: boolean;
+  error: Error | null;
+};
+
+/**
+ * Confirms the student's seat, which freezes it. The database refuses to move a seat
+ * that is already confirmed, so a second call is a no-op rather than a move — the
+ * returned `alreadyConfirmed` says which happened.
+ *
+ * A database without the confirmation migration answers with "function not found"
+ * (PGRST202) instead of a missing column, so that is reported separately rather than
+ * as a failure the student can do nothing about.
+ */
+export async function confirmStudentGroup(
+  studentId: string,
+  semina: string | null,
+  group: string | null,
+): Promise<ConfirmOutcome> {
+  const { data, error } = await (supabase as any).rpc("confirm_student_group", {
+    p_student_id: studentId,
+    p_semina: semina,
+    p_group: group,
+  });
+
+  if (error) {
+    const code = (error as { code?: string }).code;
+    const message = String((error as { message?: string }).message || "");
+    const missing =
+      code === "PGRST202" || /could not find the function|does not exist/i.test(message);
+    return {
+      confirmed: false,
+      alreadyConfirmed: false,
+      needsMigration: missing,
+      error: error as unknown as Error,
+    };
+  }
+
+  const confirmed = data === true;
+  return {
+    confirmed,
+    alreadyConfirmed: data === false,
+    needsMigration: false,
+    error: null,
+  };
+}
+
+/** Releases a confirmed seat so the student can pick again. The admin page calls this. */
+export async function unlockStudentGroup(studentId: string): Promise<Error | null> {
+  const { error } = await (supabase as any).rpc("unlock_student_group", {
+    p_student_id: studentId,
+  });
   return (error as unknown as Error) ?? null;
 }
 

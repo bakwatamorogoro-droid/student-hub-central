@@ -33,9 +33,12 @@ export type RosterEntry = {
   semina?: string | null;
   gender?: string | null;
   student_group?: string | null;
+  phone?: string | null;
+  /** Set once the student confirms their seat; a confirmed seat is frozen. */
+  group_confirmed_at?: string | null;
 };
 
-export type GroupMember = { id: string; reg_no: string; full_name: string };
+export type GroupMember = { id: string; reg_no: string; full_name: string; phone?: string };
 
 /**
  * "Mwanamke" starts with an M, so a first-letter test files every woman as male.
@@ -229,11 +232,48 @@ export function planAssignments(roster: RosterEntry[]): Plan {
   return { seminars, groups, unknownGender, unassigned };
 }
 
+export type PlannedMove = { semina: string; student_group: string };
+
+/**
+ * The rows a write would move, keyed by student id.
+ *
+ * A confirmed seat is skipped. The student locked it at step 3, and the point of the
+ * lock is that nothing — not a later save, not re-planning around a newcomer — walks
+ * them out of it. Only a difference between the stored value and the plan is a move,
+ * so an unchanged student never appears here.
+ *
+ * `onlySemina` narrows the write to one seminar, which is what the CR's per-seminar
+ * save does.
+ */
+export function planMoves(
+  roster: RosterEntry[],
+  plan: Plan,
+  onlySemina?: string,
+): Map<string, PlannedMove> {
+  const wanted = new Map<string, PlannedMove>();
+  for (const s of roster) {
+    if (isConfirmed(s)) continue;
+    const semina = plan.seminars[s.id] ?? normalizeSeminar(s.semina);
+    const group = plan.groups[s.id];
+    if (!semina || !group) continue;
+    if (onlySemina && semina !== onlySemina) continue;
+    if (normalizeSeminar(s.semina) === semina && normalizeGroupName(s.student_group) === group)
+      continue;
+    wanted.set(s.id, { semina, student_group: group });
+  }
+  return wanted;
+}
+
 export const toMember = (s: RosterEntry): GroupMember => ({
   id: s.id,
   reg_no: String(s.reg_no ?? "").trim(),
   full_name: String(s.full_name ?? "").trim(),
+  phone: String(s.phone ?? "").trim(),
 });
+
+/** True once the student has confirmed their seat. */
+export const isConfirmed = (s: Pick<RosterEntry, "group_confirmed_at">): boolean =>
+  !!s.group_confirmed_at;
 
 export type GroupCell = {
   semina: string;
@@ -244,6 +284,10 @@ export type GroupCell = {
   size: number;
   complete: boolean;
   free: number;
+  /** How many of the seated members have confirmed their place. */
+  confirmed: number;
+  /** Everyone seated here has confirmed. */
+  allConfirmed: boolean;
 };
 
 export type SeminarReport = {
@@ -255,6 +299,10 @@ export type SeminarReport = {
   totalStudents: number;
   maleCount: number;
   femaleCount: number;
+  /** Groups where every seated member has confirmed. */
+  confirmedGroups: number;
+  /** Members across the seminar who have confirmed. */
+  confirmedStudents: number;
   /** Present in the seminar but not placeable until a gender is filled in. */
   unknownGender: GroupMember[];
 };
@@ -275,15 +323,14 @@ export function buildSeminarReports(roster: RosterEntry[]): SeminarReport[] {
   return sorted.map((semina) => {
     const cells = (gender: Gender): GroupCell[] =>
       GROUP_NAMES.map((group) => {
-        const members = roster
-          .filter(
-            (s) =>
-              seminarOf(s) === semina &&
-              plan.groups[s.id] === group &&
-              normalizeGender(s.gender) === gender,
-          )
-          .map(toMember)
-          .sort((a, b) => a.reg_no.localeCompare(b.reg_no));
+        const seated = roster.filter(
+          (s) =>
+            seminarOf(s) === semina &&
+            plan.groups[s.id] === group &&
+            normalizeGender(s.gender) === gender,
+        );
+        const members = seated.map(toMember).sort((a, b) => a.reg_no.localeCompare(b.reg_no));
+        const confirmed = seated.filter(isConfirmed).length;
         return {
           semina,
           gender,
@@ -293,6 +340,8 @@ export function buildSeminarReports(roster: RosterEntry[]): SeminarReport[] {
           size: GROUP_SIZE,
           complete: members.length >= GROUP_SIZE,
           free: Math.max(0, GROUP_SIZE - members.length),
+          confirmed,
+          allConfirmed: members.length > 0 && confirmed === members.length,
         };
       });
 
@@ -312,6 +361,8 @@ export function buildSeminarReports(roster: RosterEntry[]): SeminarReport[] {
       totalStudents: all.reduce((n, c) => n + c.count, 0),
       maleCount: male.reduce((n, c) => n + c.count, 0),
       femaleCount: female.reduce((n, c) => n + c.count, 0),
+      confirmedGroups: all.filter((c) => c.allConfirmed).length,
+      confirmedStudents: all.reduce((n, c) => n + c.confirmed, 0),
       unknownGender,
     };
   });
@@ -325,6 +376,8 @@ export type MyGroup = {
   members: GroupMember[];
   complete: boolean;
   free: number;
+  /** The student's own seat is confirmed, so it can no longer be moved. */
+  confirmed: boolean;
   note: string | null;
 };
 
@@ -368,6 +421,7 @@ export function findMyGroup(roster: RosterEntry[], query: string): MyGroup | nul
     members,
     complete: members.length >= GROUP_SIZE,
     free: Math.max(0, GROUP_SIZE - members.length),
+    confirmed: isConfirmed(me),
     note,
   };
 }

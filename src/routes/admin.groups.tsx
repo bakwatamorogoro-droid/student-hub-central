@@ -4,10 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GroupManager } from "@/components/GroupManager";
+import { GroupDirectory } from "@/components/GroupDirectory";
 import { SeminarReportPanel } from "@/components/SeminarReportPanel";
 import { loadGroupReports, type GroupReport } from "@/lib/groupRoster";
 import { genderLabel } from "@/lib/groupAssignment";
-import { ClipboardList, Loader2, RefreshCw, Users } from "lucide-react";
+import { ClipboardList, Loader2, RefreshCw, Users, LayoutGrid } from "lucide-react";
 
 export const Route = createFileRoute("/admin/groups")({ component: Page });
 
@@ -27,8 +28,11 @@ function Page() {
 
   return (
     <div className="container mx-auto max-w-6xl space-y-4 p-4">
-      <Tabs defaultValue="groups">
-        <TabsList className="grid w-full grid-cols-2">
+      <Tabs defaultValue="directory">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="directory" className="gap-1 font-bold">
+            <LayoutGrid className="h-4 w-4" /> Orodha ya Magroup
+          </TabsTrigger>
           <TabsTrigger value="groups" className="gap-1 font-bold">
             <Users className="h-4 w-4" /> Magroup na Semina
           </TabsTrigger>
@@ -36,6 +40,10 @@ function Page() {
             <ClipboardList className="h-4 w-4" /> Ripoti za CR
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="directory" className="mt-3">
+          <GroupDirectory />
+        </TabsContent>
 
         <TabsContent value="groups" className="mt-3">
           <GroupManager />

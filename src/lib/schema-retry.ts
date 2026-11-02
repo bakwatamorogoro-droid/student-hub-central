@@ -22,14 +22,37 @@
  * different column is the one that is absent.
  */
 
-/** The column PostgREST says it cannot find, or null if this is another error. */
+/**
+ * The column the database says it cannot find, or null if this is another error.
+ *
+ * Two shapes matter. A write names the column in a `PGRST204`
+ * ("Could not find the 'course_list' column of 'app_settings'"). A **select** on an
+ * unknown column comes back as Postgres `42703` instead, worded
+ * "column students.group_confirmed_at does not exist" — no quotes, and the table
+ * name glued to the front. Both are the same situation to a caller that can simply
+ * ask for one column less, so both are recognised here.
+ */
 export function missingColumnFrom(error: unknown): string | null {
   const e = error as { code?: string; message?: string } | null;
   if (!e) return null;
-  const isMissing = e.code === "PGRST204" || /could not find the .* column/i.test(e.message || "");
+  const message = e.message || "";
+
+  const isMissing =
+    e.code === "PGRST204" ||
+    e.code === "42703" ||
+    /could not find the .* column/i.test(message) ||
+    /column .* does not exist/i.test(message);
   if (!isMissing) return null;
-  const match = /Could not find the '([^']+)' column/i.exec(e.message || "");
-  return match ? match[1] : null;
+
+  const quoted = /Could not find the '([^']+)' column/i.exec(message);
+  if (quoted) return quoted[1];
+
+  // "column students.group_confirmed_at does not exist" -> "group_confirmed_at".
+  // The qualifier may be a table alias or a schema-qualified name, so take the last
+  // dotted segment.
+  const named = /column ["']?([\w.]+)["']? does not exist/i.exec(message);
+  if (!named) return null;
+  return named[1].split(".").pop() ?? null;
 }
 
 /**
