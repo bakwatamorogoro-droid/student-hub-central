@@ -40,3 +40,12 @@ export function useRoster() {
 
   return { roster, loading, error, reload: () => fetchRoster(true) };
 }
+
+/**
+ * Drops the cached roster so the next reader refetches it. Called after a write that
+ * moves a student, because `GroupRosterView` reads through this cache and would
+ * otherwise keep showing the seat the student just left.
+ */
+export function invalidateRosterCache() {
+  cache = null;
+}

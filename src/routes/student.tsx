@@ -5,8 +5,6 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -19,9 +17,7 @@ import { toast } from "@/lib/toast";
 import { alertSuccess, alertWarning } from "@/lib/alerts";
 import {
   UserCog,
-  AlertTriangle,
   CheckCircle2,
-  Mail,
   Clock,
   Wand2,
   Search,
@@ -44,6 +40,8 @@ import { DEFAULT_PROGRAM_YEARS, studyYearFromReg } from "@/lib/studyYear";
 import { useI18n } from "@/lib/i18n";
 import { loadDirectory } from "@/lib/directory";
 import { assignStudentGroup } from "@/lib/groupRoster";
+import { GROUP_NAMES, SEMINARS } from "@/lib/groupAssignment";
+import { invalidateRosterCache } from "@/lib/useRoster";
 import { GroupRosterView } from "@/components/GroupRosterView";
 
 export const Route = createFileRoute("/student")({
@@ -84,12 +82,14 @@ function Page() {
     new_phone: "",
   });
   const [wrongReg, setWrongReg] = useState(false);
-  // 1 = Reg Namba, 2 = correct your details, 3 = the group you landed in.
+  // 1 = Reg Namba, 2 = correct your details, 3 = your seminar and group.
   const [step, setStep] = useState(1);
   const [editStatus, setEditStatus] = useState<any[]>([]);
-  // issue form
-  const [issue, setIssue] = useState({ category: "test1", message: "", phone: "", email: "" });
-  const [myIssues, setMyIssues] = useState<any[]>([]);
+  // The student picks their own seminar and group. Seeded from their row on lookup.
+  const [editSemina, setEditSemina] = useState("");
+  const [editGroup, setEditGroup] = useState("");
+  // Bumped after a save to remount the group card against the fresh roster.
+  const [rosterEpoch, setRosterEpoch] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -125,7 +125,8 @@ function Page() {
     return () => window.removeEventListener("hashchange", openGroup);
   }, []);
 
-  const confirmStudent = async (data: any) => {
+  /** Loads one student row into the form. Leaves the current step alone. */
+  const fillForm = async (data: any) => {
     setStudent(data);
     setMatches([]);
     setReg(data.reg_no);
@@ -138,19 +139,47 @@ function Page() {
       new_phone: data.phone || "",
     });
     localStorage.setItem("student_reg", data.reg_no);
+    setEditSemina(data.semina || "");
+    setEditGroup(data.student_group || "");
     const { data: reqs } = await (supabase as any)
       .from("profile_update_requests")
       .select("*")
       .eq("student_id", data.id)
       .order("created_at", { ascending: false });
     setEditStatus(reqs || []);
+  };
+
+  const confirmStudent = async (data: any) => {
+    await fillForm(data);
     setStep(2);
-    const { data: iss } = await (supabase as any)
-      .from("issue_reports")
-      .select("*")
-      .eq("reg_no", data.reg_no)
-      .order("created_at", { ascending: false });
-    setMyIssues(iss || []);
+    // A student with no placement yet is filed in as soon as they confirm, so they are
+    // never left looking at an empty group. Someone already seated is left alone: the
+    // planner would re-run across the whole cohort, and a lookup should not reshuffle
+    // anyone's seat.
+    if (!data.semina || !data.student_group) void placeStudent(data.id);
+  };
+
+  /** Files one student into their seminar and gender-pure group. */
+  const placeStudent = async (studentId: string) => {
+    try {
+      const outcome = await assignStudentGroup(studentId);
+      if (outcome.me.semina || outcome.me.student_group) {
+        invalidateRosterCache();
+        setStudent((prev: any) =>
+          prev && prev.id === studentId
+            ? {
+                ...prev,
+                semina: outcome.me.semina ?? prev.semina,
+                student_group: outcome.me.student_group ?? prev.student_group,
+              }
+            : prev,
+        );
+        setEditSemina((prev) => outcome.me.semina ?? prev);
+        setEditGroup((prev) => outcome.me.student_group ?? prev);
+      }
+    } catch {
+      // A placement failure must not block the student from correcting their details.
+    }
   };
 
   const lookup = async (r: string) => {
@@ -180,73 +209,92 @@ function Page() {
     programYears,
   );
 
-  const submitEdit = async () => {
-    if (!student) return;
-    if (!settings?.profile_edits_enabled) return toast.error(t("edits_disabled"));
-    if (edit.new_semester && !isSemesterActive(edit.new_semester))
-      return toast.error(t("semester_inactive"));
-    setSubmitting(true);
-    const reasonPrefix = wrongReg
-      ? "[NILIKOSEA REG KABISA] Tafadhali admin athibitishe matokeo yangu ya awali yahamishwe kwa Reg mpya. "
-      : "";
+  /**
+   * Writes the student's own corrections straight to their row. There is no approval
+   * step: the student is the only one who knows their own name and phone number, and an
+   * admin queue in front of every typo fix was pure friction. The request row is still
+   * written, as `approved`, so there is a record of who changed what and when.
+   */
+  const saveProfile = async (goToStep?: number): Promise<boolean> => {
+    if (!student) return false;
+    if (!settings?.profile_edits_enabled) {
+      toast.error(t("edits_disabled"));
+      return false;
+    }
+    if (edit.new_semester && !isSemesterActive(edit.new_semester)) {
+      toast.error(t("semester_inactive"));
+      return false;
+    }
+
     const newRegUp = edit.new_reg_no?.toUpperCase() || null;
-    // Auto-approval: tu kwa marekebisho ya kawaida (sio "nilikosea reg kabisa")
-    const autoApprove = !wrongReg;
-    // Only a field the student genuinely altered belongs in the request. The form
-    // seeds semina and group from the row so the card can display them, and the old
-    // code sent that seed back on every save — which printed the student's own
-    // values to the admin as corrections, on requests whose changed_fields was empty.
+    const newSemina = editSemina || null;
+    const newGroup = editGroup || null;
     const courseNow = student.course || "";
     const semesterNow = student.semester || "";
     const phoneNow = student.phone || "";
-    // The study year is not asked for: it is read from the Reg Namba. A correction to
-    // the Reg Namba therefore moves the year with it, which is the point — the two are
-    // the same fact. `null` means the Reg Namba carries no year, so the stored value
-    // stands and the year is left out of the request.
+    const seminaNow = student.semina || "";
+    const groupNow = student.student_group || "";
+    // The study year is read from the Reg Namba rather than asked for, so a Reg Namba
+    // correction moves the year with it. `null` means the Reg Namba carries no year, so
+    // the stored value stands.
     const regForYear = newRegUp || student.reg_no;
     const derivedYear = studyYearFromReg(regForYear, CURRENT_ACADEMIC_YEAR, programYears);
     const yearNow = student.study_year == null ? "" : String(student.study_year);
+
     const changed: string[] = [];
-    // A wrongReg request is about the reg number by definition, even if the text is
-    // unchanged, because the reason asks the admin to move earlier results across.
-    if (wrongReg || (newRegUp && newRegUp !== student.reg_no)) changed.push("reg_no");
+    if (newRegUp && newRegUp !== student.reg_no) changed.push("reg_no");
     if ((edit.new_full_name || "") !== (student.full_name || "")) changed.push("full_name");
     if ((edit.new_course || "") !== courseNow) changed.push("course");
     if ((edit.new_semester || "") !== semesterNow) changed.push("semester");
     if ((edit.new_phone || "") !== phoneNow) changed.push("phone");
+    if (newSemina !== seminaNow) changed.push("semina");
+    if (newGroup !== groupNow) changed.push("group");
     if (derivedYear != null && String(derivedYear) !== yearNow) changed.push("study_year");
     const has = (k: string) => changed.includes(k);
-    const basePayload: Record<string, unknown> = {
+
+    if (changed.length === 0) {
+      toast.info(t("nothing_changed"));
+      if (goToStep) setStep(goToStep);
+      return true;
+    }
+
+    setSubmitting(true);
+    const reasonPrefix = wrongReg
+      ? "[NILIKOSEA REG KABISA] Matokeo yangu ya awali yahamishwe kwa Reg mpya. "
+      : "";
+
+    // The request row is the audit trail. `approved` from the start, because nothing is
+    // waiting on an admin — the write below is the same act.
+    const payload: Record<string, unknown> = {
       student_id: student.id,
       current_reg_no: student.reg_no,
       current_full_name: student.full_name,
-      new_reg_no: has("reg_no") ? newRegUp : null,
-      new_full_name: has("full_name") ? edit.new_full_name : null,
-      // The student never edits these two: the group system derives them. The request
-      // records the before value; the after value is the placement written below.
-      new_semina: null,
-      new_student_group: null,
-      reason: reasonPrefix.trim() || null,
-      status: autoApprove ? "approved" : "pending",
-    };
-    // The extra columns come from the stats/request-fields migration. Until it is
-    // applied, save the request without them so the edit still reaches the admin.
-    const detailPayload: Record<string, unknown> = {
-      ...basePayload,
-      current_semina: student.semina || null,
-      current_student_group: student.student_group || null,
+      current_semina: seminaNow || null,
+      current_student_group: groupNow || null,
       current_course: courseNow || null,
       current_study_year: student.study_year == null ? null : Number(student.study_year),
       current_semester: semesterNow || null,
+      new_reg_no: has("reg_no") ? newRegUp : null,
+      new_full_name: has("full_name") ? edit.new_full_name : null,
+      new_semina: has("semina") ? newSemina : null,
+      new_student_group: has("group") ? newGroup : null,
       new_course: has("course") ? edit.new_course : null,
       new_study_year: has("study_year") ? derivedYear : null,
       new_semester: has("semester") ? edit.new_semester : null,
       new_phone: has("phone") ? edit.new_phone : null,
       new_academic_year: CURRENT_ACADEMIC_YEAR,
       changed_fields: changed,
+      reason: reasonPrefix.trim() || null,
+      status: "approved",
+      reviewed_at: new Date().toISOString(),
+      placed_semina: newSemina,
+      placed_student_group: newGroup,
+      placed_at: new Date().toISOString(),
     };
+
+    // Columns added by later migrations. Until those run, drop them and still save.
     type InsertResult = { error: { message?: string } | null; data: unknown };
-    const { last } = await retryWithoutMissingColumns(detailPayload, async (body) => {
+    const { last } = await retryWithoutMissingColumns(payload, async (body) => {
       const r = await (supabase as any)
         .from("profile_update_requests")
         .insert(body)
@@ -254,133 +302,72 @@ function Page() {
         .single();
       return r as InsertResult;
     });
-    const inserted = last.data;
-    const error = last.error;
-    if (error) {
+    if (last.error) {
       setSubmitting(false);
-      return toast.error(error.message || "Imeshindikana kuwasilisha ombi. Jaribu tena.");
+      toast.error(last.error.message || "Imeshindikana kuhifadhi. Jaribu tena.");
+      return false;
     }
 
-    if (autoApprove) {
-      // Only the fields the student typed. Semina and group are the group system's to
-      // write, and it does so a few lines below via assignStudentGroup — passing the
-      // form's seeded copies here would write the student's own value straight back.
-      const { error: rpcErr } = await (supabase as any).rpc("apply_profile_update", {
-        p_student_id: student.id,
-        p_new_reg_no: has("reg_no") ? newRegUp : null,
-        p_new_full_name: has("full_name") ? edit.new_full_name : null,
-        p_new_semina: null,
-        p_new_group: null,
-      });
-      if (rpcErr) {
-        // rollback status to pending so admin can review
-        await (supabase as any)
-          .from("profile_update_requests")
-          .update({ status: "pending" })
-          .eq("id", (inserted as any).id);
-        setSubmitting(false);
-        return toast.error(
-          "Marekebisho yamehifadhiwa kama 'pending' (Admin atathibitisha): " + rpcErr.message,
-        );
-      }
-      // apply_profile_update only covers reg/name/semina/group, so write the
-      // academic fields separately. Only the fields the student actually changed, so
-      // an untouched semester never trips the "column not migrated yet" warning.
-      const acad: Record<string, unknown> = {};
-      if (has("course")) acad.course = edit.new_course;
-      if (has("study_year")) acad.study_year = derivedYear;
-      if (has("semester")) acad.semester = edit.new_semester;
-      if (has("phone")) acad.phone = edit.new_phone;
-      const { error: acadErr, dropped: acadDropped } = await updateStudentProfile(
-        student.id,
-        acad as Parameters<typeof updateStudentProfile>[1],
-      );
-      // The student never picks a group. The system files them into their seminar
-      // and their own gender's group, filling one to 8 before opening the next,
-      // so a year/course change re-places them automatically.
-      const placement = await assignStudentGroup(student.id);
-      // Where they landed, recorded on the request so the admin reads the outcome
-      // instead of re-deriving it. `placement.me` is empty when the student was
-      // already seated correctly, so fall back to what they now hold.
-      const placedSemina = placement.me.semina ?? student.semina ?? null;
-      const placedGroup = placement.me.student_group ?? student.student_group ?? null;
-      const reviewPayload: Record<string, unknown> = {
-        reviewed_at: new Date().toISOString(),
-        placed_semina: placedSemina,
-        placed_student_group: placedGroup,
-        placed_at: new Date().toISOString(),
-      };
-      // The placed_* columns arrive with the request before/after migration. Until it
-      // runs, drop them and still record that the request was reviewed.
-      await retryWithoutMissingColumns(reviewPayload, (body) =>
-        (supabase as any)
-          .from("profile_update_requests")
-          .update(body)
-          .eq("id", (inserted as any).id),
-      );
-      // Refresh local student to reflect new values
-      const newRef = newRegUp || student.reg_no;
-      localStorage.setItem("student_reg", newRef);
-      setSubmitting(false);
-      setWrongReg(false);
-      if (acadErr) {
-        await alertWarning(
-          "Taarifa za msingi zimehifadhiwa",
-          "Kozi/mwaka haukuhifadhiwa: " + acadErr.message,
-        );
-      } else if (acadDropped.length) {
-        await alertWarning(
-          "Imehifadhiwa",
-          `${acadDropped.join(", ")} bado haijawashwa kwenye mfumo (admin aendeshe migrations zilizo kwenye supabase/migrations/).`,
-        );
-      } else if (placement.unknownGender.includes(student.id)) {
-        await alertWarning(
-          "Jinsia haijatambulika",
-          "Taarifa zako zimehifadhiwa, lakini jinsia haijatambulika kwenye mfumo hivyo hujawekwa kwenye group. Mwone mwalimu au admin ailainishe jinsia yako, kisha ujaribu tena.",
-        );
-      } else if (placement.unassigned.includes(student.id)) {
-        await alertWarning(
-          "Semina yako imejaa",
-          "Wanafunzi 88 wa jinsia yako wamejaa kwenye semina hii. Mwone admin akuweke kwenye semina nyingine.",
-        );
-      } else {
-        await alertSuccess(t("saved_title"), t("saved_body"));
-      }
-      // The card below reads the roster fresh, so the student sees the new group
-      // immediately; this only tells them it changed.
-      if (placement.me.student_group && placement.me.student_group !== student.student_group) {
-        toast.success(
-          `Umeorodheshwa: ${placement.me.semina ?? student.semina} · ${placement.me.student_group}`,
-        );
-      }
-      lookup(newRef);
-      return;
-    }
-
-    setSubmitting(false);
-    toast.success(t("request_sent"));
-    setWrongReg(false);
-    lookup(student.reg_no);
-  };
-
-  const submitIssue = async () => {
-    if (!settings?.issues_enabled) return toast.error(t("issues_disabled"));
-    if (!issue.message.trim()) return toast.error(t("write_issue"));
-    if (!student && (!reg || reg.length < 3)) return toast.error(t("enter_reg"));
-    setSubmitting(true);
-    const { error } = await (supabase as any).from("issue_reports").insert({
-      reg_no: (student?.reg_no || reg).toUpperCase(),
-      full_name: student?.full_name || "—",
-      phone: issue.phone || student?.phone || null,
-      email: issue.email || null,
-      category: issue.category,
-      message: issue.message,
+    // One RPC for reg/name/semina/group. It moves the student's earlier submissions to
+    // the new Reg Namba in the same transaction, which is why a Reg change needs no admin.
+    const { error: rpcErr } = await (supabase as any).rpc("apply_profile_update", {
+      p_student_id: student.id,
+      p_new_reg_no: has("reg_no") ? newRegUp : null,
+      p_new_full_name: has("full_name") ? edit.new_full_name : null,
+      p_new_semina: has("semina") ? newSemina : null,
+      p_new_group: has("group") ? newGroup : null,
     });
+    if (rpcErr) {
+      setSubmitting(false);
+      toast.error(rpcErr.message || "Imeshindikana kuhifadhi. Jaribu tena.");
+      return false;
+    }
+
+    // The RPC covers reg/name/semina/group only, so the academic fields are written
+    // separately, and only the ones the student actually changed.
+    const acad: Record<string, unknown> = {};
+    if (has("course")) acad.course = edit.new_course;
+    if (has("study_year")) acad.study_year = derivedYear;
+    if (has("semester")) acad.semester = edit.new_semester;
+    if (has("phone")) acad.phone = edit.new_phone;
+    const { error: acadErr, dropped: acadDropped } = await updateStudentProfile(
+      student.id,
+      acad as Parameters<typeof updateStudentProfile>[1],
+    );
+
+    const newRef = newRegUp || student.reg_no;
+    localStorage.setItem("student_reg", newRef);
+    // The roster cache still holds the old seat, so drop it and remount the group card.
+    invalidateRosterCache();
+    setRosterEpoch((n) => n + 1);
     setSubmitting(false);
-    if (error) return toast.error(error.message || "Imeshindikana kuwasilisha ombi. Jaribu tena.");
-    toast.success(t("issue_received"));
-    setIssue({ category: "test1", message: "", phone: "", email: "" });
-    if (student) lookup(student.reg_no);
+    setWrongReg(false);
+
+    if (acadErr) {
+      await alertWarning(
+        "Taarifa za msingi zimehifadhiwa",
+        "Baadhi ya sehemu hazikuhifadhiwa: " + acadErr.message,
+      );
+    } else if (acadDropped.length) {
+      await alertWarning(
+        "Imehifadhiwa",
+        `${acadDropped.join(", ")} bado haijawashwa kwenye mfumo (admin aendeshe migrations zilizo kwenye supabase/migrations/).`,
+      );
+    } else {
+      await alertSuccess(t("saved_title"), t("saved_body"));
+    }
+
+    // Re-read the row so the form shows what was actually stored, but do not go through
+    // `confirmStudent`: that resets the wizard to step 2 and would undo "Save & Continue".
+    const { data: refreshed } = await (supabase as any)
+      .from("students")
+      .select("*")
+      .eq("reg_no", newRef)
+      .limit(1)
+      .maybeSingle();
+    if (refreshed) await fillForm(refreshed);
+    if (goToStep) setStep(goToStep);
+    return true;
   };
 
   return (
@@ -402,15 +389,14 @@ function Page() {
           </div>
         </div>
 
-        {/* One page, four steps, Back and Next. The student always knows where they
-              are and what comes next, and the group only appears once the Reg Namba
-              has resolved to a real student. */}
+        {/* Three steps, Back and Next. The student always knows where they are and
+              what comes next, and the group only appears once the Reg Namba has
+              resolved to a real student. */}
         <div className="flex items-center justify-center gap-2">
           {[
             { n: 1, label: t("step_reg") },
             { n: 2, label: t("step_details") },
             { n: 3, label: t("step_group") },
-            { n: 4, label: t("step_issue") },
           ].map((s, i, all) => (
             <div key={s.n} className="flex items-center gap-2">
               <button
@@ -492,11 +478,12 @@ function Page() {
                 <>
                   <div className="rounded-xl border border-primary/25 bg-primary/5 p-3">
                     <div className="flex items-center gap-2 text-sm font-bold">
-                      <Wand2 className="h-4 w-4 text-primary" /> Semina na Group ni za kiotomatiki
+                      <Wand2 className="h-4 w-4 text-primary" /> Semina na Group
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Huchagui semina wala group. Ukibadilisha mwaka wa masomo au kozi, mfumo
-                      unakuweka kwenye semina na group lako la jinsia yako, wanafunzi 8 kwa group.
+                      Unabadilisha semina na group lako kwenye hatua inayofuata. Ukibadilisha mwaka
+                      wa masomo au kozi, mfumo unakuweka kwenye semina na group lako la jinsia yako,
+                      wanafunzi 8 kwa group.
                     </p>
                     <div className="mt-2 grid grid-cols-2 gap-2">
                       <div className="rounded-lg border border-border bg-card p-2">
@@ -623,13 +610,6 @@ function Page() {
                       </div>
                     </div>
                   </label>
-                  <Button
-                    onClick={submitEdit}
-                    disabled={submitting || !settings?.profile_edits_enabled}
-                    className="w-full font-bold"
-                  >
-                    {submitting ? t("sending") : t("submit_request")}
-                  </Button>
                 </>
               )}
               {editStatus.length > 0 && (
@@ -663,11 +643,16 @@ function Page() {
               )}
             </CardContent>
             <CardFooter className="flex justify-between gap-2">
-              <Button variant="outline" onClick={() => setStep(1)}>
+              <Button variant="outline" onClick={() => setStep(1)} disabled={submitting}>
                 <ArrowLeft className="h-4 w-4" /> {t("back")}
               </Button>
-              <Button onClick={() => setStep(3)} className="font-bold">
-                {t("next")} <ArrowRight className="h-4 w-4" />
+              <Button
+                onClick={() => void saveProfile(3)}
+                disabled={submitting || !settings?.profile_edits_enabled}
+                className="font-bold"
+              >
+                {submitting ? t("saving") : t("save_continue")}
+                <ArrowRight className="h-4 w-4" />
               </Button>
             </CardFooter>
           </Card>
@@ -681,136 +666,72 @@ function Page() {
               </CardTitle>
               <p className="text-sm text-muted-foreground">{t("step_group_help")}</p>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <GroupRosterView reg={student?.reg_no || reg} />
-            </CardContent>
-            <CardFooter className="flex justify-between gap-2">
-              <Button variant="outline" onClick={() => setStep(2)}>
-                <ArrowLeft className="h-4 w-4" /> {t("back")}
-              </Button>
-              <Button onClick={() => setStep(4)} className="font-bold">
-                {t("next")} <ArrowRight className="h-4 w-4" />
-              </Button>
-            </CardFooter>
-          </Card>
-        )}
-
-        {step === 4 && (
-          <Card className="border-2 border-primary/25 shadow-lg">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <AlertTriangle className="h-4 w-4 text-primary" /> {t("tab_issue")}
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">{t("step_issue_help")}</p>
-              {!settings?.issues_enabled && (
-                <p className="flex items-center gap-1 text-xs text-amber-600">
-                  <Clock className="h-3 w-3" /> {t("issues_disabled")}
-                </p>
-              )}
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Mail className="h-4 w-4" /> {t("issue_card_title")}
-                </CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  Kwa wasiofanya Test 1 / Test 2 au wenye matatizo yoyote — andika hapa, admin
-                  atapokea.
-                </p>
-                {!settings?.issues_enabled && (
-                  <p className="flex items-center gap-1 text-xs text-amber-600">
-                    <Clock className="h-3 w-3" /> {t("issues_disabled")}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-3">
+            <CardContent className="space-y-4">
+              {/* The student chooses their own seminar and group. Save writes them
+                  straight away; nothing waits on an admin. */}
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <Label>{t("issue_type")}</Label>
-                  <Select
-                    value={issue.category}
-                    onValueChange={(v) => setIssue({ ...issue, category: v })}
-                  >
+                  <Label>{t("semina")}</Label>
+                  <Select value={editSemina} onValueChange={setEditSemina}>
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder={t("semina")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="test1">Sikufanya Test 1</SelectItem>
-                      <SelectItem value="test2">Sikufanya Test 2</SelectItem>
-                      <SelectItem value="login">Tatizo la Kuingia</SelectItem>
-                      <SelectItem value="result">Tatizo la Matokeo</SelectItem>
-                      <SelectItem value="general">Nyingine</SelectItem>
+                      {SEMINARS.map((sm) => (
+                        <SelectItem key={sm} value={sm}>
+                          {sm}
+                        </SelectItem>
+                      ))}
+                      {editSemina && !SEMINARS.includes(editSemina) && (
+                        <SelectItem value={editSemina}>{editSemina}</SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <div>
-                    <Label>Simu</Label>
-                    <Input
-                      value={issue.phone}
-                      onChange={(e) => setIssue({ ...issue, phone: e.target.value })}
-                      placeholder="07XXXXXXXX"
-                    />
-                  </div>
-                  <div>
-                    <Label>Barua-pepe (Email)</Label>
-                    <Input
-                      type="email"
-                      value={issue.email}
-                      onChange={(e) => setIssue({ ...issue, email: e.target.value })}
-                      placeholder="jina@email.com"
-                    />
-                  </div>
-                </div>
                 <div>
-                  <Label>{t("issue_message")} *</Label>
-                  <Textarea
-                    rows={4}
-                    value={issue.message}
-                    onChange={(e) => setIssue({ ...issue, message: e.target.value })}
-                    placeholder={t("issue_placeholder")}
-                  />
+                  <Label>{t("group")}</Label>
+                  <Select value={editGroup} onValueChange={setEditGroup}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={t("group")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {GROUP_NAMES.map((g) => (
+                        <SelectItem key={g} value={g}>
+                          {g}
+                        </SelectItem>
+                      ))}
+                      {editGroup && !GROUP_NAMES.includes(editGroup) && (
+                        <SelectItem value={editGroup}>{editGroup}</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <Button
-                  onClick={submitIssue}
-                  disabled={submitting || !settings?.issues_enabled}
-                  className="w-full font-bold"
-                >
-                  {t("submit_issue")}
-                </Button>
-
-                {myIssues.length > 0 && (
-                  <div className="pt-3 border-t space-y-2">
-                    <div className="text-xs font-semibold text-muted-foreground">
-                      {t("my_issues")}:
-                    </div>
-                    {myIssues.map((r) => (
-                      <div key={r.id} className="text-xs p-2 rounded bg-muted">
-                        <div className="flex justify-between gap-2">
-                          <b>{r.category}</b>
-                          <span
-                            className={
-                              r.status === "resolved" ? "text-green-600" : "text-amber-600"
-                            }
-                          >
-                            {r.status}
-                          </span>
-                        </div>
-                        <div className="text-muted-foreground mt-1">{r.message}</div>
-                        {r.admin_reply && (
-                          <div className="mt-1 p-1 bg-primary/10 rounded">
-                            <b>Jibu la Admin:</b> {r.admin_reply}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
+              <p className="text-xs text-muted-foreground">{t("group_edit_help")}</p>
+
+              <GroupRosterView key={rosterEpoch} reg={student?.reg_no || reg} />
             </CardContent>
-            <CardFooter className="justify-start">
-              <Button variant="outline" onClick={() => setStep(3)}>
+            <CardFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between">
+              <Button variant="outline" onClick={() => setStep(2)} disabled={submitting}>
                 <ArrowLeft className="h-4 w-4" /> {t("back")}
               </Button>
+              <div className="flex w-full gap-2 sm:w-auto">
+                <Button
+                  variant="secondary"
+                  onClick={() => void saveProfile()}
+                  disabled={submitting || !settings?.profile_edits_enabled}
+                  className="flex-1 font-bold sm:flex-none"
+                >
+                  {submitting ? t("saving") : t("save")}
+                </Button>
+                <Button
+                  onClick={() => void saveProfile(3)}
+                  disabled={submitting || !settings?.profile_edits_enabled}
+                  className="flex-1 font-bold sm:flex-none"
+                >
+                  <CheckCircle2 className="h-4 w-4" /> {t("save_continue")}
+                </Button>
+              </div>
             </CardFooter>
           </Card>
         )}
