@@ -25,6 +25,7 @@ import {
   Clock,
   CalendarCheck,
   QrCode,
+  Wand2,
 } from "lucide-react";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
@@ -32,7 +33,6 @@ import { updateStudentProfile } from "@/lib/studentProfile";
 import { retryWithoutMissingColumns } from "@/lib/schema-retry";
 import {
   CURRENT_ACADEMIC_YEAR,
-  GROUPS,
   SEMESTERS,
   formatAcademicSummary,
   isSemesterActive,
@@ -40,6 +40,8 @@ import {
 } from "@/lib/academicTargeting";
 import { useI18n } from "@/lib/i18n";
 import { loadDirectory } from "@/lib/directory";
+import { assignStudentGroup } from "@/lib/groupRoster";
+import { MyGroupCard } from "@/components/MyGroupCard";
 
 export const Route = createFileRoute("/student")({
   component: Page,
@@ -58,8 +60,6 @@ export const Route = createFileRoute("/student")({
 function Page() {
   const { t } = useI18n();
   const [settings, setSettings] = useState<any>(null);
-  const [seminaList, setSeminaList] = useState<string[]>([]);
-  const [groupList, setGroupList] = useState<string[]>([]);
   const [courseList, setCourseList] = useState<string[]>([]);
   const [studyYears, setStudyYears] = useState<number[]>(studyYearsFor(2));
   const [reg, setReg] = useState("");
@@ -91,13 +91,8 @@ function Page() {
       .single()
       .then(({ data }: { data: any }) => {
         setSettings(data);
-        setSeminaList((data?.semina_list as string[]) || []);
-        // Groups come from the fixed 1..20 range, never the stale app_settings
-        // seed, so a student can only ever be moved inside the real cohorts.
-        setGroupList([...GROUPS]);
         setCourseList((data?.course_list as string[]) || []);
         loadDirectory(data).then((dir) => {
-          if (dir.semina.length) setSeminaList(dir.semina);
           if (dir.courses.length) setCourseList(dir.courses);
         });
         setStudyYears(studyYearsFor(data?.program_years ?? 2));
@@ -251,6 +246,10 @@ function Page() {
         student.id,
         acad as Parameters<typeof updateStudentProfile>[1],
       );
+      // The student never picks a group. The system files them into their seminar
+      // and their own gender's group, filling one to 8 before opening the next,
+      // so a year/course change re-places them automatically.
+      const placement = await assignStudentGroup(student.id);
       await (supabase as any)
         .from("profile_update_requests")
         .update({ reviewed_at: new Date().toISOString() })
@@ -270,8 +269,25 @@ function Page() {
           "Imehifadhiwa",
           `${acadDropped.join(", ")} bado haijawashwa kwenye mfumo (admin aendeshe migrations zilizo kwenye supabase/migrations/).`,
         );
+      } else if (placement.unknownGender.includes(student.id)) {
+        await alertWarning(
+          "Jinsia haijatambulika",
+          "Taarifa zako zimehifadhiwa, lakini jinsia haijatambulika kwenye mfumo hivyo hujawekwa kwenye group. Mwone mwalimu au admin ailainishe jinsia yako, kisha ujaribu tena.",
+        );
+      } else if (placement.unassigned.includes(student.id)) {
+        await alertWarning(
+          "Semina yako imejaa",
+          "Wanafunzi 88 wa jinsia yako wamejaa kwenye semina hii. Mwone admin akuweke kwenye semina nyingine.",
+        );
       } else {
         await alertSuccess(t("saved_title"), t("saved_body"));
+      }
+      // The card below reads the roster fresh, so the student sees the new group
+      // immediately; this only tells them it changed.
+      if (placement.me.student_group && placement.me.student_group !== student.student_group) {
+        toast.success(
+          `Umeorodheshwa: ${placement.me.semina ?? student.semina} · ${placement.me.student_group}`,
+        );
       }
       lookup(newRef);
       return;
@@ -393,6 +409,8 @@ function Page() {
           </Card>
         )}
 
+        <MyGroupCard initialReg={student?.reg_no || reg} />
+
         {/* Check-in lives on its own page, reachable from the menu. Linking
             rather than embedding keeps one place to check in, not three. */}
         <Card className="border-2 border-primary/25 bg-gradient-to-br from-primary/10 via-card to-secondary/10">
@@ -439,6 +457,33 @@ function Page() {
                 )}
                 {student && (
                   <>
+                    <div className="rounded-xl border border-primary/25 bg-primary/5 p-3">
+                      <div className="flex items-center gap-2 text-sm font-bold">
+                        <Wand2 className="h-4 w-4 text-primary" /> Semina na Group ni za kiotomatiki
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Huchagui semina wala group. Ukibadilisha mwaka wa masomo au kozi, mfumo
+                        unakuweka kwenye semina na group lako la jinsia yako, wanafunzi 8 kwa group.
+                      </p>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <div className="rounded-lg border border-border bg-card p-2">
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                            {t("semina")}
+                          </div>
+                          <div className="truncate text-sm font-semibold">
+                            {student.semina || "—"}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-border bg-card p-2">
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                            {t("group")}
+                          </div>
+                          <div className="truncate text-sm font-semibold">
+                            {student.student_group || "—"}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                     <div className="grid sm:grid-cols-2 gap-3">
                       <div>
                         <Label>{t("new_reg")}</Label>
@@ -455,53 +500,6 @@ function Page() {
                           value={edit.new_full_name}
                           onChange={(e) => setEdit({ ...edit, new_full_name: e.target.value })}
                         />
-                      </div>
-                    </div>
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      <div>
-                        <Label>{t("semina")}</Label>
-                        <Select
-                          value={edit.new_semina}
-                          onValueChange={(v) => setEdit({ ...edit, new_semina: v })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {seminaList.map((s) => (
-                              <SelectItem key={s} value={s}>
-                                {s}
-                              </SelectItem>
-                            ))}
-                            {edit.new_semina && !seminaList.includes(edit.new_semina) && (
-                              <SelectItem value={edit.new_semina}>{edit.new_semina}</SelectItem>
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label>{t("group")}</Label>
-                        <Select
-                          value={edit.new_student_group}
-                          onValueChange={(v) => setEdit({ ...edit, new_student_group: v })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {groupList.map((g) => (
-                              <SelectItem key={g} value={g}>
-                                {g}
-                              </SelectItem>
-                            ))}
-                            {edit.new_student_group &&
-                              !groupList.includes(edit.new_student_group) && (
-                                <SelectItem value={edit.new_student_group}>
-                                  {edit.new_student_group}
-                                </SelectItem>
-                              )}
-                          </SelectContent>
-                        </Select>
                       </div>
                     </div>
                     <div className="grid sm:grid-cols-2 gap-3">

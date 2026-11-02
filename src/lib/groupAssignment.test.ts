@@ -1,0 +1,350 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  GROUPS_PER_SEMINAR,
+  GROUP_NAMES,
+  GROUP_SIZE,
+  SEMINARS,
+  assignGroups,
+  assignSeminar,
+  buildSeminarReports,
+  findMyGroup,
+  formatGroupLabel,
+  normalizeGender,
+  normalizeGroupName,
+  normalizeSeminar,
+  planAssignments,
+  regKey,
+  searchMembers,
+  type RosterEntry,
+} from "./groupAssignment.ts";
+
+/** Builds `n` students for one seminar and gender, with Reg Namba in order. */
+const cohort = (
+  semina: string,
+  gender: string,
+  n: number,
+  opts: { group?: string; prefix?: string } = {},
+): RosterEntry[] =>
+  Array.from({ length: n }, (_, i) => ({
+    id: `${semina}-${gender}-${opts.prefix ?? ""}${i}`,
+    reg_no: `REG-${opts.prefix ?? ""}${String(i).padStart(4, "0")}`,
+    full_name: `Student ${i}`,
+    semina,
+    gender,
+    student_group: opts.group ?? null,
+  }));
+
+test("the cohort shape is 15 seminars, 11 groups, 8 seats", () => {
+  assert.equal(SEMINARS.length, 15);
+  assert.equal(GROUP_NAMES.length, 11);
+  assert.equal(GROUP_SIZE, 8);
+  assert.equal(SEMINARS[0], "SEMINA 1");
+  assert.equal(SEMINARS.at(-1), "SEMINA 15");
+  assert.equal(GROUP_NAMES.at(-1), "GROUP 11");
+});
+
+test("gender is read from whole words, not the first letter", () => {
+  // The bug this guards: "Mwanamke" and "Mwanaume" both start with M.
+  assert.equal(normalizeGender("Mwanamke"), "female");
+  assert.equal(normalizeGender("Mwanaume"), "male");
+  assert.equal(normalizeGender("ME"), "male");
+  assert.equal(normalizeGender("M"), "male");
+  assert.equal(normalizeGender("F"), "female");
+  assert.equal(normalizeGender("KE"), "female");
+  assert.equal(normalizeGender("wanawake"), "female");
+  assert.equal(normalizeGender("female"), "female");
+  assert.equal(normalizeGender(""), "unknown");
+  assert.equal(normalizeGender(null), "unknown");
+  assert.equal(normalizeGender("  "), "unknown");
+  // A name is not a gender.
+  assert.equal(normalizeGender("Mwanamke Mwema"), "female");
+  assert.equal(normalizeGender("N"), "unknown");
+});
+
+test("seminar and group names are normalised from the values really stored", () => {
+  assert.equal(normalizeSeminar("SEMINA 3"), "SEMINA 3");
+  assert.equal(normalizeSeminar("Semina 3"), "SEMINA 3");
+  assert.equal(normalizeSeminar("S1"), "SEMINA 1");
+  assert.equal(normalizeSeminar("SEMINA 16"), "SEMINA 16");
+  assert.equal(normalizeSeminar("TEST"), null);
+  assert.equal(normalizeSeminar(""), null);
+
+  assert.equal(normalizeGroupName("GROUP 7"), "GROUP 7");
+  // The imported cohort has a double space.
+  assert.equal(normalizeGroupName("GROUP  7"), "GROUP 7");
+  assert.equal(normalizeGroupName("group 11"), "GROUP 11");
+  assert.equal(normalizeGroupName("GROUP 12"), null);
+  assert.equal(normalizeGroupName("ASSIGMENT 1"), null);
+  assert.equal(normalizeGroupName(null), null);
+});
+
+test("a seminar already on the student is kept, never moved", () => {
+  const roster = [...cohort("SEMINA 4", "Mwanaume", 3), ...cohort("SEMINA 9", "Mwanamke", 2)];
+  const out = assignSeminar(roster);
+  for (const s of roster) assert.equal(out[s.id], normalizeSeminar(s.semina));
+});
+
+test("a stray seminar past the target 15 is preserved, not silently moved", () => {
+  const roster: RosterEntry[] = [
+    { id: "a", reg_no: "R1", semina: "SEMINA 16", gender: "Mwanaume" },
+    { id: "b", reg_no: "R2", semina: "TEST", gender: "Mwanaume" },
+  ];
+  const out = assignSeminar(roster);
+  assert.equal(out["a"], "SEMINA 16");
+  assert.ok(SEMINARS.includes(out["b"]));
+});
+
+test("students with no usable seminar are spread across the 15, smallest first", () => {
+  const roster = Array.from({ length: 40 }, (_, i) => ({
+    id: `n${i}`,
+    reg_no: `R${String(i).padStart(4, "0")}`,
+    semina: null,
+    gender: "Mwanaume",
+  }));
+  const out = assignSeminar(roster);
+  const counts = new Map<string, number>();
+  for (const v of Object.values(out)) counts.set(v, (counts.get(v) ?? 0) + 1);
+  assert.equal(counts.size, 15);
+  // 40 over 15 seminars: 10 get 3 and 5 get 2.
+  const sizes = [...counts.values()].sort((a, b) => a - b);
+  assert.deepEqual(sizes, [2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]);
+});
+
+test("a group name is never shared across genders: capacity is per (seminar, gender, group)", () => {
+  // GROUP 1 exists for both men and women in a seminar by design — they are two
+  // different groups (WANAUME GROUP 1 vs WANAWKE GROUP 1). What must hold is that
+  // each side's 11 groups are counted separately and none exceeds 8.
+  const roster = [
+    ...cohort("SEMINA 1", "Mwanaume", 20),
+    ...cohort("SEMINA 1", "Mwanamke", 20),
+  ];
+  const { groups } = assignGroups(roster);
+  const counts = new Map<string, number>();
+  for (const s of roster) {
+    const key = `${s.semina}||${normalizeGender(s.gender)}||${groups[s.id]}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  // Both sides start at GROUP 1, and neither steals the other's seats.
+  assert.equal(counts.get("SEMINA 1||male||GROUP 1"), 8);
+  assert.equal(counts.get("SEMINA 1||female||GROUP 1"), 8);
+  assert.equal(counts.get("SEMINA 1||male||GROUP 3"), 4);
+  assert.equal(counts.get("SEMINA 1||female||GROUP 3"), 4);
+  // Every bucket is within capacity, and every student sits on their own side.
+  for (const n of counts.values()) assert.ok(n <= GROUP_SIZE, `bucket held ${n}`);
+  for (const s of roster) {
+    assert.ok(
+      GROUP_NAMES.includes(groups[s.id]),
+      `${s.id} landed in ${groups[s.id]}, not a real group`,
+    );
+  }
+});
+
+test("a group fills to 8 before the next one opens", () => {
+  const roster = cohort("SEMINA 1", "Mwanaume", 20);
+  const { groups } = assignGroups(roster);
+  const counts = new Map<string, number>();
+  for (const g of Object.values(groups)) counts.set(g, (counts.get(g) ?? 0) + 1);
+  assert.equal(counts.get("GROUP 1"), 8);
+  assert.equal(counts.get("GROUP 2"), 8);
+  assert.equal(counts.get("GROUP 3"), 4);
+  assert.equal(counts.size, 3);
+});
+
+test("11 full groups of 8 hold exactly 88; the 89th has no seat", () => {
+  const roster = cohort("SEMINA 1", "Mwanaume", 89);
+  const { groups, unassigned } = assignGroups(roster);
+  assert.equal(Object.keys(groups).length, 88);
+  assert.equal(unassigned.length, 1);
+  const counts = new Map<string, number>();
+  for (const g of Object.values(groups)) counts.set(g, (counts.get(g) ?? 0) + 1);
+  assert.equal(counts.size, 11);
+  for (const n of counts.values()) assert.equal(n, 8);
+});
+
+test("an existing group is kept when it still has room", () => {
+  const roster = cohort("SEMINA 1", "Mwanaume", 3, { group: "GROUP 5" });
+  const { groups } = assignGroups(roster);
+  for (const g of Object.values(groups)) assert.equal(g, "GROUP 5");
+});
+
+test("a student in a non-group value is placed into a real group", () => {
+  const roster = cohort("SEMINA 1", "Mwanaume", 3, { group: "ASSIGMENT 1 KUBADILISHA" });
+  const { groups } = assignGroups(roster);
+  for (const g of Object.values(groups)) assert.ok(GROUP_NAMES.includes(g));
+});
+
+test("one student updating never reshuffles classmates", () => {
+  const base = cohort("SEMINA 1", "Mwanaume", 20);
+  const first = assignGroups(base).groups;
+  // Simulate the writes landing, then re-plan the same roster.
+  const settled = base.map((s) => ({ ...s, student_group: first[s.id] }));
+  const second = assignGroups(settled).groups;
+  assert.deepEqual(second, first);
+});
+
+test("a missing gender is reported, not guessed into a men's group", () => {
+  const roster = [
+    ...cohort("SEMINA 1", "Mwanaume", 2),
+    { id: "x", reg_no: "RX", semina: "SEMINA 1", gender: "" },
+    { id: "y", reg_no: "RY", semina: "SEMINA 1", gender: "N" },
+  ];
+  const { groups, unknownGender } = assignGroups(roster);
+  assert.deepEqual(unknownGender.sort(), ["x", "y"]);
+  assert.equal(groups["x"], undefined);
+  assert.equal(groups["y"], undefined);
+});
+
+test("the two genders never share seats", () => {
+  // 88 men fill the men's side; women still start at GROUP 1.
+  const roster = [
+    ...cohort("SEMINA 1", "Mwanaume", 88),
+    ...cohort("SEMINA 1", "Mwanamke", 3),
+  ];
+  const { groups } = assignGroups(roster);
+  const women = roster.filter((s) => normalizeGender(s.gender) === "female");
+  for (const w of women) assert.equal(groups[w.id], "GROUP 1");
+  const counts = new Map<string, number>();
+  for (const [id, g] of Object.entries(groups)) {
+    const s = roster.find((r) => r.id === id)!;
+    const key = `${normalizeGender(s.gender)}||${g}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  assert.equal(counts.get("female||GROUP 1"), 3);
+  assert.equal(counts.get("male||GROUP 11"), 8);
+});
+
+test("planAssignments resolves the seminar before placing the group", () => {
+  const roster = Array.from({ length: 16 }, (_, i) => ({
+    id: `p${i}`,
+    reg_no: `R${i}`,
+    semina: null,
+    gender: "Mwanaume",
+  }));
+  const plan = planAssignments(roster);
+  for (const s of roster) assert.ok(SEMINARS.includes(plan.seminars[s.id]));
+  for (const s of roster) assert.ok(GROUP_NAMES.includes(plan.groups[s.id]));
+});
+
+test("buildSeminarReports always lists 11 groups for each gender", () => {
+  const reports = buildSeminarReports(cohort("SEMINA 2", "Mwanamke", 9));
+  assert.equal(reports.length, 1);
+  const r = reports[0];
+  assert.equal(r.male.length, GROUPS_PER_SEMINAR);
+  assert.equal(r.female.length, GROUPS_PER_SEMINAR);
+  assert.equal(r.femaleCount, 9);
+  assert.equal(r.maleCount, 0);
+  assert.equal(r.totalGroups, 22);
+});
+
+test("a group of exactly 8 is complete; 7 is not", () => {
+  const full = buildSeminarReports(cohort("SEMINA 3", "Mwanaume", 8))[0];
+  assert.equal(full.male[0].count, 8);
+  assert.equal(full.male[0].complete, true);
+  assert.equal(full.male[0].free, 0);
+  assert.equal(full.completeGroups, 1);
+
+  const short = buildSeminarReports(cohort("SEMINA 3", "Mwanaume", 7))[0];
+  assert.equal(short.male[0].count, 7);
+  assert.equal(short.male[0].complete, false);
+  assert.equal(short.male[0].free, 1);
+  assert.equal(short.completeGroups, 0);
+});
+
+test("reports are ordered by seminar number, not alphabetically", () => {
+  const roster = [
+    ...cohort("SEMINA 10", "Mwanaume", 1),
+    ...cohort("SEMINA 2", "Mwanaume", 1),
+    ...cohort("SEMINA 1", "Mwanaume", 1),
+  ];
+  assert.deepEqual(
+    buildSeminarReports(roster).map((r) => r.semina),
+    ["SEMINA 1", "SEMINA 2", "SEMINA 10"],
+  );
+});
+
+test("findMyGroup returns the student's own group and classmates", () => {
+  const roster = cohort("SEMINA 1", "Mwanaume", 20);
+  const me = roster[0];
+  const mine = findMyGroup(roster, me.reg_no!);
+  assert.ok(mine);
+  assert.equal(mine.semina, "SEMINA 1");
+  assert.equal(mine.gender, "male");
+  assert.equal(mine.group, "GROUP 1");
+  assert.equal(mine.members.length, 8);
+  assert.equal(mine.complete, true);
+  assert.ok(mine.members.some((m) => m.reg_no === me.reg_no));
+});
+
+test("findMyGroup is case- and space-insensitive on the Reg Namba", () => {
+  const roster = cohort("SEMINA 1", "Mwanaume", 2);
+  const target = roster[0];
+  target.reg_no = "  mum2025-04-14106  ";
+  assert.ok(findMyGroup(roster, "MUM2025-04-14106"));
+  assert.ok(findMyGroup(roster, "mum2025-04-14106"));
+});
+
+test("one Reg Namba written several ways is still one key", () => {
+  // The imported cohort really stores all of these spellings.
+  assert.equal(regKey("MUM2025-04-14106"), "MUM20250414106");
+  assert.equal(regKey("  MUM2025-04-14106 "), "MUM20250414106");
+  assert.equal(regKey("MUM 2025-04-14106"), "MUM20250414106");
+  assert.equal(regKey("MUM2025_04_14106"), "MUM20250414106");
+  assert.equal(regKey("mum2025-04-14106"), "MUM20250414106");
+  assert.equal(regKey(null), "");
+  assert.equal(regKey("  "), "");
+});
+
+test("a student whose row stores spaces or underscores can still find themselves", () => {
+  const roster: RosterEntry[] = [
+    {
+      id: "1",
+      reg_no: "MUM 2025-04-13988",
+      full_name: "A",
+      semina: "SEMINA 1",
+      gender: "Mwanaume",
+    },
+    {
+      id: "2",
+      reg_no: "MUM2025_04_15550",
+      full_name: "B",
+      semina: "SEMINA 1",
+      gender: "Mwanamke",
+    },
+  ];
+  assert.ok(findMyGroup(roster, "MUM2025-04-13988"));
+  assert.ok(findMyGroup(roster, "MUM 2025-04-13988"));
+  assert.ok(findMyGroup(roster, "mum2025_04_15550"));
+  assert.equal(searchMembers(roster, "MUM2025-04-13988").length, 1);
+});
+
+test("findMyGroup explains a missing gender instead of inventing a group", () => {
+  const roster: RosterEntry[] = [{ id: "z", reg_no: "RZ", full_name: "Z", semina: "SEMINA 1", gender: "" }];
+  const mine = findMyGroup(roster, "RZ");
+  assert.ok(mine);
+  assert.equal(mine.group, null);
+  assert.match(mine.note!, /Jinsia/);
+});
+
+test("findMyGroup returns null for a Reg Namba that is not enrolled", () => {
+  assert.equal(findMyGroup(cohort("SEMINA 1", "Mwanaume", 2), "NOPE"), null);
+  assert.equal(findMyGroup(cohort("SEMINA 1", "Mwanaume", 2), "  "), null);
+});
+
+test("searchMembers matches a name or a Reg Namba and is capped", () => {
+  const roster: RosterEntry[] = [
+    { id: "1", reg_no: "MUM2025-04-14106", full_name: "Amina Hassan" },
+    { id: "2", reg_no: "MUM2025-04-14107", full_name: "Bilal Omar" },
+    { id: "3", reg_no: "MUM2025-04-14108", full_name: "Amina Yusuf" },
+  ];
+  assert.equal(searchMembers(roster, "Amina").length, 2);
+  assert.equal(searchMembers(roster, "14107").length, 1);
+  assert.equal(searchMembers(roster, "").length, 0);
+  assert.equal(searchMembers(roster, "1410").length, 3);
+  assert.equal(searchMembers(roster, "MUM", 2).length, 2);
+});
+
+test("formatGroupLabel reads as a place a student can recognise", () => {
+  assert.equal(formatGroupLabel("SEMINA 1", "male", "GROUP 3"), "SEMINA 1 · WANAUME · GROUP 3");
+  assert.equal(formatGroupLabel("SEMINA 9", "female", "GROUP 2"), "SEMINA 9 · WANAWAKE · GROUP 2");
+});

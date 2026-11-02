@@ -879,3 +879,45 @@ migration that production may not have yet.
   code is code-split, so it is not in the chunks the HTML preloads. `attendance-CkbpEViW.js`
   carrying `already_marked` / `outside_area` is the check that PR #5 shipped. If a browser shows
   old code while the chunks are current, it is a cached `index.html`, not a failed deploy.
+
+## The `_redirects` CI check was fixed by an empty commit
+
+`31eaed1` is titled *stop requiring a `_redirects` file Vercel does not use*, but `git show --stat`
+reports **no files changed**. The workflow still carried `test -f dist/_redirects`, so every run on
+that branch and on `main` kept failing at *Verify dist output* — the one red step blocking the
+Vercel deploy. The line is now actually removed. Verify a CI fix with `git show --stat <sha>`, not
+with the commit message.
+
+## Groups and seminars (15 seminars x 11 groups x 8 students)
+
+`src/lib/groupAssignment.ts` is the single source of truth and is deliberately import-free, so
+`node --test` loads it without a bundler. `SEMINARS` is `SEMINA 1..15`, `GROUP_NAMES` is
+`GROUP 1..11`, `GROUP_SIZE` is 8.
+
+Capacity is counted per **(seminar, gender, group)**, never per group name alone. `GROUP 1` exists
+for men and for women in the same seminar, and those are two separate rooms of 8. The test that
+asserts "no group is mixed" checks that the `(seminar, group)` bucket holds exactly one gender,
+which is the real requirement. Reading the plan as one group name makes a correct result look like
+84 mixed groups.
+
+`normalizeGender` matches whole words, not first letters. `Mwanamke` starts with `M`, so a
+first-letter rule files every woman as male. `FEMALE_WORDS` and `MALE_WORDS` both carry `f`/`m`
+and the Swahili forms (`mke`, `kike`, `mume`, `kiume`, …).
+
+`regKey()` strips every non-alphanumeric character before comparing Reg Namba, because the imported
+cohort really stores `MUM2025-04-14106`, `MUM 2025-04-13988` and `MUM2025_04_15550`. A plain
+`trim().toUpperCase()` comparison misses 472 of the 1572 rows. 151 students share a Reg Namba with
+someone else; a lookup resolves to the first match, which is the best available answer and is a data
+problem, not a logic one.
+
+Assignment is stable. A student who already has a seminar keeps it, and re-running the planner on
+the result moves nobody — that is what lets `assignStudentGroup` run on every profile save without
+shuffling a whole group when one student changes their course.
+
+`student_group` had to become nullable (`20261031120000_add_group_reports.sql`): a student with no
+gender has no group, and the column would otherwise reject the row. The auto-assignment fills it
+back in on the next save.
+
+`retryWithoutMissingColumns` guards the new columns, so the app keeps working until an admin runs
+the migration. `src/routes/admin.groups.tsx` is the admin surface; `GroupManager` renders it and
+`groupExports.ts` writes Excel/Word/PDF/CSV from `xlsx`, `docx` and `jspdf`.
