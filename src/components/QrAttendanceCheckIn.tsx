@@ -97,6 +97,7 @@ export function QrAttendanceCheckIn({
       run: (fix: {
         lat: number | null;
         lng: number | null;
+        accuracy: number | null;
       }) => Promise<Awaited<ReturnType<typeof checkIn>>>,
     ) => {
       setBusy(true);
@@ -105,7 +106,11 @@ export function QrAttendanceCheckIn({
         // A missing fix is not fatal here: only a session with a geofence needs
         // it, and the library is the side that knows which sessions those are.
         const fix = await getPosition();
-        const res = await run({ lat: fix?.lat ?? null, lng: fix?.lng ?? null });
+        const res = await run({
+          lat: fix?.lat ?? null,
+          lng: fix?.lng ?? null,
+          accuracy: fix?.accuracy ?? null,
+        });
         if (res.ok) {
           setDone({
             fullName: res.fullName,
@@ -129,8 +134,20 @@ export function QrAttendanceCheckIn({
     async (scanned: ScannedAttendance, st: string) => {
       await record((fix) =>
         scanned.kind === "join"
-          ? checkIn({ studentToken: st, joinCode: scanned.joinCode, lat: fix.lat, lng: fix.lng })
-          : checkIn({ studentToken: st, token: scanned.token, lat: fix.lat, lng: fix.lng }),
+          ? checkIn({
+              studentToken: st,
+              joinCode: scanned.joinCode,
+              lat: fix.lat,
+              lng: fix.lng,
+              accuracy: fix.accuracy,
+            })
+          : checkIn({
+              studentToken: st,
+              token: scanned.token,
+              lat: fix.lat,
+              lng: fix.lng,
+              accuracy: fix.accuracy,
+            }),
       );
     },
     [record],

@@ -1,6 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
 import { z } from "zod";
-import { getPosition } from "@/lib/geo";
+import { checkArea, getPosition } from "@/lib/geo";
+import {
+  isLectureOpen,
+  lectureDateKey,
+  lectureWindow,
+  type LectureWindow,
+} from "@/lib/lectureSchedule";
 import { resolveStudentToken } from "@/lib/studentAccount";
 import { deterministicUuid, digestsEqual, hashSecret, newSalt, randomUuid } from "@/lib/pin-crypto";
 import { getDeviceId } from "@/lib/device-id";
@@ -50,6 +56,23 @@ const SESSION_NS = "a0000000-0000-4000-8000-000000000003";
 const CHECKIN_NS = "a0000000-0000-4000-8000-000000000004";
 const TOKEN_NS = "a0000000-0000-4000-8000-000000000005";
 
+/** Marks a session row as the Friday lecture rather than a teacher's own sitting. */
+const LECTURE_KIND = "lecture";
+
+/** Shown on the lecture's row and on the student's card. */
+export const LECTURE_TITLE = "Muhadhara wa Ijumaa — Wanafunzi Wote";
+
+/**
+ * The id of the Friday lecture for a given EAT date.
+ *
+ * Derived rather than random, so every browser, phone and tab agrees on the same
+ * session without a lookup — and so two students tapping "hudhuria" at the same
+ * moment cannot create two lectures for one Friday.
+ */
+function lectureSessionId(dateKey: string): Promise<string> {
+  return deterministicUuid(`lecture:${dateKey}`);
+}
+
 /** How long a single QR token stays valid. Short, so a photo goes stale. */
 const TOKEN_TTL_SECONDS = 30;
 
@@ -75,6 +98,10 @@ export type OpenSession = {
   studentGroup: string | null;
   radiusM: number;
   hasJoinCode: boolean;
+  /** "lecture" is the Friday all-students sitting; "class" is a teacher's own. */
+  kind: "lecture" | "class";
+  /** Open to every student, regardless of their seminar or group. */
+  openToAll: boolean;
 };
 
 export type Session = {
@@ -84,6 +111,8 @@ export type Session = {
   studentGroup: string | null;
   radiusM: number;
   joinCode: string | null;
+  kind: "lecture" | "class";
+  openToAll: boolean;
 };
 
 export type PresentRow = {
@@ -109,6 +138,13 @@ type SessionPayload = {
   join_code: string | null;
   active: boolean;
   closes_at: string | null;
+  /**
+   * Absent on every row written before the Friday lecture existed, so a missing
+   * value must read as "class" — that is what those rows are.
+   */
+  kind?: "lecture" | "class";
+  /** The lecture is for everyone, so the group filter never applies to it. */
+  open_to_all?: boolean;
 };
 
 type TokenPayload = {
@@ -232,11 +268,112 @@ export async function startAttendanceSession(input: {
       studentGroup: d.studentGroup,
       radiusM: d.radiusM,
       joinCode: code,
+      kind: "class",
+      openToAll: false,
     },
   };
 }
 
-/** Sessions that are still open. Pass the student's token to filter by group. */
+/**
+ * The admin's saved attendance point, which is the fence the Friday lecture
+ * measures against. A null centre means no fence, exactly as for a class.
+ */
+async function loadAttendanceFence(): Promise<{
+  lat: number | null;
+  lng: number | null;
+  radiusM: number;
+}> {
+  const { data } = await supabase
+    .from("app_settings")
+    .select("attendance_lat, attendance_lng, attendance_radius_m")
+    .eq("id", 1)
+    .maybeSingle();
+  const s = data as {
+    attendance_lat: number | null;
+    attendance_lng: number | null;
+    attendance_radius_m: number | null;
+  } | null;
+  return {
+    lat: s?.attendance_lat ?? null,
+    lng: s?.attendance_lng ?? null,
+    radiusM: s?.attendance_radius_m ?? 200,
+  };
+}
+
+/**
+ * The Friday lecture for the Friday owning `at`, created on first use.
+ *
+ * Nothing schedules this ahead of time: the row appears the moment a student
+ * checks in or an admin opens it, and it is keyed by the date so every caller
+ * converges on one session. `closes_at` is the window's end, so the lecture stops
+ * accepting check-ins at 10:00 without anyone pressing anything.
+ */
+export async function ensureLectureSession(
+  at: Date | number = Date.now(),
+): Promise<{ ok: true; session: Session; window: LectureWindow } | { ok: false; message: string }> {
+  const window = lectureWindow(at);
+  const id = await lectureSessionId(window.dateKey);
+
+  const existing = await getSession(id);
+  if (existing) return { ok: true, session: existing, window };
+
+  const fence = await loadAttendanceFence();
+  const payload: SessionPayload = {
+    v: 1,
+    t: "session",
+    device: getDeviceId() || null,
+    title: LECTURE_TITLE,
+    semina: null,
+    student_group: null,
+    lat: fence.lat,
+    lng: fence.lng,
+    radius_m: fence.radiusM,
+    join_code: makeJoinCode(),
+    active: true,
+    closes_at: window.closesAt,
+    kind: "lecture",
+    open_to_all: true,
+  };
+
+  const { error } = await supabase.from("quiz_participants").insert({
+    id,
+    exam_id: SESSION_NS,
+    student_id: id,
+    reg_no: "SESSION",
+    full_name: LECTURE_TITLE,
+    semina: JSON.stringify(payload),
+    student_group: null,
+  });
+  // A concurrent create from another phone loses the race on the primary key.
+  // That is the desired outcome, so fall back to reading the winner's row.
+  if (error) {
+    const raced = await getSession(id);
+    if (raced) return { ok: true, session: raced, window };
+    return { ok: false, message: error.message ?? "Imeshindikana kufungua muhadhara" };
+  }
+
+  return {
+    ok: true,
+    session: {
+      id,
+      title: LECTURE_TITLE,
+      semina: null,
+      studentGroup: null,
+      radiusM: fence.radiusM,
+      joinCode: payload.join_code,
+      kind: "lecture",
+      openToAll: true,
+    },
+    window,
+  };
+}
+
+/**
+ * Sessions that are still open. Pass the student's token to filter by group.
+ *
+ * The Friday lecture is added from the clock rather than from the table, so it is
+ * listed to every student whether or not its row has been written yet.
+ */
 export async function listOpenSessions(
   studentToken?: string,
 ): Promise<Array<OpenSession & { joinCode: string | null }>> {
@@ -255,8 +392,10 @@ export async function listOpenSessions(
     const p = parse<SessionPayload>(row.semina);
     if (!p || p.t !== "session" || !p.active) continue;
     if (p.closes_at && new Date(p.closes_at).getTime() <= now) continue;
+    const openToAll = p.open_to_all === true;
     // A group-targeted session is only shown to that group.
-    if (student && p.student_group && p.student_group !== student.studentGroup) continue;
+    if (student && !openToAll && p.student_group && p.student_group !== student.studentGroup)
+      continue;
     out.push({
       id: row.id,
       title: p.title,
@@ -265,8 +404,30 @@ export async function listOpenSessions(
       radiusM: p.radius_m,
       hasJoinCode: !!p.join_code,
       joinCode: p.join_code,
+      kind: p.kind === LECTURE_KIND ? "lecture" : "class",
+      openToAll,
     });
   }
+
+  if (isLectureOpen(now)) {
+    const window = lectureWindow(now);
+    const id = await lectureSessionId(window.dateKey);
+    if (!out.some((s) => s.id === id)) {
+      const fence = await loadAttendanceFence();
+      out.unshift({
+        id,
+        title: LECTURE_TITLE,
+        semina: null,
+        studentGroup: null,
+        radiusM: fence.radiusM,
+        hasJoinCode: false,
+        joinCode: null,
+        kind: "lecture",
+        openToAll: true,
+      });
+    }
+  }
+
   return out;
 }
 
@@ -287,6 +448,8 @@ export async function getSession(sessionId: string): Promise<Session | null> {
     studentGroup: p.student_group,
     radiusM: p.radius_m,
     joinCode: p.join_code,
+    kind: p.kind === LECTURE_KIND ? "lecture" : "class",
+    openToAll: p.open_to_all === true,
   };
 }
 
@@ -402,9 +565,13 @@ export async function checkIn(input: {
   studentToken: string;
   token?: string | null;
   joinCode?: string | null;
+  /** A session the student picked directly, e.g. the Friday lecture card. */
+  sessionId?: string | null;
   /** The phone's fix, or null when GPS is off, refused or unavailable. */
   lat: number | null;
   lng: number | null;
+  /** The phone's own error bar, so a vague indoor fix is not read as "far away". */
+  accuracy?: number | null;
 }): Promise<AttendanceResult> {
   const student = await resolveStudentToken(input.studentToken);
   if (!student) return { ok: false, reason: "not_registered" };
@@ -413,7 +580,20 @@ export async function checkIn(input: {
   let session: Session | null = null;
   let method: "qr" | "code" = "qr";
 
-  if (input.token) {
+  if (input.sessionId) {
+    // A direct tap on a listed session. No token or code is involved, so the
+    // gates below are the only thing between the student and a check-in.
+    method = "code";
+    session = await getSession(input.sessionId);
+    if (!session) {
+      // The Friday lecture is listed from the clock, so the student may be
+      // tapping a session whose row has not been written yet. Creating it here
+      // is what turns that tap into a check-in.
+      const lecture = await ensureLectureSession();
+      if (lecture.ok && lecture.session.id === input.sessionId) session = lecture.session;
+    }
+    if (!session) return { ok: false, reason: "invalid_token" };
+  } else if (input.token) {
     const sessions = await listOpenSessions();
     for (const s of sessions) {
       const verdict = await tokenIsLive(s.id, input.token);
@@ -453,21 +633,37 @@ export async function checkIn(input: {
 
   // A group-targeted session is only for that group. The picker hides the others,
   // but a scanned join code bypasses the picker, so the rule is enforced here.
-  if (payload.student_group && payload.student_group !== student.studentGroup) {
+  // The Friday lecture is open to all, so the group rule never applies to it.
+  if (
+    payload.open_to_all !== true &&
+    payload.student_group &&
+    payload.student_group !== student.studentGroup
+  ) {
     return { ok: false, reason: "wrong_group" };
   }
 
   // Geofence. A session the teacher started without coordinates has no fence,
   // so a student whose GPS is off can still check in — otherwise turning GPS on
   // would be a requirement the teacher never asked for.
+  //
+  // The phone's own error bar is allowed for, so a student indoors on a coarse
+  // fix is not refused from a room they are standing in. `checkArea` only ever
+  // moves a fix closer, so this cannot admit someone who is genuinely away.
   let dist: number | null = null;
-  if (payload.lat != null && payload.lng != null) {
-    if (input.lat == null || input.lng == null) return { ok: false, reason: "gps_required" };
-    dist = distanceM(payload.lat, payload.lng, input.lat, input.lng);
-    if (dist > payload.radius_m) {
-      return { ok: false, reason: "outside_area", distanceM: dist, radiusM: payload.radius_m };
-    }
+  const verdict = checkArea(
+    { lat: payload.lat, lng: payload.lng, radiusM: payload.radius_m },
+    { lat: input.lat, lng: input.lng, accuracy: input.accuracy ?? null },
+  );
+  if (verdict.status === "missing_fix") return { ok: false, reason: "gps_required" };
+  if (verdict.status === "outside") {
+    return {
+      ok: false,
+      reason: "outside_area",
+      distanceM: verdict.distanceM,
+      radiusM: verdict.radiusM,
+    };
   }
+  if (verdict.status === "inside" || verdict.status === "near_edge") dist = verdict.distanceM;
 
   // The row id is derived from "student + session", and `student_id` holds that
   // same derived value: `UNIQUE (exam_id, student_id)` then makes a second
@@ -581,6 +777,8 @@ export type SessionSummary = {
   startedAt: string | null;
   closedAt: string | null;
   presentCount: number;
+  kind: "lecture" | "class";
+  openToAll: boolean;
 };
 
 /**
@@ -623,6 +821,8 @@ export async function listSessionSummaries(): Promise<SessionSummary[]> {
       startedAt: row.joined_at,
       closedAt: p.closes_at,
       presentCount: counts.get(row.id) ?? 0,
+      kind: p.kind === LECTURE_KIND ? "lecture" : "class",
+      openToAll: p.open_to_all === true,
     });
   }
   return out.sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""));
@@ -654,11 +854,26 @@ export async function fetchMyCheckIns(studentToken: string): Promise<SessionSumm
     .from("quiz_participants")
     .select("id, semina, joined_at")
     .eq("exam_id", SESSION_NS);
-  const byId = new Map<string, { title: string; semina: string | null; group: string | null }>();
+  const byId = new Map<
+    string,
+    {
+      title: string;
+      semina: string | null;
+      group: string | null;
+      kind: "lecture" | "class";
+      openToAll: boolean;
+    }
+  >();
   for (const row of (sessions ?? []) as Array<{ id: string; semina: string | null }>) {
     const p = parse<SessionPayload>(row.semina);
     if (!p || p.t !== "session") continue;
-    byId.set(row.id, { title: p.title, semina: p.semina, group: p.student_group });
+    byId.set(row.id, {
+      title: p.title,
+      semina: p.semina,
+      group: p.student_group,
+      kind: p.kind === LECTURE_KIND ? "lecture" : "class",
+      openToAll: p.open_to_all === true,
+    });
   }
 
   const { data: checkIns } = await supabase
@@ -686,6 +901,8 @@ export async function fetchMyCheckIns(studentToken: string): Promise<SessionSumm
       startedAt: p.check_in_at ?? row.joined_at,
       closedAt: null,
       presentCount: 0,
+      kind: meta?.kind ?? "class",
+      openToAll: meta?.openToAll ?? false,
     });
   }
   return out.sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""));
@@ -720,9 +937,9 @@ export async function loadAttendanceReport(): Promise<AttendanceReport> {
     sessions.push({
       id: row.id,
       title: p.title,
-      // A session that names a seminar is a seminar; one that does not is a
-      // normal class. That is the distinction the office asks about.
-      kind: p.semina ? "semina" : "darasa",
+      // Three kinds reach the office: the Friday lecture, a seminar, and an
+      // ordinary class. A seminar is a session that names one.
+      kind: p.kind === LECTURE_KIND ? "lecture" : p.semina ? "semina" : "darasa",
       semina: p.semina,
       studentGroup: p.student_group,
       startedAt: row.joined_at,
@@ -777,6 +994,61 @@ export async function loadAttendanceReport(): Promise<AttendanceReport> {
   }
 
   return buildAttendanceReport(sessions, checkIns, roster);
+}
+
+// ---------------------------------------------------------------
+// Live head count
+// ---------------------------------------------------------------
+
+export type LiveAttendance = {
+  /** The open session, or null when nothing is running. */
+  sessionId: string | null;
+  title: string;
+  kind: "lecture" | "class";
+  openToAll: boolean;
+  /** How many students are checked in right now. */
+  present: number;
+  /** The whole roll, for a percentage. Null when the roster is unreadable. */
+  expected: number | null;
+  /** The most recent arrivals, newest first — the "live" part of the counter. */
+  recent: PresentRow[];
+};
+
+/**
+ * The current head count for the open session, for the dashboard.
+ *
+ * The roster is fetched only for a percentage, and a failure there leaves the
+ * count intact: the number that matters is how many students are in the room,
+ * and that comes from the check-ins alone.
+ */
+export async function loadLiveAttendance(): Promise<LiveAttendance | null> {
+  const open = await listOpenSessions();
+  // The lecture is listed first when it is running, so it is what a Friday
+  // dashboard should show. Otherwise the newest class session wins.
+  const session = open[0];
+  if (!session) return null;
+
+  const present = await fetchSessionPresent(session.id);
+
+  let expected: number | null = null;
+  try {
+    const students = await fetchAllStudents<{ id: string }>("id");
+    expected = students.length || null;
+  } catch {
+    expected = null;
+  }
+
+  const recent = [...present].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 6);
+
+  return {
+    sessionId: session.id,
+    title: session.title,
+    kind: session.kind,
+    openToAll: session.openToAll,
+    present: present.length,
+    expected,
+    recent,
+  };
 }
 
 /** A short, unambiguous code the teacher can read out. */

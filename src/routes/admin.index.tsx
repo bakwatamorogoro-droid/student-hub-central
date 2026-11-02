@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LiveExamPanel } from "@/components/LiveExamPanel";
+import { LiveAttendanceCard } from "@/components/LiveAttendanceCard";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Users,
@@ -258,6 +259,7 @@ function Dash() {
 
   return (
     <div className="space-y-6">
+      <LiveAttendanceCard />
       <div className="relative overflow-hidden rounded-3xl border-2 border-primary/25 bg-gradient-to-br from-primary/12 via-card to-secondary/15 p-6 shadow-lg">
         <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-primary/15 blur-3xl" />
         <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

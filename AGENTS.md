@@ -826,3 +826,56 @@ migration that production may not have yet.
 - `src/lib/news.test.ts` — active/expired filtering, ordering, missing column.
 - `tests/e2e/attendance.e2e.ts` F4a–F4m — the poster link opens, parses, and drives a real
   check-in against live Supabase; the public news read needs no sign-in.
+
+  ### The Friday lecture and the live attendance count
+
+  Every Friday, 07:00–10:00 EAT, the whole cohort is expected in the hall. The window lives in
+  `src/lib/lectureSchedule.ts` with no imports, so `node --test` covers the boundaries directly
+  (`src/lib/lectureSchedule.test.ts`): Friday resolution, never open on other days, next-week
+  rollover, zero countdown while open, Monday resolving to the same week's Friday. EAT is UTC+3
+  with no DST, so it is a fixed offset rather than a timezone lookup — the app must give the same
+  answer on a phone set to any timezone, and on a server. **Do not replace it with
+  `toLocaleString` and a zone name.**
+
+  `saa moja` means 07:00, not 13:00. Swahili clock hours start at sunrise (06:00), so `saa 1` is
+  07:00 and `saa 4` is 10:00. A literal "1:00 PM" reading of the request is wrong; the tests pin
+  the morning window for that reason.
+
+  The lecture is a real session, not a separate table. `ensureLectureSession` in
+  `src/lib/attendance.ts` mints it keyed by the EAT date, so every phone converges on one row
+  instead of racing to create one each, and `checkIn` treats `kind: "lecture"` as open to all
+  (no seminar or group filter). The geofence reuses `checkArea`/`effectiveDistanceM` from
+  `@/lib/geo`, so a coarse GPS fix widens the fence instead of locking students out.
+
+  The student card is `src/components/FridayLectureCard.tsx`, mounted on `/attendance`. The
+  admin counter is `src/components/LiveAttendanceCard.tsx` with `src/lib/useLiveAttendance.ts`,
+  mounted on the dashboard. The counter subscribes to Realtime and also polls, because a phone
+  that slept through the socket event still has to see the true count.
+
+  `AttendanceSessionPanel` reads `loadDirectory()` for its seminar and group dropdowns, so they
+  list every value students actually hold rather than only the `app_settings` seed.
+
+  ### CI is red on `main`, and it is not the build
+
+  The last run on `main` (`da89e235`) fails at *Verify dist output* with `dist/_redirects haipo`.
+  That check demands a Netlify file which was removed on purpose — Vercel serves the SPA rewrite
+  from `vercel.json`, and a stray `_redirects` adds a catch-all that turns a missing chunk into
+  HTML. The corrected step replaces the `test -f` with a warning, so a stray copy is reported
+  without failing the build. It cannot be pushed from here: the tokens in this workspace carry
+  only `repo`, so a push touching `.github/workflows/*` is rejected with *refusing to allow a
+  Personal Access Token to create or update workflow … without `workflow` scope*. The Git Data
+  API is blocked the same way — a tree that rewrites a workflow path comes back `404 Not Found`
+  even though creating a blob succeeds. Fix it in the GitHub UI, or with a token that has the
+  `workflow` scope.
+
+  ### The deploy is healthy; the old failures are not current
+
+  Vercel builds `main` and the deployment is `READY` and serving. The 14 `ERROR` deployments in
+  the project are all old (Oct 1–28) and all from uploading `dist/` alone — `Command "vite build"
+  exited with 127/1`, which is the `ENOENT` trap already documented above. Check the date before
+  treating a failed deployment as a live problem.
+
+  To confirm what is actually live, grep the lazy chunk rather than `index.html`: the attendance
+  code is code-split, so it is not in the chunks the HTML preloads. `attendance-CkbpEViW.js`
+  carrying `already_marked` / `outside_area` is the check that PR #5 shipped. If a browser shows
+  old code while the chunks are current, it is a cached `index.html`, not a failed deploy.
