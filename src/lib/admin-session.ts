@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { randomUuid } from "@/lib/pin-crypto";
 
 /** Admin sign-in. See `adminLogin` for what this does and does not protect. */
 const KEY = "admin_session_token";
@@ -38,7 +39,11 @@ export async function adminLogin(username: string, password: string): Promise<bo
     // out on every reload: the screens unlocked for the current mount and then bounced
     // straight back to the login form. Both keys are written to keep the older flag
     // working for anything still reading it.
-    window.localStorage.setItem(KEY, crypto.randomUUID());
+    //
+    // `randomUuid()` rather than `crypto.randomUUID()`: the latter needs a secure
+    // context (Chrome 92+/Safari 15.4+) and throws a TypeError over plain HTTP,
+    // which would reject correct credentials on an older phone or a LAN preview.
+    window.localStorage.setItem(KEY, randomUuid());
     window.localStorage.setItem(LEGACY_KEY, "1");
     return true;
   }

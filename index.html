@@ -3,7 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#006eaf" />
     <title>Islamic Studies Test Online — Mitihani, Maswali ya Semester na Matokeo</title>
+    <!--
+      Supabase is on a different origin, so every cold page load paid a full DNS
+      lookup plus TLS handshake before the first query could leave. Warming the
+      connection here overlaps that cost with the HTML and bundle download.
+    -->
+    <link rel="preconnect" href="https://weiwabywirhoxiyyjkko.supabase.co" crossorigin />
+    <link rel="dns-prefetch" href="https://weiwabywirhoxiyyjkko.supabase.co" />
+    <!-- PNG rather than SVG: Safari only learned SVG favicons in 16.4, and the
+         browser requested /favicon.ico on every page load before these existed. -->
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="description" content="Islamic Studies Test Online — fanya mitihani mtandaoni, angalia maswali ya semester, na fuatilia matokeo yako." />
     <meta name="author" content="Islamic Studies Test" />
     <meta property="og:site_name" content="Islamic Studies Test" />
