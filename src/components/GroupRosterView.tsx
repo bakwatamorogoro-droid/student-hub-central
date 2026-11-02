@@ -1,15 +1,18 @@
 import { useMemo } from "react";
 import { useRoster } from "@/lib/useRoster";
 import { findMyGroup, formatGroupLabel, representativesFor } from "@/lib/groupAssignment";
-import { Loader2, Mars, Venus, CheckCircle2, AlertTriangle, Star } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
+import { Loader2, Mars, Venus, CheckCircle2, AlertTriangle, Star, Phone, Lock } from "lucide-react";
 
 /**
  * The group a Reg Namba belongs to: its badges, its representative, and every
- * classmate. Renders from the roster alone, so the Update Taarifa wizard and the
- * "Group Yangu" card show the same thing without either owning the markup.
+ * classmate with the number they registered. Renders from the roster alone, so the
+ * Update Taarifa wizard and the "Group Yangu" card show the same thing without
+ * either owning the markup.
  */
 export function GroupRosterView({ reg, className = "" }: { reg: string; className?: string }) {
   const { roster, loading } = useRoster();
+  const { t } = useI18n();
   const mine = useMemo(() => (reg ? findMyGroup(roster, reg) : null), [roster, reg]);
 
   // A group is gender-pure, so exactly one side of the pair is filled.
@@ -66,6 +69,11 @@ export function GroupRosterView({ reg, className = "" }: { reg: string; classNam
             {formatGroupLabel(mine.semina, mine.gender, mine.group)}
           </span>
         )}
+        {mine.confirmed && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+            <Lock className="h-3 w-3" /> {t("group_confirmed_badge")}
+          </span>
+        )}
         {mine.complete ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">
             <CheckCircle2 className="h-3 w-3" /> Group limekamilika (8/8)
@@ -112,21 +120,39 @@ export function GroupRosterView({ reg, className = "" }: { reg: string; classNam
             )}
             Wanafunzi wenzako ({mine.members.length}/{mine.members.length + mine.free})
           </div>
+          <p className="mb-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+            <Phone className="h-3 w-3" /> {t("phone_help_group")}
+          </p>
           <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
             {mine.members.map((m) => {
               const isMe = m.id === mine.student.id;
               return (
                 <li
                   key={m.id}
-                  className={`flex items-center justify-between gap-2 px-3 py-2 text-sm ${
+                  className={`flex items-center justify-between gap-3 px-3 py-2 text-sm ${
                     isMe ? "bg-primary/10 font-bold" : ""
                   }`}
                 >
-                  <span className="truncate">{m.full_name || "—"}</span>
-                  <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                    {m.reg_no}
-                    {isMe && <span className="ml-1 text-primary">(wewe)</span>}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{m.full_name || "—"}</span>
+                    <span className="block font-mono text-xs text-muted-foreground">
+                      {m.reg_no}
+                      {isMe && <span className="ml-1 font-sans text-primary">(wewe)</span>}
+                    </span>
                   </span>
+                  {m.phone ? (
+                    <a
+                      href={`tel:${m.phone}`}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 font-mono text-xs font-bold text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
+                    >
+                      <Phone className="h-3 w-3" />
+                      {m.phone}
+                    </a>
+                  ) : (
+                    <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-[10px] font-bold text-muted-foreground">
+                      {t("no_phone")}
+                    </span>
+                  )}
                 </li>
               );
             })}

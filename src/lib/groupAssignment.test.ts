@@ -14,6 +14,7 @@ import {
   normalizeGroupName,
   normalizeSeminar,
   planAssignments,
+  planMoves,
   regKey,
   searchMembers,
   type RosterEntry,
@@ -115,10 +116,7 @@ test("a group name is never shared across genders: capacity is per (seminar, gen
   // GROUP 1 exists for both men and women in a seminar by design — they are two
   // different groups (WANAUME GROUP 1 vs WANAWKE GROUP 1). What must hold is that
   // each side's 11 groups are counted separately and none exceeds 8.
-  const roster = [
-    ...cohort("SEMINA 1", "Mwanaume", 20),
-    ...cohort("SEMINA 1", "Mwanamke", 20),
-  ];
+  const roster = [...cohort("SEMINA 1", "Mwanaume", 20), ...cohort("SEMINA 1", "Mwanamke", 20)];
   const { groups } = assignGroups(roster);
   const counts = new Map<string, number>();
   for (const s of roster) {
@@ -197,10 +195,7 @@ test("a missing gender is reported, not guessed into a men's group", () => {
 
 test("the two genders never share seats", () => {
   // 88 men fill the men's side; women still start at GROUP 1.
-  const roster = [
-    ...cohort("SEMINA 1", "Mwanaume", 88),
-    ...cohort("SEMINA 1", "Mwanamke", 3),
-  ];
+  const roster = [...cohort("SEMINA 1", "Mwanaume", 88), ...cohort("SEMINA 1", "Mwanamke", 3)];
   const { groups } = assignGroups(roster);
   const women = roster.filter((s) => normalizeGender(s.gender) === "female");
   for (const w of women) assert.equal(groups[w.id], "GROUP 1");
@@ -319,7 +314,9 @@ test("a student whose row stores spaces or underscores can still find themselves
 });
 
 test("findMyGroup explains a missing gender instead of inventing a group", () => {
-  const roster: RosterEntry[] = [{ id: "z", reg_no: "RZ", full_name: "Z", semina: "SEMINA 1", gender: "" }];
+  const roster: RosterEntry[] = [
+    { id: "z", reg_no: "RZ", full_name: "Z", semina: "SEMINA 1", gender: "" },
+  ];
   const mine = findMyGroup(roster, "RZ");
   assert.ok(mine);
   assert.equal(mine.group, null);
@@ -347,4 +344,179 @@ test("searchMembers matches a name or a Reg Namba and is capped", () => {
 test("formatGroupLabel reads as a place a student can recognise", () => {
   assert.equal(formatGroupLabel("SEMINA 1", "male", "GROUP 3"), "SEMINA 1 · WANAUME · GROUP 3");
   assert.equal(formatGroupLabel("SEMINA 9", "female", "GROUP 2"), "SEMINA 9 · WANAWAKE · GROUP 2");
+});
+
+// --- confirmation and phone numbers ----------------------------------------
+
+test("a member carries the number they registered with", () => {
+  const roster: RosterEntry[] = [
+    {
+      id: "1",
+      reg_no: "R1",
+      full_name: "Amina",
+      semina: "SEMINA 1",
+      gender: "Mwanamke",
+      student_group: "GROUP 1",
+      phone: " 0712 345 678 ",
+    },
+    {
+      id: "2",
+      reg_no: "R2",
+      full_name: "Bilal",
+      semina: "SEMINA 1",
+      gender: "Mwanaume",
+      student_group: "GROUP 1",
+      phone: null,
+    },
+  ];
+  const reports = buildSeminarReports(roster);
+  const amina = reports[0].female[0].members.find((m) => m.id === "1");
+  const bilal = reports[0].male[0].members.find((m) => m.id === "2");
+  assert.equal(amina?.phone, "0712 345 678");
+  // A missing number reads as an empty string, not "null", so the card can test it.
+  assert.equal(bilal?.phone, "");
+});
+
+test("a group counts how many of its members confirmed", () => {
+  const roster: RosterEntry[] = [
+    {
+      id: "1",
+      reg_no: "R1",
+      full_name: "A",
+      semina: "SEMINA 1",
+      gender: "Mwanamke",
+      student_group: "GROUP 1",
+      group_confirmed_at: "2026-11-01T10:00:00Z",
+    },
+    {
+      id: "2",
+      reg_no: "R2",
+      full_name: "B",
+      semina: "SEMINA 1",
+      gender: "Mwanamke",
+      student_group: "GROUP 1",
+    },
+  ];
+  const cell = buildSeminarReports(roster)[0].female[0];
+  assert.equal(cell.count, 2);
+  assert.equal(cell.confirmed, 1);
+  // One of the two is still open, so the group is not fully confirmed.
+  assert.equal(cell.allConfirmed, false);
+});
+
+test("a group is fully confirmed only when every member confirmed", () => {
+  const roster: RosterEntry[] = [
+    {
+      id: "1",
+      reg_no: "R1",
+      semina: "SEMINA 1",
+      gender: "Mwanaume",
+      student_group: "GROUP 3",
+      group_confirmed_at: "2026-11-01T10:00:00Z",
+    },
+    {
+      id: "2",
+      reg_no: "R2",
+      semina: "SEMINA 1",
+      gender: "Mwanaume",
+      student_group: "GROUP 3",
+      group_confirmed_at: "2026-11-02T10:00:00Z",
+    },
+  ];
+  const report = buildSeminarReports(roster)[0];
+  const cell = report.male[2];
+  assert.equal(cell.confirmed, 2);
+  assert.equal(cell.allConfirmed, true);
+  assert.equal(report.confirmedGroups, 1);
+  assert.equal(report.confirmedStudents, 2);
+});
+
+test("an empty group is never reported as all confirmed", () => {
+  const report = buildSeminarReports([
+    { id: "1", reg_no: "R1", semina: "SEMINA 1", gender: "Mwanaume", student_group: "GROUP 2" },
+  ])[0];
+  assert.equal(report.male[0].allConfirmed, false);
+  assert.equal(report.male[0].confirmed, 0);
+  // GROUP 1 is empty: nobody to confirm, so it is not "all confirmed".
+  assert.equal(report.male[1].allConfirmed, false);
+});
+
+test("a confirmed seat is not moved when the plan is recomputed", () => {
+  // The confirmed student sits in GROUP 9, far from where a fresh plan would put them.
+  // Confirming must keep them there even though the planner would otherwise move them.
+  const roster: RosterEntry[] = [
+    {
+      id: "locked",
+      reg_no: "R1",
+      semina: "SEMINA 1",
+      gender: "Mwanaume",
+      student_group: "GROUP 9",
+      group_confirmed_at: "2026-11-01T10:00:00Z",
+    },
+    ...Array.from({ length: 8 }, (_, i) => ({
+      id: `new${i}`,
+      reg_no: `RN${i}`,
+      semina: "SEMINA 1",
+      gender: "Mwanaume",
+      student_group: null,
+    })),
+  ];
+  const plan = planAssignments(roster);
+  const moves = planMoves(roster, plan);
+  assert.equal(plan.groups["locked"], "GROUP 9");
+  assert.equal(moves.has("locked"), false);
+  // The eight newcomers still get seated; the lock costs nobody a place.
+  assert.equal(moves.size, 8);
+});
+
+test("a confirmed seat is left alone even when its stored group is unusable", () => {
+  // A real group name is kept as it stands, so the case worth pinning is a junk value:
+  // the planner would correct it, but a confirmed seat is frozen regardless.
+  const roster: RosterEntry[] = [
+    {
+      id: "free",
+      reg_no: "R1",
+      semina: "SEMINA 1",
+      gender: "Mwanaume",
+      student_group: "ASSIGMENT 1 KUBADILISHA",
+    },
+    {
+      id: "locked",
+      reg_no: "R2",
+      semina: "SEMINA 1",
+      gender: "Mwanaume",
+      student_group: "ASSIGMENT 1 KUBADILISHA",
+      group_confirmed_at: "2026-11-01T10:00:00Z",
+    },
+  ];
+  const plan = planAssignments(roster);
+  const moves = planMoves(roster, plan);
+  // Nothing is confirmed about the first seat, so the plan is free to place it.
+  assert.ok(GROUP_NAMES.includes(moves.get("free")?.student_group ?? ""));
+  // The second is confirmed, so it stays exactly where the student left it.
+  assert.equal(moves.has("locked"), false);
+});
+
+test("findMyGroup reports whether the student's own seat is confirmed", () => {
+  const roster: RosterEntry[] = [
+    {
+      id: "1",
+      reg_no: "MUM2025-04-13988",
+      full_name: "A",
+      semina: "SEMINA 1",
+      gender: "Mwanamke",
+      student_group: "GROUP 1",
+    },
+    {
+      id: "2",
+      reg_no: "MUM2025-04-15550",
+      full_name: "B",
+      semina: "SEMINA 1",
+      gender: "Mwanamke",
+      student_group: "GROUP 1",
+      group_confirmed_at: "2026-11-01T10:00:00Z",
+    },
+  ];
+  assert.equal(findMyGroup(roster, "MUM2025-04-13988")?.confirmed, false);
+  assert.equal(findMyGroup(roster, "MUM2025-04-15550")?.confirmed, true);
 });

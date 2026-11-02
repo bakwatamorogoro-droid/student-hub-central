@@ -24,6 +24,9 @@ import {
   Users,
   ArrowLeft,
   ArrowRight,
+  Loader2,
+  Lock,
+  AlertTriangle,
 } from "lucide-react";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
@@ -39,10 +42,20 @@ import {
 import { DEFAULT_PROGRAM_YEARS, studyYearFromReg } from "@/lib/studyYear";
 import { useI18n } from "@/lib/i18n";
 import { loadDirectory } from "@/lib/directory";
-import { assignStudentGroup } from "@/lib/groupRoster";
+import { assignStudentGroup, confirmStudentGroup } from "@/lib/groupRoster";
 import { GROUP_NAMES, SEMINARS } from "@/lib/groupAssignment";
 import { invalidateRosterCache } from "@/lib/useRoster";
 import { GroupRosterView } from "@/components/GroupRosterView";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/student")({
   component: Page,
@@ -91,6 +104,8 @@ function Page() {
   // Bumped after a save to remount the group card against the fresh roster.
   const [rosterEpoch, setRosterEpoch] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [askConfirm, setAskConfirm] = useState(false);
 
   useEffect(() => {
     supabase
@@ -180,6 +195,44 @@ function Page() {
     } catch {
       // A placement failure must not block the student from correcting their details.
     }
+  };
+
+  /**
+   * Confirms the seat. This is the save that locks step 3: the database stamps
+   * `group_confirmed_at` and refuses to move the seat afterwards, so the form's
+   * disabled dropdowns are a convenience rather than the guard.
+   */
+  const confirmGroup = async () => {
+    if (!student) return;
+    if (!editSemina || !editGroup) {
+      toast.error(t("group_edit_help"));
+      return;
+    }
+    setAskConfirm(false);
+    setConfirming(true);
+    const outcome = await confirmStudentGroup(student.id, editSemina, editGroup);
+    setConfirming(false);
+
+    if (outcome.needsMigration) {
+      toast.error(
+        "Uthibitisho haujawashwa kwenye mfumo bado. Admin aendeshe migrations zilizo kwenye supabase/migrations/.",
+      );
+      return;
+    }
+    if (outcome.error && !outcome.alreadyConfirmed) {
+      toast.error(outcome.error.message || "Imeshindikana kuhakiki. Jaribu tena.");
+      return;
+    }
+
+    const stamp = new Date().toISOString();
+    setStudent((prev: any) =>
+      prev
+        ? { ...prev, semina: editSemina, student_group: editGroup, group_confirmed_at: stamp }
+        : prev,
+    );
+    invalidateRosterCache();
+    setRosterEpoch((n) => n + 1);
+    await alertSuccess(t("group_confirmed_title"), t("group_confirmed_body"));
   };
 
   const lookup = async (r: string) => {
@@ -287,8 +340,8 @@ function Page() {
       reason: reasonPrefix.trim() || null,
       status: "approved",
       reviewed_at: new Date().toISOString(),
-      placed_semina: newSemina,
-      placed_student_group: newGroup,
+      placed_semina: has("semina") ? newSemina : null,
+      placed_student_group: has("group") ? newGroup : null,
       placed_at: new Date().toISOString(),
     };
 
@@ -667,74 +720,135 @@ function Page() {
               <p className="text-sm text-muted-foreground">{t("step_group_help")}</p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* The student chooses their own seminar and group. Save writes them
-                  straight away; nothing waits on an admin. */}
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <Label>{t("semina")}</Label>
-                  <Select value={editSemina} onValueChange={setEditSemina}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={t("semina")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SEMINARS.map((sm) => (
-                        <SelectItem key={sm} value={sm}>
-                          {sm}
-                        </SelectItem>
-                      ))}
-                      {editSemina && !SEMINARS.includes(editSemina) && (
-                        <SelectItem value={editSemina}>{editSemina}</SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
+              {student?.group_confirmed_at ? (
+                /* Confirmed: the seat is frozen, so the pickers are replaced by a
+                   locked summary rather than left visible but disabled. */
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3 rounded-xl border-2 border-emerald-500/40 bg-emerald-500/10 p-3">
+                    <Lock className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                    <div className="text-sm">
+                      <div className="font-bold text-emerald-700 dark:text-emerald-300">
+                        {t("group_confirmed_title")}
+                      </div>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {t("group_confirmed_body")}
+                      </p>
+                      <p className="mt-1 text-[11px] font-mono text-muted-foreground">
+                        {t("group_confirmed_at")}:{" "}
+                        {new Date(student.group_confirmed_at).toLocaleString("sw-TZ")}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl border border-primary/15 bg-primary/5 p-3">
+                      <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                        {t("semina")}
+                      </div>
+                      <div className="truncate text-sm font-semibold">
+                        {student.semina || editSemina || "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-primary/15 bg-primary/5 p-3">
+                      <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                        {t("group")}
+                      </div>
+                      <div className="truncate text-sm font-semibold">
+                        {student.student_group || editGroup || "—"}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <Label>{t("group")}</Label>
-                  <Select value={editGroup} onValueChange={setEditGroup}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={t("group")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {GROUP_NAMES.map((g) => (
-                        <SelectItem key={g} value={g}>
-                          {g}
-                        </SelectItem>
-                      ))}
-                      {editGroup && !GROUP_NAMES.includes(editGroup) && (
-                        <SelectItem value={editGroup}>{editGroup}</SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">{t("group_edit_help")}</p>
+              ) : (
+                <>
+                  {/* The student chooses their own seminar and group, then confirms.
+                      Confirming is what freezes the seat. */}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <Label>{t("semina")}</Label>
+                      <Select value={editSemina} onValueChange={setEditSemina}>
+                        <SelectTrigger>
+                          <SelectValue placeholder={t("choose_semina")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SEMINARS.map((sm) => (
+                            <SelectItem key={sm} value={sm}>
+                              {sm}
+                            </SelectItem>
+                          ))}
+                          {editSemina && !SEMINARS.includes(editSemina) && (
+                            <SelectItem value={editSemina}>{editSemina}</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>{t("group")}</Label>
+                      <Select value={editGroup} onValueChange={setEditGroup}>
+                        <SelectTrigger>
+                          <SelectValue placeholder={t("choose_group")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {GROUP_NAMES.map((g) => (
+                            <SelectItem key={g} value={g}>
+                              {g}
+                            </SelectItem>
+                          ))}
+                          {editGroup && !GROUP_NAMES.includes(editGroup) && (
+                            <SelectItem value={editGroup}>{editGroup}</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <p className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                    {t("group_edit_help")}
+                  </p>
+                </>
+              )}
 
               <GroupRosterView key={rosterEpoch} reg={student?.reg_no || reg} />
             </CardContent>
             <CardFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between">
-              <Button variant="outline" onClick={() => setStep(2)} disabled={submitting}>
+              <Button
+                variant="outline"
+                onClick={() => setStep(2)}
+                disabled={submitting || confirming}
+              >
                 <ArrowLeft className="h-4 w-4" /> {t("back")}
               </Button>
-              <div className="flex w-full gap-2 sm:w-auto">
+              {!student?.group_confirmed_at && (
                 <Button
-                  variant="secondary"
-                  onClick={() => void saveProfile()}
-                  disabled={submitting || !settings?.profile_edits_enabled}
-                  className="flex-1 font-bold sm:flex-none"
+                  onClick={() => setAskConfirm(true)}
+                  disabled={submitting || confirming || !editSemina || !editGroup}
+                  className="w-full font-bold sm:w-auto"
                 >
-                  {submitting ? t("saving") : t("save")}
+                  {confirming ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Lock className="h-4 w-4" />
+                  )}
+                  {confirming ? t("confirming") : t("confirm_group")}
                 </Button>
-                <Button
-                  onClick={() => void saveProfile(3)}
-                  disabled={submitting || !settings?.profile_edits_enabled}
-                  className="flex-1 font-bold sm:flex-none"
-                >
-                  <CheckCircle2 className="h-4 w-4" /> {t("save_continue")}
-                </Button>
-              </div>
+              )}
             </CardFooter>
           </Card>
         )}
+
+        <AlertDialog open={askConfirm} onOpenChange={setAskConfirm}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("confirm_group_title")}</AlertDialogTitle>
+              <AlertDialogDescription>{t("confirm_group_warning")}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("confirm_cancel")}</AlertDialogCancel>
+              <AlertDialogAction onClick={() => void confirmGroup()}>
+                {t("confirm_yes")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </main>
     </div>
   );
