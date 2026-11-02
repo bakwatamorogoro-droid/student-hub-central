@@ -914,10 +914,57 @@ Assignment is stable. A student who already has a seminar keeps it, and re-runni
 the result moves nobody — that is what lets `assignStudentGroup` run on every profile save without
 shuffling a whole group when one student changes their course.
 
-`student_group` had to become nullable (`20261031120000_add_group_reports.sql`): a student with no
+`student_group` had to become nullable (`20261102120000_groups_and_seminars.sql`): a student with no
 gender has no group, and the column would otherwise reject the row. The auto-assignment fills it
 back in on the next save.
 
 `retryWithoutMissingColumns` guards the new columns, so the app keeps working until an admin runs
 the migration. `src/routes/admin.groups.tsx` is the admin surface; `GroupManager` renders it and
 `groupExports.ts` writes Excel/Word/PDF/CSV from `xlsx`, `docx` and `jspdf`.
+
+## A new table needs a GRANT, not just a policy
+
+Row level security decides *which rows* a role may touch. It does not grant the
+role the right to touch the table at all. A table created by a migration starts
+with no privileges for `anon` and `authenticated`, so the publishable key reaches
+PostgREST and is refused before a single policy is consulted. The first
+`group_reports` migration shipped the table, the indexes and two permissive
+policies but no `GRANT`, so a CR saving a report would have been told
+`permission denied for table group_reports` and lost the report.
+`20261102120000_groups_and_seminars.sql` grants `SELECT, INSERT, UPDATE, DELETE`
+to `anon`, `authenticated` and `service_role`, guarded by a `pg_roles` lookup so
+the file still runs on a plain Postgres where those roles do not exist.
+
+## Verify a migration against a real Postgres before shipping it
+
+Docker is available in this workspace, so a migration can be proved rather than
+assumed:
+
+    sudo dockerd > /tmp/dockerd.log 2>&1 &
+    sudo docker run -d --name pgverify -e POSTGRES_PASSWORD=verify \
+      -e POSTGRES_DB=verify -p 55432:5432 postgres:16-alpine
+    # load a fixture with the real table shape and the real dirty values, then
+    sudo docker exec -i pgverify psql -U postgres -d verify -v ON_ERROR_STOP=1 \
+      -f - < supabase/migrations/<file>.sql
+
+Run the file twice. `ON_ERROR_STOP=1` is what turns a half-applied migration into
+a failure instead of a silent partial one. Assert the outcome rather than
+eyeballing it: `has_table_privilege('anon','public.group_reports','INSERT')` is
+the check that catches a missing `GRANT`, and it returns `f` on the old migration
+and `t` on the new one.
+
+## Do not put a CHECK on the group or seminar text
+
+The production `students` table holds `TEST`, `ASSIGMENT 1  KUBADILISHA`,
+`Group A`, `G1`, `S1` and `SEMINA 16`. A `CHECK (student_group ~ '^GROUP [0-9]+$')`
+would either reject the migration or refuse the rows already there. Normalise on
+read and on the next save instead, which is what `normalizeSeminar` and
+`normalizeGroupName` already do.
+
+## Migrations that are in the repo but not in the database
+
+`exams.exam_area` (20261029090000) and `live_exam_sessions` (20261030120000) both
+answer `Could not find the table ... in the schema cache` when queried with the
+publishable key, so the files exist and the changes do not. Before building on a
+recent column, probe it. `retryWithoutMissingColumns` is what keeps the app
+usable until the SQL is actually run.
