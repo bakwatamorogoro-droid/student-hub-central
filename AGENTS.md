@@ -231,9 +231,49 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   `bakwatamorogoro-droid` and the repo reports `push: true`, yet `git push` answers
   `403 Permission ... denied` and the API answers `403 Resource not accessible by integration`:
   the token is a GitHub App installation token with read-only contents scope. So an agent can
-  clone, read, run tests and probe production, but **cannot push a branch or open a PR**. Commit
-  locally and hand the owner the diff, or ask them to re-issue a token with `contents: write`.
-  Do not read a `403` here as a bad branch name or a missing remote.
+  clone, read, run tests and probe production, but **cannot push a branch or open a PR** with it.
+
+- **`GH_PUSH_TOKEN` is the one that writes, and it is already in the environment.** A classic PAT
+  for `bakwatamorogoro-droid` with the `repo` scope (not a fine-grained or app token), so
+  `git push` and the REST API both work with it. Use it for every write:
+
+  ```bash
+  git push https://${GH_PUSH_TOKEN}@github.com/bakwatamorogoro-droid/student-hub-central.git <branch>:<branch>
+  ```
+
+  It does **not** carry `workflow`, so a push that touches `.github/workflows/` is refused
+  outright (see "Fixing it needs the `workflow` scope"). Keep the workflow file out of the
+  commit, push the rest, and hand the owner the workflow patch. The `create_pr` tool also
+  authenticates with `GITHUB_TOKEN` and answers `403`, so open PRs with `curl` against
+  `POST /repos/<owner>/<repo>/pulls` and `GH_PUSH_TOKEN` instead.
+
+- **Vercel builds with `npm`, not `bun`.** The build log says `Installing dependencies...` and
+  `added 680 packages`, which is npm reading `package-lock.json`. `bun.lock` is what CI and the
+  local `bun` flow use, so **both lockfiles have to stay in sync** — a dependency bumped in one
+  and not the other produces a green CI and a broken deploy. `npm ci --dry-run` is the cheap
+  check, and `package-lock.json` must list the same deps as `package.json` or `npm ci` fails on
+  Vercel while `npm run build` passes locally against a warm `node_modules`.
+
+- **Pin the Node version, or Vercel resolves a new major on every deploy.** The project setting
+  said `24.x` while `.nvmrc` said `22` and `package.json` asked for `>=22.12.0` — three signals
+  and no agreement. The live log showed the cost: `Skipping build cache since Node.js version
+  changed from "24.x" to "26.x"`, so each deploy installed from scratch and a toolchain change
+  could break the build with no commit behind it. `engines.node` is `24.x` and `.nvmrc` says
+  `24`, matching the Vercel setting; CI reads the same file via `actions/setup-node`. Keep the
+  three in step when the runtime moves.
+
+- **The CI `Verify dist output` step must not require `dist/_redirects`.** `_redirects` is
+  Netlify syntax. Vercel serves the SPA rewrite from `vercel.json`, and `public/_redirects`
+  exists only to satisfy that check. A stray copy in `dist/` adds a catch-all that turns a
+  missing chunk into HTML, so the step warns when the file reappears rather than asserting it.
+
+- **A failing deploy is not always a failing build.** Check the deploy list by state before
+  reading source: `GET /v6/deployments?projectId=...&state=ERROR` returns each failure with its
+  `errorCode`. The historical causes on this project were `BLOCKED_PACKAGE` (Vercel refusing
+  `@tanstack/react-start@1.167.50` for CVE-2026-102989 — the pin is now `^1.168.60`) and
+  `enoent` (`Command "vite build" exited with 127`, a tree that lacked `package.json`). Build
+  logs come from `GET /v2/deployments/<id>/events?builds=1`; the `v3` path returns `null`
+  payloads. To read the whole log, request `/v2/.../events` and print `payload.text`.
 
 - Live `students.semina` holds `'SEMINA 1'`…`'SEMINA 14'`, which does not match the
   `semina_list` values seeded in app settings. Read the distinct values from `students` and
@@ -268,6 +308,9 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   Its rows currently have `title = null`, so they render without a caption and without alt text.
 
 ## Deploying without git write access
+
+`GH_PUSH_TOKEN` can push and open PRs, so a normal branch-and-PR flow works and is preferred.
+This section is the fallback for when no write token is available.
 
 The GitHub token in this environment cannot create or update refs (`403 Resource not accessible
 by integration`), so a branch pushed locally never reaches GitHub and a `gitSource` deploy
@@ -1166,3 +1209,43 @@ The visible effect is a classmate listed twice in step 3. The fix is a data clea
 deduplicate on `upper(trim(reg_no))`, keeping the row that carries the results and attendance.
 Do not "fix" this in `findMyGroup` by de-duplicating by Reg Namba — two real students can share
 a Reg Namba only through the data error, and hiding it in the view makes the cleanup harder.
+
+## Confirming a group locks it, and the lock lives in the database
+
+Step 3 of `Update Taarifa` confirms the seat rather than merely saving it. The browser holds the
+**publishable key**, so a disabled dropdown proves nothing: `apply_profile_update` is a Postgres
+function reachable straight from PostgREST, and it used to rewrite `semina` and `student_group`
+on any row it was handed. The lock has to be a database rule.
+
+`supabase/migrations/20261102140000_group_confirmation.sql` adds `students.group_confirmed_at`
+and rewrites `apply_profile_update` so that once the stamp is set the incoming seminar and group
+are **ignored, not rejected** — a name or Reg Namba correction on a confirmed student still
+works. `confirm_student_group(id, semina, group)` takes `FOR UPDATE`, returns `true` when this
+call was the one that confirmed, and `false` when the seat was already confirmed, in which case
+it leaves the row untouched. `unlock_student_group(id)` clears the stamp. All three are
+`SECURITY DEFINER` and `GRANT EXECUTE` is issued to `anon`/`authenticated`/`service_role`,
+because RLS does not grant function access and the call is refused before it runs without it.
+
+Verified against the live database with a throwaway student (deleted afterwards):
+
+```
+before=[SEMINA 15/GROUP 9] first=t
+after_save=[SEMINA 15/GROUP 9] locked=t   <- apply_profile_update did not move the seat
+second=f                                    <- second confirm is a no-op
+unlocked=t                                  <- admin unlock restores editability
+```
+
+Two consequences worth remembering:
+
+- **A missing column fails the whole select, not just that column.** `loadRoster()` tries
+  `ROSTER_FALLBACKS` newest-first and drops the unknown name on a missing-column error, so a
+  database without the migration still renders every page. `missingColumnFrom` has to recognise
+  **two** shapes: PostgREST's `PGRST204` ("Could not find the 'x' column") for a write, and
+  Postgres `42703` ("column students.group_confirmed_at does not exist") for a **select**. The
+  table name is glued to the front in the second, so take the last dotted segment.
+- **The admin unlock is not a security boundary.** `/admin/groups` shows every group and a
+  per-member unlock button, but `admin-session.ts` gates the screens with `localStorage` and says
+  so itself. Anyone holding the publishable key can call `unlock_student_group` directly. The
+  lock stops a student moving their own seat by accident; it does not stop a determined attacker.
+  Moving it behind real auth means Supabase auth or a service-role key, and the project has
+  neither set.
