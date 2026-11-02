@@ -240,8 +240,8 @@ const dict: Record<string, { sw: string; en: string }> = {
   // --- update taarifa -----------------------------------------------------
   update_title: { sw: "Update Taarifa", en: "Update your details" },
   update_sub: {
-    sw: "Weka Reg Namba yako, uone taarifa zako, kisha urekebishe kozi, semina, mwaka wa masomo na group lako.",
-    en: "Enter your Reg number, review your details, then correct your course, semina, study year and group.",
+    sw: "Weka Reg Namba yako, uone taarifa zako, kisha urekebishe jina, kozi, mwaka wa masomo au semester yako.",
+    en: "Enter your Reg number, review your details, then correct your name, course, study year or semester.",
   },
   update_cta: { sw: "Anza Update Taarifa", en: "Start updating" },
   reg_number: { sw: "Reg Namba", en: "Reg number" },
@@ -350,8 +350,8 @@ const dict: Record<string, { sw: string; en: string }> = {
   taarifa_kicker: { sw: "Update Taarifa", en: "Update your details" },
   taarifa_card_title: { sw: "Update Taarifa Zako", en: "Update your details" },
   taarifa_card_sub: {
-    sw: "Badilisha kozi, semina, mwaka wa masomo au group lako — moja kwa moja.",
-    en: "Change your course, semina, study year or group — directly.",
+    sw: "Badilisha jina, kozi, mwaka wa masomo au semester yako. Semina na group unapewa na mfumo.",
+    en: "Change your name, course, study year or semester. Semina and group are assigned by the system.",
   },
 };
 
