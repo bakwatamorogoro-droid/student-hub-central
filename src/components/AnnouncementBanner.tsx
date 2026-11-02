@@ -66,7 +66,7 @@ export function AnnouncementBanner() {
     </div>
   );
   return (
-    <div className="bg-gradient-to-r from-primary/10 via-secondary to-primary/10 text-secondary-foreground border-b-2 border-primary overflow-hidden">
+    <div className="bg-gradient-to-r from-primary/10 via-secondary/15 to-primary/10 text-foreground border-b-2 border-primary/40 overflow-hidden">
       <div className="flex items-center gap-3 px-4 py-2 group">
         <Megaphone className="h-4 w-4 shrink-0 animate-pulse text-primary" />
         <div className="flex-1 overflow-hidden whitespace-nowrap [mask-image:linear-gradient(to_right,transparent,black_5%,black_95%,transparent)]">

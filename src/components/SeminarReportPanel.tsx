@@ -17,6 +17,7 @@ import {
   buildSeminarReports,
   genderLabel,
   searchMembers,
+  representativesFor,
   type GroupCell,
   type GroupMember,
 } from "@/lib/groupAssignment";
@@ -97,6 +98,10 @@ export function SeminarReportPanel({
   };
 
   const presentCount = cell ? cell.count - missing.length : 0;
+  // The group's own representative, shown so the CR can see who the system picked
+  // before they send the report. Same seed as the student's card, so both agree.
+  const reps = cell ? representativesFor(cell.members, semina, gender, group) : null;
+  const groupRep = reps?.female ?? reps?.male ?? null;
 
   return (
     <div className="space-y-4">
@@ -111,6 +116,12 @@ export function SeminarReportPanel({
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
+          {groupRep && (
+            <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+              <b>Mwakilishi wa group:</b> {groupRep.full_name || "—"}{" "}
+              <span className="font-mono text-xs text-muted-foreground">{groupRep.reg_no}</span>
+            </p>
+          )}
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
               <Label>Semina</Label>

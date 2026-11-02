@@ -10,6 +10,7 @@ import {
   LogIn,
   CalendarCheck,
   Newspaper,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
@@ -68,14 +69,19 @@ export function SiteHeader() {
               },
               { to: "/results", label: t("results") },
               {
-                to: "/attendance",
-                label: t("nav_attendance"),
-                icon: <CalendarCheck className="h-3.5 w-3.5" />,
-              },
-              {
                 to: "/student",
                 label: t("nav_student"),
                 icon: <UserCog className="h-3.5 w-3.5" />,
+              },
+              {
+                to: "/student#group-yangu",
+                label: t("nav_group"),
+                icon: <Users className="h-3.5 w-3.5" />,
+              },
+              {
+                to: "/attendance",
+                label: t("nav_attendance"),
+                icon: <CalendarCheck className="h-3.5 w-3.5" />,
               },
               {
                 to: "/account",

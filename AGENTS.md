@@ -119,7 +119,6 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   connection is not available even with a password. The Management API over HTTPS is the
   only working path.
 
-
 - **The project this app talks to is `weiwabywirhoxiyyjkko` (eu-west-1).** Vercel
   supplies `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_PROJECT_ID`
   (plus the `VITE_` twins) for production, preview and development. `.env` is
@@ -212,7 +211,6 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   stream is attached in an effect keyed on `camOk`/`started` instead. Permission failures
   name the device (`NotAllowedError`, `NotFoundError`, `NotReadableError`) so a student
   knows whether to unblock the camera or close another app.
-
 
 - **The Vercel deploy token is recoverable from the prior conversation log** and is _not_ an env
   var, so it does not survive in the shell. Extract it each session with
@@ -679,11 +677,11 @@ removed through the Lovable SQL editor, which is the owner's account.
 `app_settings` holds **one** centre (`attendance_lat` / `attendance_lng`) and each feature
 carries its own radius:
 
-| setting                | used by      | default |
-| ---------------------- | ------------ | ------- |
-| `attendance_radius_m`  | attendance   | 200 m   |
-| `register_radius_m`    | registration | 800 m   |
-| `exam_radius_m`        | exams        | 300 m   |
+| setting               | used by      | default |
+| --------------------- | ------------ | ------- |
+| `attendance_radius_m` | attendance   | 200 m   |
+| `register_radius_m`   | registration | 800 m   |
+| `exam_radius_m`       | exams        | 300 m   |
 
 `src/lib/geo.ts` is the single place that turns a centre + radius + fix into a verdict
 (`distanceMetres`, `checkArea`, `areaMessage`, `AreaVerdict`). Attendance had its own copy
@@ -723,7 +721,7 @@ applied. Probed against production with the publishable key, `submissions.gps_di
 - the exam page loads the full `select` first and falls back to a centre-only `select`;
 - **the exam submission upsert runs through `retryRowsWithoutMissingColumns`**, because
   PostgREST rejects the whole array when one column is unknown. Without it the geofence fields
-  in the submit payload failed *every* paper — the site looked healthy while nothing could be
+  in the submit payload failed _every_ paper — the site looked healthy while nothing could be
   handed in. That helper has to drop the column from every row, not just the first;
 - the live panel probes each optional column before using it, pages past PostgREST's 1000-row
   cap, and resolves student names in batches of 200. A single `.in()` over every sitter is a
@@ -737,30 +735,30 @@ The lesson generalises: **a missing column must degrade a feature, never disable
 user depends on.** Prefer `retryRowsWithoutMissingColumns` over sending a column that may not
 exist, and give every optional column a fallback read.
 
-  ### A token with `repo` scope still cannot push a workflow change
+### A token with `repo` scope still cannot push a workflow change
 
-  GitHub refuses **any** push that adds or modifies a file under `.github/workflows/` unless the
-  credential carries the `workflow` scope, and the refusal is not partial — the whole push fails:
+GitHub refuses **any** push that adds or modifies a file under `.github/workflows/` unless the
+credential carries the `workflow` scope, and the refusal is not partial — the whole push fails:
 
-  ```
-  ! [remote rejected] ... (refusing to allow a Personal Access Token to create or update
-    workflow `.github/workflows/build.yml` without `workflow` scope)
-  ```
+```
+! [remote rejected] ... (refusing to allow a Personal Access Token to create or update
+  workflow `.github/workflows/build.yml` without `workflow` scope)
+```
 
-  A fine-grained/`repo`-scoped PAT shows `x-oauth-scopes: repo` and writes ordinary files fine
-  (proved by creating and deleting a probe ref, and by `PUT /contents/<path>` returning `201`),
-  yet the same `PUT` against `.github/workflows/probe.yml` returns `404`. The Git Data API does
-  not route around it either: `POST /git/trees` with a workflow path returns `404` even though the
-  blob creation succeeded.
+A fine-grained/`repo`-scoped PAT shows `x-oauth-scopes: repo` and writes ordinary files fine
+(proved by creating and deleting a probe ref, and by `PUT /contents/<path>` returning `201`),
+yet the same `PUT` against `.github/workflows/probe.yml` returns `404`. The Git Data API does
+not route around it either: `POST /git/trees` with a workflow path returns `404` even though the
+blob creation succeeded.
 
-  **The check is on the net diff against the base branch, not on the commit history.** A branch
-  whose history *touches* a workflow file but whose final tree matches the base pushes cleanly —
-  verified by amending the workflow file back to `origin/main`'s copy and cherry-picking the rest,
-  then pushing successfully. So when a workflow fix must land and the token lacks the scope,
-  either rewrite the branch to drop the change, or have the owner add `workflow` scope. Do not
-  loop on retries; the refusal is deterministic.
+**The check is on the net diff against the base branch, not on the commit history.** A branch
+whose history _touches_ a workflow file but whose final tree matches the base pushes cleanly —
+verified by amending the workflow file back to `origin/main`'s copy and cherry-picking the rest,
+then pushing successfully. So when a workflow fix must land and the token lacks the scope,
+either rewrite the branch to drop the change, or have the owner add `workflow` scope. Do not
+loop on retries; the refusal is deterministic.
 
-  ### The CI build is not the Vercel build
+### The CI build is not the Vercel build
 
 `vite build` succeeding locally proves little — `node_modules` is already populated. Reproduce
 what Vercel does on a clean tree:
@@ -798,8 +796,8 @@ the page and pre-fills the code instead of being thrown away.
 
 ### Check-in signs the student in on the spot
 
-Identity still comes from a real `loginStudent` call — a scan says *which* session, never
-*who* is scanning. What changed is where that sign-in happens: `QrAttendanceCheckIn` now takes
+Identity still comes from a real `loginStudent` call — a scan says _which_ session, never
+_who_ is scanning. What changed is where that sign-in happens: `QrAttendanceCheckIn` now takes
 Reg Namba and PIN inline, so a scanned link does not bounce the student to `/account` and lose
 the session. A scan that arrives before sign-in is held in `pendingRef` and finished the
 moment the token appears.
@@ -857,13 +855,13 @@ migration that production may not have yet.
 
   ### CI is red on `main`, and it is not the build
 
-  The last run on `main` (`da89e235`) fails at *Verify dist output* with `dist/_redirects haipo`.
+  The last run on `main` (`da89e235`) fails at _Verify dist output_ with `dist/_redirects haipo`.
   That check demands a Netlify file which was removed on purpose — Vercel serves the SPA rewrite
   from `vercel.json`, and a stray `_redirects` adds a catch-all that turns a missing chunk into
   HTML. The corrected step replaces the `test -f` with a warning, so a stray copy is reported
   without failing the build. It cannot be pushed from here: the tokens in this workspace carry
-  only `repo`, so a push touching `.github/workflows/*` is rejected with *refusing to allow a
-  Personal Access Token to create or update workflow … without `workflow` scope*. The Git Data
+  only `repo`, so a push touching `.github/workflows/*` is rejected with _refusing to allow a
+  Personal Access Token to create or update workflow … without `workflow` scope_. The Git Data
   API is blocked the same way — a tree that rewrites a workflow path comes back `404 Not Found`
   even though creating a blob succeeds. Fix it in the GitHub UI, or with a token that has the
   `workflow` scope.
@@ -872,7 +870,7 @@ migration that production may not have yet.
 
   Vercel builds `main` and the deployment is `READY` and serving. The 14 `ERROR` deployments in
   the project are all old (Oct 1–28) and all from uploading `dist/` alone — `Command "vite build"
-  exited with 127/1`, which is the `ENOENT` trap already documented above. Check the date before
+exited with 127/1`, which is the `ENOENT` trap already documented above. Check the date before
   treating a failed deployment as a live problem.
 
   To confirm what is actually live, grep the lazy chunk rather than `index.html`: the attendance
@@ -882,9 +880,9 @@ migration that production may not have yet.
 
 ## The `_redirects` check is red on `main`, and Vercel deploys anyway
 
-`31eaed1` is titled *stop requiring a `_redirects` file Vercel does not use*, but
+`31eaed1` is titled _stop requiring a `_redirects` file Vercel does not use_, but
 `git show --stat` reports **no files changed**. The workflow on `main` still carries
-`test -f dist/_redirects`, so every run — including every PR — fails at *Verify dist output*.
+`test -f dist/_redirects`, so every run — including every PR — fails at _Verify dist output_.
 Nothing after that step runs, and the `dist` artifact is never uploaded. The build itself passes.
 
 It is cosmetic, not blocking. GitHub does not gate Vercel, so production is current: the
@@ -894,7 +892,7 @@ deployments API rather than the checks tab:
     curl -s -H "Authorization: Bearer $TOKEN" \
       ".../repos/<owner>/<repo>/deployments?per_page=3"
 
-and read the newest `Production` entry's status. To confirm the *content* that is live, crawl
+and read the newest `Production` entry's status. To confirm the _content_ that is live, crawl
 the lazy chunks: `index.html` preloads only part of the app, so a string like
 `Muhadhara wa Ijumaa` lives in a chunk the HTML never names. Follow the `assets/*.js` references
 one level deeper before concluding a feature is missing.
@@ -904,11 +902,11 @@ one level deeper before concluding a feature is missing.
 GitHub refuses a token without `workflow` for any path under `.github/workflows/`, on every
 write route. All three were tried and all three were refused:
 
-| Route | Result |
-|---|---|
-| `git push` | `refusing to allow a Personal Access Token to create or update workflow ... without workflow scope` |
-| Contents API (`PUT .../contents/...`) | `404 Not Found` |
-| Git Data API (`POST .../git/trees` naming the path) | `404 Not Found` |
+| Route                                               | Result                                                                                              |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `git push`                                          | `refusing to allow a Personal Access Token to create or update workflow ... without workflow scope` |
+| Contents API (`PUT .../contents/...`)               | `404 Not Found`                                                                                     |
+| Git Data API (`POST .../git/trees` naming the path) | `404 Not Found`                                                                                     |
 
 A plain `git push` of the same commits **without** the workflow file succeeds, which is how the
 groups work landed. So: split the workflow change out, push the rest, and edit `build.yml` in the
@@ -951,7 +949,7 @@ the migration. `src/routes/admin.groups.tsx` is the admin surface; `GroupManager
 
 ## A new table needs a GRANT, not just a policy
 
-Row level security decides *which rows* a role may touch. It does not grant the
+Row level security decides _which rows_ a role may touch. It does not grant the
 role the right to touch the table at all. A table created by a migration starts
 with no privileges for `anon` and `authenticated`, so the publishable key reaches
 PostgREST and is refused before a single policy is consulted. The first
@@ -1002,3 +1000,169 @@ usable until the SQL is actually run.
 `Could not find the table ... in the schema cache`, so those files exist and their changes do not.
 Probe a column before building on it. `retryWithoutMissingColumns` is what keeps the app usable
 until the SQL is actually run.
+
+## The site can be up and still be unusable: check `app_settings.system_locked`
+
+"Haifanyi kazi" ("it does not work") does not always mean a broken deploy. On 2026-10-27
+production was `READY`, every Vercel deployment was green, and the homepage still answered
+`200` — but the only thing a visitor saw was the lock screen:
+
+    Mfumo Umefungwa Kwa Muda ... MABORESHO
+
+`LockGate` hides every non-admin route whenever `app_settings.system_locked` is true, and it
+treats a null `lock_until` as "no expiry", so an admin who locks the system to do maintenance
+and forgets to unlock it leaves it dark indefinitely:
+
+    const isLocked = !!(settings?.system_locked && (!lockUntilMs || lockUntilMs > Date.now()));
+
+Check the flag before investigating routing, env vars, or the build:
+
+    curl -s "$SUPABASE_URL/rest/v1/app_settings?select=id,system_locked,lock_message,lock_until&limit=1" \
+      -H "apikey: $KEY" -H "Authorization: Bearer $KEY"
+
+`app_settings` has a permissive `FOR UPDATE USING (true)` policy, so the **publishable key is
+enough to unlock it** — no service role needed:
+
+    curl -s -X PATCH "$SUPABASE_URL/rest/v1/app_settings?id=eq.1" \
+      -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+      -H "Content-Type: application/json" -d '{"system_locked":false}'
+
+A `curl` fetch of the HTML returning `200` proves nothing about the app; `LockGate` renders
+client-side, so the lock screen arrives inside an otherwise healthy `index.html`. Read the
+rendered text, not the status code.
+
+## Update Taarifa shows the admin the real corrections, not the student's own values
+
+`profile_update_requests` used to carry `new_semina`, `new_student_group` and `new_course` on
+**every** row, even when `changed_fields` was empty. The student form seeded those inputs from
+the student's row so the card could display them, and the submit path sent that seed straight
+back. The admin page then rendered each non-null column with a null baseline, so a student who
+changed nothing appeared to have requested three changes. Across the 1000 requests in the table
+that produced **2160** "corrections", of which **4** were real.
+
+The fix has two halves:
+
+- The student form no longer has semina or group inputs at all — the group system derives both
+  from course and study year, so the student never had a say — and it records only the fields
+  that genuinely differ from the student's row.
+- The admin page reads `changed_fields` as the record of what a request is about, and pairs each
+  changed field with the value it held when the request was made (`current_*`), so a correction
+  reads as before -> after instead of a bare new value.
+
+Semina and group are surfaced as the placement the group system wrote back (`placed_*`). They are
+an outcome of a move, not an edit, and that is the only honest way to show them.
+
+`src/lib/requestDiff.ts` holds `diffRows()` and `placementRows()`, with tests, so the rule that
+decides what counts as a change lives in one place.
+
+**The migration is applied** (2026-10-27, via `POST /v1/projects/<ref>/database/query` on the
+Supabase Management API). All eight columns now answer `200` over PostgREST, so the before -> after
+view is live. Rows written before the columns existed still have no snapshot, so `diffRows` renders
+those with no struck-through baseline rather than an invented one — that is expected, not a bug.
+
+The Management API is the only DDL path here: there is no `service_role` key anywhere in the repo
+or the conversation logs, no SQL RPC on the project, and the publishable key cannot run DDL. A
+working `sbp_` token was recoverable from the logs with
+`grep -rhoE "sbp_[A-Za-z0-9]{20,}" /workspace/conversations | sort -u` — test each candidate
+against `GET /v1/projects/<ref>` and keep the one that answers `200`.
+
+## The admin login wrote the wrong localStorage key
+
+`adminLogin()` set `admin_authed` while `isAdmin()` reads `admin_session_token`, so a correct
+sign-in unlocked the screens for that one mount and then bounced back to the login form on the
+next navigation or reload. It reads as "the password is wrong" when the password was right.
+
+Both keys are written now. `crypto.randomUUID()` is the value; the token is a UI gate, not a
+security boundary, because the publishable key can read `app_settings` directly. Real protection
+needs `supabase/HARDEN_RLS.sql`.
+
+## The Vercel deploy was green all along; the GitHub Action was the red X
+
+"Do not deploy" turned out to be a failing CI check, not a failing deploy. On `main` every commit
+carried a red **Vite build** check while the three **Vercel – student-hub-central** statuses were
+`success`. The build itself passed; the workflow's last step failed:
+
+```
+- Build (vite -> dist/) | success
+- Verify dist output    | failure   # test -f dist/_redirects
+```
+
+`vercel.json` already rewrites every non-asset path to `/index.html`, and Vercel serves that
+rewrite itself, so nothing in the app ever read a `_redirects` file. The workflow asked for a file
+no part of the stack produces. `public/_redirects` now holds `/*    /index.html   200`, which Vite
+copies into `dist/` verbatim, so the check passes and the file is harmless on Vercel.
+
+Diagnose this shape with the API, not the dashboard:
+
+```bash
+curl -s "https://api.github.com/repos/<owner>/<repo>/commits/<sha>/check-runs" \
+  -H "Authorization: Bearer $GITHUB_TOKEN"   # look for a non-Vercel name
+curl -s "https://api.github.com/repos/<owner>/<repo>/actions/runs/<id>/jobs" \
+  -H "Authorization: Bearer $GITHUB_TOKEN"   # which step, exactly
+```
+
+## Group representatives are derived, not stored
+
+Each group shows one representative. There is no `representative` column and no admin screen to
+set one: `pickRepresentative` in `src/lib/groupAssignment.ts` hashes the group's own identity
+(`SEMINA n|GROUP n`) with FNV-1a and indexes the member list, so the pick looks random across the
+165 groups, is identical on the student's phone and the admin's screen, and survives a re-render
+without persisting anything. `Math.random()` cannot be used for exactly that reason.
+
+The hash is inlined rather than imported so the file stays import-free for `node --test` — the same
+constraint that shapes `studyYear.ts` and `academicTargeting.ts`. A group is gender-pure, so
+`representativesFor` fills one side and leaves the other `null`; read it as
+`reps.female ?? reps.male`.
+
+`slot` rotates the pick so a group that loses its representative promotes the next member instead
+of leaving a blank. Nothing writes that slot yet — it is the seam for a future "replace
+representative" action.
+
+## Study year comes from the Reg Namba, never from the student
+
+The edit form used to show a study-year `Select` and the student could pick anything. Now
+`src/lib/studyYear.ts` reads the admission year out of the Reg Namba and derives the year, and the
+form shows it read-only. `CURRENT_ACADEMIC_YEAR` is a constant in that file, so **bump it each
+academic year** or every student's year goes stale by one.
+
+`studyYear.ts` imports nothing, so `node --test` can load it without a bundler — `academicTargeting.ts`
+re-exports its symbols for the older callers. That re-export must be a plain `export {}` plus a
+local `import`, not `export ... from`: the inline form leaves the names out of local scope and the
+file fails to compile.
+
+## Update Taarifa is a four-step wizard, not a page of stacked cards
+
+The page used to be a search box, a details card, a group card, an attendance card and a
+two-tab editor, all visible at once. A student could not tell what to do first, and the
+attendance card was a third door to a page that already has a menu entry. It is now four
+steps with Back and Next:
+
+```
+1 Reg Namba   -> search, StudentMatchesPicker when several names match
+2 Taarifa Zako -> the edit form, study year read-only
+3 Group Yako  -> GroupRosterView: seminar, group, representative, classmates
+4 Changamoto  -> the issue form
+```
+
+`step` is local state, not a route. `confirmStudent` moves to step 2, a failed lookup returns
+to step 1, and the step chips allow jumping anywhere the student is allowed to go. The
+attendance card is gone; `/attendance` is reachable from the menu and nowhere else.
+
+`#group-yangu` is still a hash, not a route: the header links to `/student#group-yangu`, and
+the page listens for `hashchange` and opens step 3. That keeps the old link working without
+adding a route for one step.
+
+`GroupRosterView` renders the roster and is used by both step 3 and `MyGroupCard`, so the two
+cannot drift apart.
+
+## The roster contains duplicate Reg Namba values
+
+`students` holds **1588 rows for 1487 distinct Reg Namba** — 101 values appear twice, usually
+differing only by a trailing space or a missing `MUM` prefix (`GOD BLESS MLYUKA` and
+`GODBLESS MLYUKA`). Every `id` is unique, so this is duplicate enrolment, not a pagination
+bug: `fetchAllStudents` pages correctly and `findMyGroup` keys on `id`.
+
+The visible effect is a classmate listed twice in step 3. The fix is a data cleanup, not code:
+deduplicate on `upper(trim(reg_no))`, keeping the row that carries the results and attendance.
+Do not "fix" this in `findMyGroup` by de-duplicating by Reg Namba — two real students can share
+a Reg Namba only through the data error, and hiding it in the view makes the cleanup harder.

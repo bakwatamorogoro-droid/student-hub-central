@@ -75,6 +75,7 @@ const dict: Record<string, { sw: string; en: string }> = {
   nav_account: { sw: "Akaunti", en: "My account" },
   nav_semester_qs: { sw: "Maswali ya Semester", en: "Semester Questions" },
   nav_attendance: { sw: "Mahudhurio", en: "Attendance" },
+  nav_group: { sw: "Group Yangu", en: "My group" },
   nav_news: { sw: "Habari", en: "News" },
   attendance_card_sub: {
     sw: "Skani QR au weka msimbo wa kipindi kuhudhuria. Hapa pia unaona historia yako.",
@@ -240,8 +241,8 @@ const dict: Record<string, { sw: string; en: string }> = {
   // --- update taarifa -----------------------------------------------------
   update_title: { sw: "Update Taarifa", en: "Update your details" },
   update_sub: {
-    sw: "Weka Reg Namba yako, uone taarifa zako, kisha urekebishe kozi, semina, mwaka wa masomo na group lako.",
-    en: "Enter your Reg number, review your details, then correct your course, semina, study year and group.",
+    sw: "Weka Reg Namba yako, uone taarifa zako, kisha urekebishe jina, kozi, namba ya simu au semester yako. Mwaka wa masomo unajipanga wenyewe kutoka Reg Namba yako.",
+    en: "Enter your Reg number, review your details, then correct your name, course, phone number or semester. Your study year is worked out from your Reg number.",
   },
   update_cta: { sw: "Anza Update Taarifa", en: "Start updating" },
   reg_number: { sw: "Reg Namba", en: "Reg number" },
@@ -255,6 +256,11 @@ const dict: Record<string, { sw: string; en: string }> = {
   },
   full_name: { sw: "Jina Kamili", en: "Full name" },
   phone: { sw: "Namba ya Simu", en: "Phone number" },
+  phone_placeholder: { sw: "Mfano: 0712345678", en: "e.g. 0712345678" },
+  phone_help: {
+    sw: "Tunatumia namba hii kukufikia kwa taarifa muhimu za masomo.",
+    en: "We use this number to reach you about your studies.",
+  },
   age: { sw: "Umri", en: "Age" },
   gender: { sw: "Jinsia", en: "Gender" },
   male: { sw: "Mwanaume", en: "Male" },
@@ -264,12 +270,37 @@ const dict: Record<string, { sw: string; en: string }> = {
   group: { sw: "Group", en: "Group" },
   study_year: { sw: "Mwaka wa Masomo", en: "Study year" },
   year_n: { sw: "Mwaka wa {n}", en: "Year {n}" },
+  year_auto: {
+    sw: "Umepangwa kutoka Reg Namba yako — hauhitaji kuubadilisha.",
+    en: "Worked out from your Reg number — you do not need to change it.",
+  },
+  year_auto_unknown: {
+    sw: "Hatuwezi kutambua mwaka wa masomo kutoka Reg Namba yako. Mwone admin.",
+    en: "We cannot read your study year from your Reg number. See an admin.",
+  },
   semester: { sw: "Semester", en: "Semester" },
   academic_year: { sw: "Mwaka wa Kitaaluma", en: "Academic year" },
   choose_course: { sw: "Chagua kozi", en: "Choose a course" },
   choose_semina: { sw: "Chagua semina", en: "Choose a semina" },
   choose_group: { sw: "Chagua group", en: "Choose a group" },
   choose_year: { sw: "Chagua mwaka", en: "Choose a year" },
+  step_reg: { sw: "Reg Namba", en: "Reg number" },
+  step_details: { sw: "Taarifa Zako", en: "Your details" },
+  step_group: { sw: "Group Yako", en: "Your group" },
+  step_issue: { sw: "Changamoto", en: "Report a problem" },
+  step_reg_help: {
+    sw: "Andika Reg Namba yako kisha gusa Tafuta. Ukikuta majina mengi, chagua lako.",
+    en: "Enter your Reg number and tap Search. If several names come back, pick yours.",
+  },
+  step_group_help: {
+    sw: "Hii ni semina na group ulilowekwa, mwakilishi wenu, na wanafunzi ulio nao.",
+    en: "This is the seminar and group you were placed in, your representative, and your classmates.",
+  },
+  step_issue_help: {
+    sw: "Kwa wasiofanya Test 1 / Test 2 au wenye matatizo yoyote — andika hapa, admin atapokea.",
+    en: "For missing Test 1 / Test 2 or any other problem — write here and the admin will receive it.",
+  },
+  next: { sw: "Mbele", en: "Next" },
   choose_semester: { sw: "Chagua semester", en: "Choose a semester" },
   academic_placeholder: { sw: "Mfano 2026/2027", en: "e.g. 2026/2027" },
   submit_request: { sw: "Tuma Ombi", en: "Submit request" },
@@ -350,8 +381,8 @@ const dict: Record<string, { sw: string; en: string }> = {
   taarifa_kicker: { sw: "Update Taarifa", en: "Update your details" },
   taarifa_card_title: { sw: "Update Taarifa Zako", en: "Update your details" },
   taarifa_card_sub: {
-    sw: "Badilisha kozi, semina, mwaka wa masomo au group lako — moja kwa moja.",
-    en: "Change your course, semina, study year or group — directly.",
+    sw: "Badilisha jina, kozi, mwaka wa masomo au semester yako. Semina na group unapewa na mfumo.",
+    en: "Change your name, course, study year or semester. Semina and group are assigned by the system.",
   },
 };
 

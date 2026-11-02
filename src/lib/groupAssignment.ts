@@ -392,3 +392,62 @@ export function searchMembers(roster: RosterEntry[], query: string, limit = 40):
 export function formatGroupLabel(semina: string, gender: Gender, group: string): string {
   return `${semina} · ${genderLabel(gender).toUpperCase()} · ${group}`;
 }
+
+/** One group's two representatives — a female and a male, as the owner asked. */
+export type Representatives = {
+  female: GroupMember | null;
+  male: GroupMember | null;
+};
+
+/**
+ * Picks the representatives of every group.
+ *
+ * The owner asked for random picks rather than first-in-the-list, so the choice is
+ * seeded from the group's own identity (seminar, gender, group name). That keeps it
+ * random across groups while staying stable: the same group yields the same two names
+ * on every render, on every device, without storing anything. A group of one gender
+ * simply has no representative of the other.
+ *
+ * `slot` rotates the pick so a group that loses its representative promotes the next
+ * member instead of leaving the seat empty.
+ */
+export function pickRepresentative(
+  members: GroupMember[],
+  gender: Gender,
+  seed: string,
+  slot = 0,
+): GroupMember | null {
+  if (!members.length) return null;
+  const ordered = [...members].sort((a, b) => a.reg_no.localeCompare(b.reg_no));
+  const h = hashString(`${seed}:${gender}`);
+  return ordered[(h + slot) % ordered.length] ?? null;
+}
+
+/** A group's representatives, keyed by the group's own identity so the pick is stable. */
+export function representativesFor(
+  members: GroupMember[],
+  semina: string,
+  gender: Gender,
+  group: string,
+): Representatives {
+  const seed = `${semina}|${group}`;
+  return {
+    female: gender === "female" ? pickRepresentative(members, "female", seed) : null,
+    male: gender === "male" ? pickRepresentative(members, "male", seed) : null,
+  };
+}
+
+/**
+ * FNV-1a, inlined so this file stays import-free for `node --test`.
+ *
+ * `Math.random()` cannot be used here: the pick has to be the same on the student's
+ * phone and the admin's screen, and it must not change when the list re-renders.
+ */
+export function hashString(value: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    h ^= value.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}

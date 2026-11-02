@@ -1,3 +1,4 @@
+import { CURRENT_ACADEMIC_YEAR, admissionYearFromReg, studyYearFromReg } from "@/lib/studyYear";
 export const STUDY_YEARS = [1, 2, 3, 4] as const;
 
 /**
@@ -27,7 +28,8 @@ export const isSemesterActive = (value?: string | null): boolean =>
   !!value && ACTIVE_SEMESTERS.includes(value);
 
 /** Fixed for the whole system, so no form ever asks the student for it. */
-export const CURRENT_ACADEMIC_YEAR = "2026/2027";
+export { admissionYearFromReg, studyYearFromReg };
+export { CURRENT_ACADEMIC_YEAR };
 
 export type Semester = string;
 

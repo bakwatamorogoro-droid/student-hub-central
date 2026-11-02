@@ -1,7 +1,7 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { SiteHeader } from "@/components/SiteHeader";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,9 +23,11 @@ import {
   CheckCircle2,
   Mail,
   Clock,
-  CalendarCheck,
-  QrCode,
   Wand2,
+  Search,
+  Users,
+  ArrowLeft,
+  ArrowRight,
 } from "lucide-react";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
@@ -38,10 +40,11 @@ import {
   isSemesterActive,
   studyYearsFor,
 } from "@/lib/academicTargeting";
+import { DEFAULT_PROGRAM_YEARS, studyYearFromReg } from "@/lib/studyYear";
 import { useI18n } from "@/lib/i18n";
 import { loadDirectory } from "@/lib/directory";
 import { assignStudentGroup } from "@/lib/groupRoster";
-import { MyGroupCard } from "@/components/MyGroupCard";
+import { GroupRosterView } from "@/components/GroupRosterView";
 
 export const Route = createFileRoute("/student")({
   component: Page,
@@ -62,21 +65,27 @@ function Page() {
   const [settings, setSettings] = useState<any>(null);
   const [courseList, setCourseList] = useState<string[]>([]);
   const [studyYears, setStudyYears] = useState<number[]>(studyYearsFor(2));
+  // The programme length, so a derived study year is clamped to it rather than reading
+  // as year 12 for a student admitted years ago.
+  const [programYears, setProgramYears] = useState<number>(DEFAULT_PROGRAM_YEARS);
   const [reg, setReg] = useState("");
   const [student, setStudent] = useState<any>(null);
   const [matches, setMatches] = useState<any[]>([]);
-  // edit form
+  // edit form. Semina, group and study year are deliberately absent: the group system
+  // owns the first two, and the study year is derived from the Reg Namba, so there is
+  // nothing for the student to choose. Carrying seeded copies here is what let the form
+  // submit the student's own values as though they were corrections.
   const [edit, setEdit] = useState({
     new_reg_no: "",
     new_full_name: "",
-    new_semina: "",
-    new_student_group: "",
     new_course: "",
-    new_study_year: "",
     new_semester: "",
     new_academic_year: "",
+    new_phone: "",
   });
   const [wrongReg, setWrongReg] = useState(false);
+  // 1 = Reg Namba, 2 = correct your details, 3 = the group you landed in.
+  const [step, setStep] = useState(1);
   const [editStatus, setEditStatus] = useState<any[]>([]);
   // issue form
   const [issue, setIssue] = useState({ category: "test1", message: "", phone: "", email: "" });
@@ -95,13 +104,25 @@ function Page() {
         loadDirectory(data).then((dir) => {
           if (dir.courses.length) setCourseList(dir.courses);
         });
-        setStudyYears(studyYearsFor(data?.program_years ?? 2));
+        setStudyYears(studyYearsFor(data?.program_years ?? DEFAULT_PROGRAM_YEARS));
+        setProgramYears(Number(data?.program_years) || DEFAULT_PROGRAM_YEARS);
       });
     const saved = localStorage.getItem("student_reg");
     if (saved) {
       setReg(saved);
       lookup(saved);
     }
+  }, []);
+
+  // The header links to /student#group-yangu. Land on the group step rather than
+  // making the student walk the wizard again.
+  useEffect(() => {
+    const openGroup = () => {
+      if (window.location.hash === "#group-yangu") setStep(3);
+    };
+    openGroup();
+    window.addEventListener("hashchange", openGroup);
+    return () => window.removeEventListener("hashchange", openGroup);
   }, []);
 
   const confirmStudent = async (data: any) => {
@@ -111,12 +132,10 @@ function Page() {
     setEdit({
       new_reg_no: data.reg_no,
       new_full_name: data.full_name,
-      new_semina: data.semina,
-      new_student_group: data.student_group,
       new_course: data.course || "",
-      new_study_year: data.study_year ? String(data.study_year) : "",
       new_semester: data.semester || "",
       new_academic_year: CURRENT_ACADEMIC_YEAR,
+      new_phone: data.phone || "",
     });
     localStorage.setItem("student_reg", data.reg_no);
     const { data: reqs } = await (supabase as any)
@@ -125,6 +144,7 @@ function Page() {
       .eq("student_id", data.id)
       .order("created_at", { ascending: false });
     setEditStatus(reqs || []);
+    setStep(2);
     const { data: iss } = await (supabase as any)
       .from("issue_reports")
       .select("*")
@@ -138,6 +158,7 @@ function Page() {
     const results = await findStudentsByQuery(r);
     if (results.length === 0) {
       toast.error(t("not_found"));
+      setStep(1);
       setStudent(null);
       setMatches([]);
       return;
@@ -151,6 +172,14 @@ function Page() {
     toast.info(t("your_details"));
   };
 
+  // What the Reg Namba says the study year is. Shown read-only and used as the value the
+  // request carries, so the student and the request agree without the student choosing.
+  const autoYear = studyYearFromReg(
+    edit.new_reg_no || student?.reg_no,
+    CURRENT_ACADEMIC_YEAR,
+    programYears,
+  );
+
   const submitEdit = async () => {
     if (!student) return;
     if (!settings?.profile_edits_enabled) return toast.error(t("edits_disabled"));
@@ -163,28 +192,40 @@ function Page() {
     const newRegUp = edit.new_reg_no?.toUpperCase() || null;
     // Auto-approval: tu kwa marekebisho ya kawaida (sio "nilikosea reg kabisa")
     const autoApprove = !wrongReg;
-    // Which fields actually differ from what the student has now. The admin view
-    // shows these, so a second edit still surfaces what changed even when the
-    // request's "current" snapshot already equals the new value.
+    // Only a field the student genuinely altered belongs in the request. The form
+    // seeds semina and group from the row so the card can display them, and the old
+    // code sent that seed back on every save — which printed the student's own
+    // values to the admin as corrections, on requests whose changed_fields was empty.
+    const courseNow = student.course || "";
+    const semesterNow = student.semester || "";
+    const phoneNow = student.phone || "";
+    // The study year is not asked for: it is read from the Reg Namba. A correction to
+    // the Reg Namba therefore moves the year with it, which is the point — the two are
+    // the same fact. `null` means the Reg Namba carries no year, so the stored value
+    // stands and the year is left out of the request.
+    const regForYear = newRegUp || student.reg_no;
+    const derivedYear = studyYearFromReg(regForYear, CURRENT_ACADEMIC_YEAR, programYears);
+    const yearNow = student.study_year == null ? "" : String(student.study_year);
     const changed: string[] = [];
-    if (newRegUp && newRegUp !== student.reg_no) changed.push("reg_no");
+    // A wrongReg request is about the reg number by definition, even if the text is
+    // unchanged, because the reason asks the admin to move earlier results across.
+    if (wrongReg || (newRegUp && newRegUp !== student.reg_no)) changed.push("reg_no");
     if ((edit.new_full_name || "") !== (student.full_name || "")) changed.push("full_name");
-    if ((edit.new_semina || "") !== (student.semina || "")) changed.push("semina");
-    if ((edit.new_student_group || "") !== (student.student_group || "")) changed.push("group");
-    if ((edit.new_course || "") !== (student.course || "")) changed.push("course");
-    if (
-      (edit.new_study_year || "") !== (student.study_year == null ? "" : String(student.study_year))
-    )
-      changed.push("study_year");
-    if ((edit.new_semester || "") !== (student.semester || "")) changed.push("semester");
+    if ((edit.new_course || "") !== courseNow) changed.push("course");
+    if ((edit.new_semester || "") !== semesterNow) changed.push("semester");
+    if ((edit.new_phone || "") !== phoneNow) changed.push("phone");
+    if (derivedYear != null && String(derivedYear) !== yearNow) changed.push("study_year");
+    const has = (k: string) => changed.includes(k);
     const basePayload: Record<string, unknown> = {
       student_id: student.id,
       current_reg_no: student.reg_no,
       current_full_name: student.full_name,
-      new_reg_no: newRegUp,
-      new_full_name: edit.new_full_name || null,
-      new_semina: edit.new_semina || null,
-      new_student_group: edit.new_student_group || null,
+      new_reg_no: has("reg_no") ? newRegUp : null,
+      new_full_name: has("full_name") ? edit.new_full_name : null,
+      // The student never edits these two: the group system derives them. The request
+      // records the before value; the after value is the placement written below.
+      new_semina: null,
+      new_student_group: null,
       reason: reasonPrefix.trim() || null,
       status: autoApprove ? "approved" : "pending",
     };
@@ -192,9 +233,15 @@ function Page() {
     // applied, save the request without them so the edit still reaches the admin.
     const detailPayload: Record<string, unknown> = {
       ...basePayload,
-      new_course: edit.new_course || null,
-      new_study_year: edit.new_study_year ? Number(edit.new_study_year) : null,
-      new_semester: edit.new_semester || null,
+      current_semina: student.semina || null,
+      current_student_group: student.student_group || null,
+      current_course: courseNow || null,
+      current_study_year: student.study_year == null ? null : Number(student.study_year),
+      current_semester: semesterNow || null,
+      new_course: has("course") ? edit.new_course : null,
+      new_study_year: has("study_year") ? derivedYear : null,
+      new_semester: has("semester") ? edit.new_semester : null,
+      new_phone: has("phone") ? edit.new_phone : null,
       new_academic_year: CURRENT_ACADEMIC_YEAR,
       changed_fields: changed,
     };
@@ -215,12 +262,15 @@ function Page() {
     }
 
     if (autoApprove) {
+      // Only the fields the student typed. Semina and group are the group system's to
+      // write, and it does so a few lines below via assignStudentGroup — passing the
+      // form's seeded copies here would write the student's own value straight back.
       const { error: rpcErr } = await (supabase as any).rpc("apply_profile_update", {
         p_student_id: student.id,
-        p_new_reg_no: newRegUp,
-        p_new_full_name: edit.new_full_name || null,
-        p_new_semina: edit.new_semina || null,
-        p_new_group: edit.new_student_group || null,
+        p_new_reg_no: has("reg_no") ? newRegUp : null,
+        p_new_full_name: has("full_name") ? edit.new_full_name : null,
+        p_new_semina: null,
+        p_new_group: null,
       });
       if (rpcErr) {
         // rollback status to pending so admin can review
@@ -234,14 +284,13 @@ function Page() {
         );
       }
       // apply_profile_update only covers reg/name/semina/group, so write the
-      // academic fields separately.
-      // Only write the fields the student actually changed, so an untouched
-      // semester never trips the "column not migrated yet" warning.
+      // academic fields separately. Only the fields the student actually changed, so
+      // an untouched semester never trips the "column not migrated yet" warning.
       const acad: Record<string, unknown> = {};
-      if ((edit.new_course || "") !== (student.course || "")) acad.course = edit.new_course;
-      const yearNow = student.study_year == null ? "" : String(student.study_year);
-      if ((edit.new_study_year || "") !== yearNow) acad.study_year = edit.new_study_year;
-      if ((edit.new_semester || "") !== (student.semester || "")) acad.semester = edit.new_semester;
+      if (has("course")) acad.course = edit.new_course;
+      if (has("study_year")) acad.study_year = derivedYear;
+      if (has("semester")) acad.semester = edit.new_semester;
+      if (has("phone")) acad.phone = edit.new_phone;
       const { error: acadErr, dropped: acadDropped } = await updateStudentProfile(
         student.id,
         acad as Parameters<typeof updateStudentProfile>[1],
@@ -250,10 +299,25 @@ function Page() {
       // and their own gender's group, filling one to 8 before opening the next,
       // so a year/course change re-places them automatically.
       const placement = await assignStudentGroup(student.id);
-      await (supabase as any)
-        .from("profile_update_requests")
-        .update({ reviewed_at: new Date().toISOString() })
-        .eq("id", (inserted as any).id);
+      // Where they landed, recorded on the request so the admin reads the outcome
+      // instead of re-deriving it. `placement.me` is empty when the student was
+      // already seated correctly, so fall back to what they now hold.
+      const placedSemina = placement.me.semina ?? student.semina ?? null;
+      const placedGroup = placement.me.student_group ?? student.student_group ?? null;
+      const reviewPayload: Record<string, unknown> = {
+        reviewed_at: new Date().toISOString(),
+        placed_semina: placedSemina,
+        placed_student_group: placedGroup,
+        placed_at: new Date().toISOString(),
+      };
+      // The placed_* columns arrive with the request before/after migration. Until it
+      // runs, drop them and still record that the request was reviewed.
+      await retryWithoutMissingColumns(reviewPayload, (body) =>
+        (supabase as any)
+          .from("profile_update_requests")
+          .update(body)
+          .eq("id", (inserted as any).id),
+      );
       // Refresh local student to reflect new values
       const newRef = newRegUp || student.reg_no;
       localStorage.setItem("student_reg", newRef);
@@ -338,302 +402,314 @@ function Page() {
           </div>
         </div>
 
-        <Card className="border-2 border-primary/25 shadow-lg">
-          <CardContent className="space-y-2 p-4">
-            <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-              {t("reg_number")}
-            </Label>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Input
-                value={reg}
-                onChange={(e) => setReg(e.target.value.toUpperCase())}
-                placeholder={t("reg_placeholder")}
-                className="flex-1 font-mono"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") lookup(reg);
-                }}
-              />
-              <Button onClick={() => lookup(reg)} className="font-bold">
-                {t("look_up")}
-              </Button>
+        {/* One page, four steps, Back and Next. The student always knows where they
+              are and what comes next, and the group only appears once the Reg Namba
+              has resolved to a real student. */}
+        <div className="flex items-center justify-center gap-2">
+          {[
+            { n: 1, label: t("step_reg") },
+            { n: 2, label: t("step_details") },
+            { n: 3, label: t("step_group") },
+            { n: 4, label: t("step_issue") },
+          ].map((s, i, all) => (
+            <div key={s.n} className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => (s.n <= step || student ? setStep(s.n) : undefined)}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition-colors ${
+                  step === s.n
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : step > s.n
+                      ? "border-primary/40 bg-primary/10 text-primary"
+                      : "border-border bg-card text-muted-foreground"
+                }`}
+              >
+                <span
+                  className={`grid h-4 w-4 place-items-center rounded-full text-[10px] ${
+                    step >= s.n ? "bg-primary-foreground/25" : "bg-muted"
+                  }`}
+                >
+                  {s.n}
+                </span>
+                <span className="hidden sm:inline">{s.label}</span>
+              </button>
+              {i < all.length - 1 && <span className="h-px w-4 bg-border sm:w-6" />}
             </div>
-            {matches.length > 0 && (
-              <StudentMatchesPicker
-                matches={matches}
-                onConfirm={confirmStudent}
-                onCancel={() => setMatches([])}
-              />
-            )}
-          </CardContent>
-        </Card>
+          ))}
+        </div>
 
-        {student && (
-          <Card className="animate-fade-in border-2 border-primary/25 shadow-lg">
-            <CardHeader className="pb-2">
+        {step === 1 && (
+          <Card className="border-2 border-primary/25 shadow-lg">
+            <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
-                <CheckCircle2 className="h-4 w-4 text-primary" /> {t("your_details")}
+                <Search className="h-4 w-4 text-primary" /> {t("step_reg")}
               </CardTitle>
+              <p className="text-sm text-muted-foreground">{t("step_reg_help")}</p>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {[
-                  { label: t("reg_number"), value: student.reg_no },
-                  { label: t("semina"), value: student.semina },
-                  { label: t("group"), value: student.student_group },
-                  { label: t("course"), value: student.course || "—" },
-                ].map((f) => (
-                  <div
-                    key={f.label}
-                    className="rounded-xl border border-primary/15 bg-primary/5 p-2.5"
-                  >
-                    <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                      {f.label}
-                    </div>
-                    <div className="truncate text-sm font-semibold">{f.value || "—"}</div>
-                  </div>
-                ))}
+              <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                {t("reg_number")}
+              </Label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  value={reg}
+                  onChange={(e) => setReg(e.target.value.toUpperCase())}
+                  placeholder={t("reg_placeholder")}
+                  className="flex-1 font-mono"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") lookup(reg);
+                  }}
+                />
+                <Button onClick={() => lookup(reg)} className="font-bold">
+                  <Search className="h-4 w-4" /> {t("look_up")}
+                </Button>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">{student.full_name}</span>
-                {formatAcademicSummary(student) && <span>• {formatAcademicSummary(student)}</span>}
-              </div>
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="w-full border-primary/30 font-bold sm:w-auto"
-              >
-                <a href="#edit-taasrifa">{t("edit_card_title")}</a>
-              </Button>
+              {matches.length > 0 && (
+                <StudentMatchesPicker
+                  matches={matches}
+                  onConfirm={confirmStudent}
+                  onCancel={() => setMatches([])}
+                />
+              )}
             </CardContent>
           </Card>
         )}
 
-        <MyGroupCard initialReg={student?.reg_no || reg} />
-
-        {/* Check-in lives on its own page, reachable from the menu. Linking
-            rather than embedding keeps one place to check in, not three. */}
-        <Card className="border-2 border-primary/25 bg-gradient-to-br from-primary/10 via-card to-secondary/10">
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
-            <div className="min-w-0">
-              <p className="flex items-center gap-2 font-bold">
-                <CalendarCheck className="h-4 w-4 text-primary" /> Mahudhurio
-              </p>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Skani QR ya mwalimu ukiwa darasani, au andika msimbo wa kipindi.
-              </p>
-            </div>
-            <Button asChild>
-              <Link to="/attendance">
-                <QrCode className="h-4 w-4" /> Nenda Mahudhurio
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Tabs defaultValue="edit" id="edit-taasrifa" className="scroll-mt-20">
-          <TabsList className="grid grid-cols-2 w-full">
-            <TabsTrigger value="edit" className="gap-1">
-              <UserCog className="h-4 w-4" /> {t("update_title")}
-            </TabsTrigger>
-            <TabsTrigger value="issue" className="gap-1" disabled={!settings?.issues_enabled}>
-              <AlertTriangle className="h-4 w-4" /> {t("tab_issue")}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="edit">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">{t("edit_card_title")}</CardTitle>
-                {!settings?.profile_edits_enabled && (
-                  <p className="flex items-center gap-1 text-xs text-amber-600">
-                    <Clock className="h-3 w-3" /> {t("edits_disabled")}
-                  </p>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {!student && (
-                  <p className="text-sm text-muted-foreground">{t("confirm_reg_first")}</p>
-                )}
-                {student && (
-                  <>
-                    <div className="rounded-xl border border-primary/25 bg-primary/5 p-3">
-                      <div className="flex items-center gap-2 text-sm font-bold">
-                        <Wand2 className="h-4 w-4 text-primary" /> Semina na Group ni za kiotomatiki
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Huchagui semina wala group. Ukibadilisha mwaka wa masomo au kozi, mfumo
-                        unakuweka kwenye semina na group lako la jinsia yako, wanafunzi 8 kwa group.
-                      </p>
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        <div className="rounded-lg border border-border bg-card p-2">
-                          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                            {t("semina")}
-                          </div>
-                          <div className="truncate text-sm font-semibold">
-                            {student.semina || "—"}
-                          </div>
+        {step === 2 && (
+          <Card className="border-2 border-primary/25 shadow-lg">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <UserCog className="h-4 w-4 text-primary" /> {t("edit_card_title")}
+              </CardTitle>
+              {!settings?.profile_edits_enabled && (
+                <p className="flex items-center gap-1 text-xs text-amber-600">
+                  <Clock className="h-3 w-3" /> {t("edits_disabled")}
+                </p>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {student && (
+                <>
+                  <div className="rounded-xl border border-primary/25 bg-primary/5 p-3">
+                    <div className="flex items-center gap-2 text-sm font-bold">
+                      <Wand2 className="h-4 w-4 text-primary" /> Semina na Group ni za kiotomatiki
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Huchagui semina wala group. Ukibadilisha mwaka wa masomo au kozi, mfumo
+                      unakuweka kwenye semina na group lako la jinsia yako, wanafunzi 8 kwa group.
+                    </p>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <div className="rounded-lg border border-border bg-card p-2">
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                          {t("semina")}
                         </div>
-                        <div className="rounded-lg border border-border bg-card p-2">
-                          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                            {t("group")}
-                          </div>
-                          <div className="truncate text-sm font-semibold">
-                            {student.student_group || "—"}
-                          </div>
+                        <div className="truncate text-sm font-semibold">
+                          {student.semina || "—"}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-border bg-card p-2">
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                          {t("group")}
+                        </div>
+                        <div className="truncate text-sm font-semibold">
+                          {student.student_group || "—"}
                         </div>
                       </div>
                     </div>
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      <div>
-                        <Label>{t("new_reg")}</Label>
-                        <Input
-                          value={edit.new_reg_no}
-                          onChange={(e) =>
-                            setEdit({ ...edit, new_reg_no: e.target.value.toUpperCase() })
-                          }
-                        />
-                      </div>
-                      <div>
-                        <Label>{t("new_name")}</Label>
-                        <Input
-                          value={edit.new_full_name}
-                          onChange={(e) => setEdit({ ...edit, new_full_name: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      <div>
-                        <Label>{t("course")}</Label>
-                        <Select
-                          value={edit.new_course}
-                          onValueChange={(v) => setEdit({ ...edit, new_course: v })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder={t("choose_course")} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {courseList.map((c) => (
-                              <SelectItem key={c} value={c}>
-                                {c}
-                              </SelectItem>
-                            ))}
-                            {edit.new_course && !courseList.includes(edit.new_course) && (
-                              <SelectItem value={edit.new_course}>{edit.new_course}</SelectItem>
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label>{t("study_year")}</Label>
-                        <Select
-                          value={edit.new_study_year}
-                          onValueChange={(v) => setEdit({ ...edit, new_study_year: v })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder={t("choose_year")} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {studyYears.map((y) => (
-                              <SelectItem key={y} value={String(y)}>
-                                {t("year_n", { n: y })}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      <div>
-                        <Label>{t("semester")}</Label>
-                        <Select
-                          value={edit.new_semester}
-                          onValueChange={(v) => setEdit({ ...edit, new_semester: v })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder={t("choose_semester")} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {SEMESTERS.map((s) => (
-                              <SelectItem key={s} value={s} disabled={!isSemesterActive(s)}>
-                                {s}
-                                {!isSemesterActive(s) && " (bado)"}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label>{t("academic_year")}</Label>
-                        <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 font-mono text-sm">
-                          {CURRENT_ACADEMIC_YEAR}
-                        </div>
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          Umewekwa kiotomatiki — hauwezi kubadilishwa.
-                        </p>
-                      </div>
-                    </div>
-                    <label className="flex items-start gap-2 p-3 rounded-lg border-2 border-amber-500/40 bg-amber-500/5 cursor-pointer hover:bg-amber-500/10 transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={wrongReg}
-                        onChange={(e) => setWrongReg(e.target.checked)}
-                        className="mt-1 h-4 w-4 accent-amber-600"
-                      />
-                      <div className="text-sm">
-                        <div className="font-semibold text-amber-700 dark:text-amber-400">
-                          {t("wrong_reg")}
-                        </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {t("wrong_reg_help")}
-                        </div>
-                      </div>
-                    </label>
-                    <Button
-                      onClick={submitEdit}
-                      disabled={submitting || !settings?.profile_edits_enabled}
-                      className="w-full font-bold"
-                    >
-                      {submitting ? t("sending") : t("submit_request")}
-                    </Button>
-                  </>
-                )}
-                {editStatus.length > 0 && (
-                  <div className="pt-3 border-t space-y-2">
-                    <div className="text-xs font-semibold text-muted-foreground">
-                      {t("my_requests")}:
-                    </div>
-                    {editStatus.map((r) => (
-                      <div
-                        key={r.id}
-                        className="text-xs p-2 rounded bg-muted flex justify-between gap-2"
-                      >
-                        <span>
-                          {r.new_full_name || r.current_full_name} /{" "}
-                          {r.new_reg_no || r.current_reg_no}
-                        </span>
-                        <span
-                          className={
-                            r.status === "approved"
-                              ? "text-green-600 font-bold"
-                              : r.status === "rejected"
-                                ? "text-red-600"
-                                : "text-amber-600"
-                          }
-                        >
-                          {r.status}
-                        </span>
-                      </div>
-                    ))}
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <div>
+                      <Label>{t("new_reg")}</Label>
+                      <Input
+                        value={edit.new_reg_no}
+                        onChange={(e) =>
+                          setEdit({ ...edit, new_reg_no: e.target.value.toUpperCase() })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label>{t("new_name")}</Label>
+                      <Input
+                        value={edit.new_full_name}
+                        onChange={(e) => setEdit({ ...edit, new_full_name: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <div>
+                      <Label>{t("course")}</Label>
+                      <Select
+                        value={edit.new_course}
+                        onValueChange={(v) => setEdit({ ...edit, new_course: v })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={t("choose_course")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {courseList.map((c) => (
+                            <SelectItem key={c} value={c}>
+                              {c}
+                            </SelectItem>
+                          ))}
+                          {edit.new_course && !courseList.includes(edit.new_course) && (
+                            <SelectItem value={edit.new_course}>{edit.new_course}</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>{t("study_year")}</Label>
+                      <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 font-mono text-sm">
+                        {autoYear != null ? t("year_n", { n: autoYear }) : "—"}
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {autoYear != null ? t("year_auto") : t("year_auto_unknown")}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <div>
+                      <Label>{t("semester")}</Label>
+                      <Select
+                        value={edit.new_semester}
+                        onValueChange={(v) => setEdit({ ...edit, new_semester: v })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={t("choose_semester")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SEMESTERS.map((s) => (
+                            <SelectItem key={s} value={s} disabled={!isSemesterActive(s)}>
+                              {s}
+                              {!isSemesterActive(s) && " (bado)"}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>{t("academic_year")}</Label>
+                      <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 font-mono text-sm">
+                        {CURRENT_ACADEMIC_YEAR}
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Umewekwa kiotomatiki — hauwezi kubadilishwa.
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <Label>{t("phone")}</Label>
+                    <Input
+                      value={edit.new_phone}
+                      onChange={(e) => setEdit({ ...edit, new_phone: e.target.value })}
+                      placeholder={t("phone_placeholder")}
+                      inputMode="tel"
+                    />
+                    <p className="mt-1 text-[11px] text-muted-foreground">{t("phone_help")}</p>
+                  </div>
+                  <label className="flex items-start gap-2 p-3 rounded-lg border-2 border-amber-500/40 bg-amber-500/5 cursor-pointer hover:bg-amber-500/10 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={wrongReg}
+                      onChange={(e) => setWrongReg(e.target.checked)}
+                      className="mt-1 h-4 w-4 accent-amber-600"
+                    />
+                    <div className="text-sm">
+                      <div className="font-semibold text-amber-700 dark:text-amber-400">
+                        {t("wrong_reg")}
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {t("wrong_reg_help")}
+                      </div>
+                    </div>
+                  </label>
+                  <Button
+                    onClick={submitEdit}
+                    disabled={submitting || !settings?.profile_edits_enabled}
+                    className="w-full font-bold"
+                  >
+                    {submitting ? t("sending") : t("submit_request")}
+                  </Button>
+                </>
+              )}
+              {editStatus.length > 0 && (
+                <div className="pt-3 border-t space-y-2">
+                  <div className="text-xs font-semibold text-muted-foreground">
+                    {t("my_requests")}:
+                  </div>
+                  {editStatus.map((r) => (
+                    <div
+                      key={r.id}
+                      className="text-xs p-2 rounded bg-muted flex justify-between gap-2"
+                    >
+                      <span>
+                        {r.new_full_name || r.current_full_name} /{" "}
+                        {r.new_reg_no || r.current_reg_no}
+                      </span>
+                      <span
+                        className={
+                          r.status === "approved"
+                            ? "text-green-600 font-bold"
+                            : r.status === "rejected"
+                              ? "text-red-600"
+                              : "text-amber-600"
+                        }
+                      >
+                        {r.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+            <CardFooter className="flex justify-between gap-2">
+              <Button variant="outline" onClick={() => setStep(1)}>
+                <ArrowLeft className="h-4 w-4" /> {t("back")}
+              </Button>
+              <Button onClick={() => setStep(3)} className="font-bold">
+                {t("next")} <ArrowRight className="h-4 w-4" />
+              </Button>
+            </CardFooter>
+          </Card>
+        )}
 
-          <TabsContent value="issue">
-            <Card>
-              <CardHeader>
+        {step === 3 && (
+          <Card id="group-yangu" className="scroll-mt-20 border-2 border-primary/25 shadow-lg">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Users className="h-4 w-4 text-primary" /> {t("step_group")}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">{t("step_group_help")}</p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <GroupRosterView reg={student?.reg_no || reg} />
+            </CardContent>
+            <CardFooter className="flex justify-between gap-2">
+              <Button variant="outline" onClick={() => setStep(2)}>
+                <ArrowLeft className="h-4 w-4" /> {t("back")}
+              </Button>
+              <Button onClick={() => setStep(4)} className="font-bold">
+                {t("next")} <ArrowRight className="h-4 w-4" />
+              </Button>
+            </CardFooter>
+          </Card>
+        )}
+
+        {step === 4 && (
+          <Card className="border-2 border-primary/25 shadow-lg">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <AlertTriangle className="h-4 w-4 text-primary" /> {t("tab_issue")}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">{t("step_issue_help")}</p>
+              {!settings?.issues_enabled && (
+                <p className="flex items-center gap-1 text-xs text-amber-600">
+                  <Clock className="h-3 w-3" /> {t("issues_disabled")}
+                </p>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Mail className="h-4 w-4" /> {t("issue_card_title")}
                 </CardTitle>
@@ -646,8 +722,8 @@ function Page() {
                     <Clock className="h-3 w-3" /> {t("issues_disabled")}
                   </p>
                 )}
-              </CardHeader>
-              <CardContent className="space-y-3">
+              </div>
+              <div className="space-y-3">
                 <div>
                   <Label>{t("issue_type")}</Label>
                   <Select
@@ -729,10 +805,15 @@ function Page() {
                     ))}
                   </div>
                 )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+              </div>
+            </CardContent>
+            <CardFooter className="justify-start">
+              <Button variant="outline" onClick={() => setStep(3)}>
+                <ArrowLeft className="h-4 w-4" /> {t("back")}
+              </Button>
+            </CardFooter>
+          </Card>
+        )}
       </main>
     </div>
   );

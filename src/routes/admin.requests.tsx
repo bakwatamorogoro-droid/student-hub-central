@@ -12,41 +12,12 @@ import { alertSuccess, alertError, alertWarning, confirmAction } from "@/lib/ale
 import { Check, X, UserCog, Pencil, Trash2, Save, RefreshCw } from "lucide-react";
 import { ACADEMIC_YEARS, STUDY_YEARS, SEMESTERS } from "@/lib/academicTargeting";
 import { isMissingColumnError } from "@/lib/studentProfile";
+import { assignStudentGroup } from "@/lib/groupRoster";
+import { diffRows, placementRows, FIELD_LABELS } from "@/lib/requestDiff";
 
 export const Route = createFileRoute("/admin/requests")({ component: Page });
 
-/** Human labels for the `changed_fields` keys written by the student form. */
-const FIELD_LABELS: Record<string, string> = {
-  reg_no: "Reg Namba",
-  full_name: "Jina",
-  semina: "Semina",
-  group: "Group",
-  course: "Kozi",
-  study_year: "Mwaka wa Masomo",
-  semester: "Semester",
-};
-
 type RequestRow = Record<string, any>;
-
-/**
- * The fields the admin needs to compare. `new` is what the student asked for,
- * `current` is the value in the students table when the request was made.
- */
-function diffRows(r: RequestRow) {
-  const pairs: { key: string; label: string; from: any; to: any }[] = [
-    { key: "reg_no", label: "Reg Namba", from: r.current_reg_no, to: r.new_reg_no },
-    { key: "full_name", label: "Jina", from: r.current_full_name, to: r.new_full_name },
-  ];
-  if (r.new_semina) pairs.push({ key: "semina", label: "Semina", from: null, to: r.new_semina });
-  if (r.new_student_group)
-    pairs.push({ key: "group", label: "Group", from: null, to: r.new_student_group });
-  if (r.new_course) pairs.push({ key: "course", label: "Kozi", from: null, to: r.new_course });
-  if (r.new_study_year)
-    pairs.push({ key: "study_year", label: "Mwaka", from: null, to: r.new_study_year });
-  if (r.new_semester)
-    pairs.push({ key: "semester", label: "Semester", from: null, to: r.new_semester });
-  return pairs.filter((p) => p.to != null && String(p.to) !== String(p.from ?? ""));
-}
 
 function Page() {
   const [rows, setRows] = useState<RequestRow[]>([]);
@@ -85,8 +56,8 @@ function Page() {
       p_student_id: r.student_id,
       p_new_reg_no: r.new_reg_no,
       p_new_full_name: r.new_full_name,
-      p_new_semina: r.new_semina,
-      p_new_group: r.new_student_group,
+      p_new_semina: null,
+      p_new_group: null,
     });
     if (error) return alertError("Imeshindikana kuthibitisha", error.message);
     // The RPC only covers reg/name/semina/group; the academic columns live on the
@@ -118,13 +89,54 @@ function Page() {
         );
       }
     }
-    await (supabase as any)
-      .from("profile_update_requests")
-      .update({ status: "approved", reviewed_at: new Date().toISOString() })
-      .eq("id", r.id);
+    // A course or study-year change moves the student's seminar, so re-place them. The
+    // student's own save does this too; doing it here covers a request that arrived as
+    // `pending` and is only now approved.
+    const movedAcademically =
+      (r.new_course && r.new_course !== r.current_course) ||
+      (r.new_study_year && Number(r.new_study_year) !== Number(r.current_study_year));
+    if (movedAcademically) {
+      const placement = await assignStudentGroup(r.student_id);
+      if (placement.unknownGender.length) {
+        await alertWarning(
+          "Jinsia haijatambulika",
+          "Ombi limekubaliwa, lakini mwanafunzi huyu hakuwekwa kwenye group kwa sababu jinsia haijatambulika. Rekebisha jinsia kwenye wasifu wake, kisha mwite ajaribu tena.",
+        );
+      }
+    }
+    // Read the placement back off the student's row. The request's own new_semina and
+    // new_student_group are legacy columns the student form no longer fills, so the
+    // students table is the only place holding where this student actually sits.
+    const { data: placed } = await supabase
+      .from("students")
+      .select("semina, student_group")
+      .eq("id", r.student_id)
+      .maybeSingle();
+    const reviewPayload: Record<string, unknown> = {
+      status: "approved",
+      reviewed_at: new Date().toISOString(),
+      placed_semina: (placed as any)?.semina ?? null,
+      placed_student_group: (placed as any)?.student_group ?? null,
+      placed_at: new Date().toISOString(),
+    };
+    // The placed_* columns arrive with the request before/after migration; drop them
+    // and still record the approval if it has not been run.
+    const { last } = await retryWithoutMissingColumns(reviewPayload, (body) =>
+      (supabase as any).from("profile_update_requests").update(body).eq("id", r.id),
+    );
+    if (last.error && !isMissingColumnError(last.error)) {
+      return alertError(
+        "Ombi limekubaliwa lakini hali haikuhifadhiwa",
+        (last.error as Error).message,
+      );
+    }
+    const placedGroup = (placed as any)?.student_group;
+    const placedSemina = (placed as any)?.semina;
     await alertSuccess(
       "Ombi limekubaliwa",
-      "Marekebisho yamethibitishwa na yamesambazwa kila mahali.",
+      placedGroup
+        ? `Marekebisho yamethibitishwa. Mwanafunzi amewekwa: ${placedSemina ?? "—"} · ${placedGroup}.`
+        : "Marekebisho yamethibitishwa na yamesambazwa kila mahali.",
     );
     load();
   };
@@ -151,8 +163,6 @@ function Page() {
     setEditForm({
       new_reg_no: r.new_reg_no || "",
       new_full_name: r.new_full_name || "",
-      new_semina: r.new_semina || "",
-      new_student_group: r.new_student_group || "",
       new_course: r.new_course || "",
       new_study_year: r.new_study_year ? String(r.new_study_year) : "",
       new_semester: r.new_semester || "",
@@ -164,8 +174,6 @@ function Page() {
     const detail: Record<string, unknown> = {
       new_reg_no: editForm.new_reg_no?.toUpperCase() || null,
       new_full_name: editForm.new_full_name || null,
-      new_semina: editForm.new_semina || null,
-      new_student_group: editForm.new_student_group || null,
       reason: editForm.reason || null,
     };
     const extra: Record<string, unknown> = {
@@ -297,24 +305,6 @@ function Page() {
                           />
                         </div>
                         <div>
-                          <Label className="text-xs">Semina</Label>
-                          <Input
-                            value={editForm.new_semina}
-                            onChange={(e) =>
-                              setEditForm({ ...editForm, new_semina: e.target.value })
-                            }
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-xs">Group</Label>
-                          <Input
-                            value={editForm.new_student_group}
-                            onChange={(e) =>
-                              setEditForm({ ...editForm, new_student_group: e.target.value })
-                            }
-                          />
-                        </div>
-                        <div>
                           <Label className="text-xs">Kozi</Label>
                           <Input
                             value={editForm.new_course}
@@ -408,7 +398,9 @@ function Page() {
                         )}
                         {changes.length === 0 ? (
                           <p className="text-xs text-muted-foreground">
-                            Hakuna mabadiliko ya maana kwenye ombi hili.
+                            {changedKeys.length === 0
+                              ? "Hakuna mabadiliko kwenye ombi hili — mwanafunzi hakubadilisha sehemu yoyote."
+                              : "Mabadiliko yaliyotajwa hayakupatikana kwenye thamani mpya."}
                           </p>
                         ) : (
                           <div className="grid sm:grid-cols-2 gap-1">
@@ -422,6 +414,22 @@ function Page() {
                                 ) : null}{" "}
                                 <b className="text-primary">{c.to}</b>
                               </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* Where the group system put the student. Semina and group are
+                            derived, so this is the only place the admin sees the
+                            outcome rather than the student's own seed value. */}
+                        {placementRows(r).length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1 text-xs">
+                            <span className="text-muted-foreground">Amewekwa:</span>
+                            {placementRows(r).map((p) => (
+                              <span
+                                key={p.label}
+                                className="rounded bg-green-500/15 px-1.5 py-0.5 font-bold text-green-700"
+                              >
+                                {p.label}: {p.value}
+                              </span>
                             ))}
                           </div>
                         )}
