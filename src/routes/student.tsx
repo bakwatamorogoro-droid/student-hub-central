@@ -65,12 +65,12 @@ function Page() {
   const [reg, setReg] = useState("");
   const [student, setStudent] = useState<any>(null);
   const [matches, setMatches] = useState<any[]>([]);
-  // edit form
+  // edit form. Semina and group are deliberately absent: the group system owns them,
+  // the student has no input for them, and carrying seeded copies here is what let the
+  // form submit the student's own values as though they were corrections.
   const [edit, setEdit] = useState({
     new_reg_no: "",
     new_full_name: "",
-    new_semina: "",
-    new_student_group: "",
     new_course: "",
     new_study_year: "",
     new_semester: "",
@@ -111,8 +111,6 @@ function Page() {
     setEdit({
       new_reg_no: data.reg_no,
       new_full_name: data.full_name,
-      new_semina: data.semina,
-      new_student_group: data.student_group,
       new_course: data.course || "",
       new_study_year: data.study_year ? String(data.study_year) : "",
       new_semester: data.semester || "",
@@ -163,28 +161,32 @@ function Page() {
     const newRegUp = edit.new_reg_no?.toUpperCase() || null;
     // Auto-approval: tu kwa marekebisho ya kawaida (sio "nilikosea reg kabisa")
     const autoApprove = !wrongReg;
-    // Which fields actually differ from what the student has now. The admin view
-    // shows these, so a second edit still surfaces what changed even when the
-    // request's "current" snapshot already equals the new value.
+    // Only a field the student genuinely altered belongs in the request. The form
+    // seeds semina and group from the row so the card can display them, and the old
+    // code sent that seed back on every save — which printed the student's own
+    // values to the admin as corrections, on requests whose changed_fields was empty.
+    const yearNow = student.study_year == null ? "" : String(student.study_year);
+    const courseNow = student.course || "";
+    const semesterNow = student.semester || "";
     const changed: string[] = [];
-    if (newRegUp && newRegUp !== student.reg_no) changed.push("reg_no");
+    // A wrongReg request is about the reg number by definition, even if the text is
+    // unchanged, because the reason asks the admin to move earlier results across.
+    if (wrongReg || (newRegUp && newRegUp !== student.reg_no)) changed.push("reg_no");
     if ((edit.new_full_name || "") !== (student.full_name || "")) changed.push("full_name");
-    if ((edit.new_semina || "") !== (student.semina || "")) changed.push("semina");
-    if ((edit.new_student_group || "") !== (student.student_group || "")) changed.push("group");
-    if ((edit.new_course || "") !== (student.course || "")) changed.push("course");
-    if (
-      (edit.new_study_year || "") !== (student.study_year == null ? "" : String(student.study_year))
-    )
-      changed.push("study_year");
-    if ((edit.new_semester || "") !== (student.semester || "")) changed.push("semester");
+    if ((edit.new_course || "") !== courseNow) changed.push("course");
+    if ((edit.new_study_year || "") !== yearNow) changed.push("study_year");
+    if ((edit.new_semester || "") !== semesterNow) changed.push("semester");
+    const has = (k: string) => changed.includes(k);
     const basePayload: Record<string, unknown> = {
       student_id: student.id,
       current_reg_no: student.reg_no,
       current_full_name: student.full_name,
-      new_reg_no: newRegUp,
-      new_full_name: edit.new_full_name || null,
-      new_semina: edit.new_semina || null,
-      new_student_group: edit.new_student_group || null,
+      new_reg_no: has("reg_no") ? newRegUp : null,
+      new_full_name: has("full_name") ? edit.new_full_name : null,
+      // The student never edits these two: the group system derives them. The request
+      // records the before value; the after value is the placement written below.
+      new_semina: null,
+      new_student_group: null,
       reason: reasonPrefix.trim() || null,
       status: autoApprove ? "approved" : "pending",
     };
@@ -192,9 +194,14 @@ function Page() {
     // applied, save the request without them so the edit still reaches the admin.
     const detailPayload: Record<string, unknown> = {
       ...basePayload,
-      new_course: edit.new_course || null,
-      new_study_year: edit.new_study_year ? Number(edit.new_study_year) : null,
-      new_semester: edit.new_semester || null,
+      current_semina: student.semina || null,
+      current_student_group: student.student_group || null,
+      current_course: courseNow || null,
+      current_study_year: student.study_year == null ? null : Number(student.study_year),
+      current_semester: semesterNow || null,
+      new_course: has("course") ? edit.new_course : null,
+      new_study_year: has("study_year") ? Number(edit.new_study_year) : null,
+      new_semester: has("semester") ? edit.new_semester : null,
       new_academic_year: CURRENT_ACADEMIC_YEAR,
       changed_fields: changed,
     };
@@ -215,12 +222,15 @@ function Page() {
     }
 
     if (autoApprove) {
+      // Only the fields the student typed. Semina and group are the group system's to
+      // write, and it does so a few lines below via assignStudentGroup — passing the
+      // form's seeded copies here would write the student's own value straight back.
       const { error: rpcErr } = await (supabase as any).rpc("apply_profile_update", {
         p_student_id: student.id,
-        p_new_reg_no: newRegUp,
-        p_new_full_name: edit.new_full_name || null,
-        p_new_semina: edit.new_semina || null,
-        p_new_group: edit.new_student_group || null,
+        p_new_reg_no: has("reg_no") ? newRegUp : null,
+        p_new_full_name: has("full_name") ? edit.new_full_name : null,
+        p_new_semina: null,
+        p_new_group: null,
       });
       if (rpcErr) {
         // rollback status to pending so admin can review
@@ -234,14 +244,12 @@ function Page() {
         );
       }
       // apply_profile_update only covers reg/name/semina/group, so write the
-      // academic fields separately.
-      // Only write the fields the student actually changed, so an untouched
-      // semester never trips the "column not migrated yet" warning.
+      // academic fields separately. Only the fields the student actually changed, so
+      // an untouched semester never trips the "column not migrated yet" warning.
       const acad: Record<string, unknown> = {};
-      if ((edit.new_course || "") !== (student.course || "")) acad.course = edit.new_course;
-      const yearNow = student.study_year == null ? "" : String(student.study_year);
-      if ((edit.new_study_year || "") !== yearNow) acad.study_year = edit.new_study_year;
-      if ((edit.new_semester || "") !== (student.semester || "")) acad.semester = edit.new_semester;
+      if (has("course")) acad.course = edit.new_course;
+      if (has("study_year")) acad.study_year = edit.new_study_year;
+      if (has("semester")) acad.semester = edit.new_semester;
       const { error: acadErr, dropped: acadDropped } = await updateStudentProfile(
         student.id,
         acad as Parameters<typeof updateStudentProfile>[1],
@@ -250,10 +258,25 @@ function Page() {
       // and their own gender's group, filling one to 8 before opening the next,
       // so a year/course change re-places them automatically.
       const placement = await assignStudentGroup(student.id);
-      await (supabase as any)
-        .from("profile_update_requests")
-        .update({ reviewed_at: new Date().toISOString() })
-        .eq("id", (inserted as any).id);
+      // Where they landed, recorded on the request so the admin reads the outcome
+      // instead of re-deriving it. `placement.me` is empty when the student was
+      // already seated correctly, so fall back to what they now hold.
+      const placedSemina = placement.me.semina ?? student.semina ?? null;
+      const placedGroup = placement.me.student_group ?? student.student_group ?? null;
+      const reviewPayload: Record<string, unknown> = {
+        reviewed_at: new Date().toISOString(),
+        placed_semina: placedSemina,
+        placed_student_group: placedGroup,
+        placed_at: new Date().toISOString(),
+      };
+      // The placed_* columns arrive with the request before/after migration. Until it
+      // runs, drop them and still record that the request was reviewed.
+      await retryWithoutMissingColumns(reviewPayload, (body) =>
+        (supabase as any)
+          .from("profile_update_requests")
+          .update(body)
+          .eq("id", (inserted as any).id),
+      );
       // Refresh local student to reflect new values
       const newRef = newRegUp || student.reg_no;
       localStorage.setItem("student_reg", newRef);
