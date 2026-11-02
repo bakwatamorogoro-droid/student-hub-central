@@ -75,6 +75,7 @@ const dict: Record<string, { sw: string; en: string }> = {
   nav_account: { sw: "Akaunti", en: "My account" },
   nav_semester_qs: { sw: "Maswali ya Semester", en: "Semester Questions" },
   nav_attendance: { sw: "Mahudhurio", en: "Attendance" },
+  nav_group: { sw: "Group Yangu", en: "My group" },
   nav_news: { sw: "Habari", en: "News" },
   attendance_card_sub: {
     sw: "Skani QR au weka msimbo wa kipindi kuhudhuria. Hapa pia unaona historia yako.",
@@ -240,8 +241,8 @@ const dict: Record<string, { sw: string; en: string }> = {
   // --- update taarifa -----------------------------------------------------
   update_title: { sw: "Update Taarifa", en: "Update your details" },
   update_sub: {
-    sw: "Weka Reg Namba yako, uone taarifa zako, kisha urekebishe jina, kozi, mwaka wa masomo au semester yako.",
-    en: "Enter your Reg number, review your details, then correct your name, course, study year or semester.",
+    sw: "Weka Reg Namba yako, uone taarifa zako, kisha urekebishe jina, kozi, namba ya simu au semester yako. Mwaka wa masomo unajipanga wenyewe kutoka Reg Namba yako.",
+    en: "Enter your Reg number, review your details, then correct your name, course, phone number or semester. Your study year is worked out from your Reg number.",
   },
   update_cta: { sw: "Anza Update Taarifa", en: "Start updating" },
   reg_number: { sw: "Reg Namba", en: "Reg number" },
@@ -255,6 +256,11 @@ const dict: Record<string, { sw: string; en: string }> = {
   },
   full_name: { sw: "Jina Kamili", en: "Full name" },
   phone: { sw: "Namba ya Simu", en: "Phone number" },
+  phone_placeholder: { sw: "Mfano: 0712345678", en: "e.g. 0712345678" },
+  phone_help: {
+    sw: "Tunatumia namba hii kukufikia kwa taarifa muhimu za masomo.",
+    en: "We use this number to reach you about your studies.",
+  },
   age: { sw: "Umri", en: "Age" },
   gender: { sw: "Jinsia", en: "Gender" },
   male: { sw: "Mwanaume", en: "Male" },
@@ -264,6 +270,14 @@ const dict: Record<string, { sw: string; en: string }> = {
   group: { sw: "Group", en: "Group" },
   study_year: { sw: "Mwaka wa Masomo", en: "Study year" },
   year_n: { sw: "Mwaka wa {n}", en: "Year {n}" },
+  year_auto: {
+    sw: "Umepangwa kutoka Reg Namba yako — hauhitaji kuubadilisha.",
+    en: "Worked out from your Reg number — you do not need to change it.",
+  },
+  year_auto_unknown: {
+    sw: "Hatuwezi kutambua mwaka wa masomo kutoka Reg Namba yako. Mwone admin.",
+    en: "We cannot read your study year from your Reg number. See an admin.",
+  },
   semester: { sw: "Semester", en: "Semester" },
   academic_year: { sw: "Mwaka wa Kitaaluma", en: "Academic year" },
   choose_course: { sw: "Chagua kozi", en: "Choose a course" },

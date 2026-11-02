@@ -1075,3 +1075,57 @@ next navigation or reload. It reads as "the password is wrong" when the password
 Both keys are written now. `crypto.randomUUID()` is the value; the token is a UI gate, not a
 security boundary, because the publishable key can read `app_settings` directly. Real protection
 needs `supabase/HARDEN_RLS.sql`.
+
+## The Vercel deploy was green all along; the GitHub Action was the red X
+
+"Do not deploy" turned out to be a failing CI check, not a failing deploy. On `main` every commit
+carried a red **Vite build** check while the three **Vercel – student-hub-central** statuses were
+`success`. The build itself passed; the workflow's last step failed:
+
+```
+- Build (vite -> dist/) | success
+- Verify dist output    | failure   # test -f dist/_redirects
+```
+
+`vercel.json` already rewrites every non-asset path to `/index.html`, and Vercel serves that
+rewrite itself, so nothing in the app ever read a `_redirects` file. The workflow asked for a file
+no part of the stack produces. `public/_redirects` now holds `/*    /index.html   200`, which Vite
+copies into `dist/` verbatim, so the check passes and the file is harmless on Vercel.
+
+Diagnose this shape with the API, not the dashboard:
+
+```bash
+curl -s "https://api.github.com/repos/<owner>/<repo>/commits/<sha>/check-runs" \
+  -H "Authorization: Bearer $GITHUB_TOKEN"   # look for a non-Vercel name
+curl -s "https://api.github.com/repos/<owner>/<repo>/actions/runs/<id>/jobs" \
+  -H "Authorization: Bearer $GITHUB_TOKEN"   # which step, exactly
+```
+
+## Group representatives are derived, not stored
+
+Each group shows one representative. There is no `representative` column and no admin screen to
+set one: `pickRepresentative` in `src/lib/groupAssignment.ts` hashes the group's own identity
+(`SEMINA n|GROUP n`) with FNV-1a and indexes the member list, so the pick looks random across the
+165 groups, is identical on the student's phone and the admin's screen, and survives a re-render
+without persisting anything. `Math.random()` cannot be used for exactly that reason.
+
+The hash is inlined rather than imported so the file stays import-free for `node --test` — the same
+constraint that shapes `studyYear.ts` and `academicTargeting.ts`. A group is gender-pure, so
+`representativesFor` fills one side and leaves the other `null`; read it as
+`reps.female ?? reps.male`.
+
+`slot` rotates the pick so a group that loses its representative promotes the next member instead
+of leaving a blank. Nothing writes that slot yet — it is the seam for a future "replace
+representative" action.
+
+## Study year comes from the Reg Namba, never from the student
+
+The edit form used to show a study-year `Select` and the student could pick anything. Now
+`src/lib/studyYear.ts` reads the admission year out of the Reg Namba and derives the year, and the
+form shows it read-only. `CURRENT_ACADEMIC_YEAR` is a constant in that file, so **bump it each
+academic year** or every student's year goes stale by one.
+
+`studyYear.ts` imports nothing, so `node --test` can load it without a bundler — `academicTargeting.ts`
+re-exports its symbols for the older callers. That re-export must be a plain `export {}` plus a
+local `import`, not `export ... from`: the inline form leaves the names out of local scope and the
+file fails to compile.

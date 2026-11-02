@@ -5,7 +5,17 @@ import { Input } from "@/components/ui/input";
 import { useRoster } from "@/lib/useRoster";
 import { findMyGroup } from "@/lib/groupAssignment";
 import { formatGroupLabel } from "@/lib/groupAssignment";
-import { Loader2, Search, Users, Mars, Venus, CheckCircle2, AlertTriangle } from "lucide-react";
+import { representativesFor } from "@/lib/groupAssignment";
+import {
+  Loader2,
+  Search,
+  Users,
+  Mars,
+  Venus,
+  CheckCircle2,
+  AlertTriangle,
+  Star,
+} from "lucide-react";
 
 /**
  * "Group lako na Semina yako" — the student types a Reg Namba and sees the
@@ -17,6 +27,13 @@ export function MyGroupCard({ initialReg = "" }: { initialReg?: string }) {
   const [query, setQuery] = useState(initialReg);
 
   const mine = useMemo(() => (query ? findMyGroup(roster, query) : null), [roster, query]);
+  // The group's representative. A group is gender-pure, so exactly one side is filled.
+  const reps = useMemo(
+    () =>
+      mine?.group ? representativesFor(mine.members, mine.semina, mine.gender, mine.group) : null,
+    [mine],
+  );
+  const myRep = reps?.female ?? reps?.male ?? null;
   const searched = query.trim().length > 0 && !loading;
 
   return (
@@ -121,6 +138,22 @@ export function MyGroupCard({ initialReg = "" }: { initialReg?: string }) {
 
             {mine.group && (
               <div>
+                {myRep && (
+                  <div className="mb-3 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+                    <Star className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                    <div>
+                      <div className="font-bold">Mwakilishi wa group: {myRep.full_name || "—"}</div>
+                      <div className="font-mono text-xs text-muted-foreground">
+                        {myRep.reg_no}
+                        {myRep.id === mine.student.id && (
+                          <span className="ml-1 font-sans font-bold text-amber-700 dark:text-amber-400">
+                            (wewe)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="mb-1.5 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
                   {mine.gender === "female" ? (
                     <Venus className="h-3 w-3" />

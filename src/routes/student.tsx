@@ -38,6 +38,7 @@ import {
   isSemesterActive,
   studyYearsFor,
 } from "@/lib/academicTargeting";
+import { DEFAULT_PROGRAM_YEARS, studyYearFromReg } from "@/lib/studyYear";
 import { useI18n } from "@/lib/i18n";
 import { loadDirectory } from "@/lib/directory";
 import { assignStudentGroup } from "@/lib/groupRoster";
@@ -62,19 +63,23 @@ function Page() {
   const [settings, setSettings] = useState<any>(null);
   const [courseList, setCourseList] = useState<string[]>([]);
   const [studyYears, setStudyYears] = useState<number[]>(studyYearsFor(2));
+  // The programme length, so a derived study year is clamped to it rather than reading
+  // as year 12 for a student admitted years ago.
+  const [programYears, setProgramYears] = useState<number>(DEFAULT_PROGRAM_YEARS);
   const [reg, setReg] = useState("");
   const [student, setStudent] = useState<any>(null);
   const [matches, setMatches] = useState<any[]>([]);
-  // edit form. Semina and group are deliberately absent: the group system owns them,
-  // the student has no input for them, and carrying seeded copies here is what let the
-  // form submit the student's own values as though they were corrections.
+  // edit form. Semina, group and study year are deliberately absent: the group system
+  // owns the first two, and the study year is derived from the Reg Namba, so there is
+  // nothing for the student to choose. Carrying seeded copies here is what let the form
+  // submit the student's own values as though they were corrections.
   const [edit, setEdit] = useState({
     new_reg_no: "",
     new_full_name: "",
     new_course: "",
-    new_study_year: "",
     new_semester: "",
     new_academic_year: "",
+    new_phone: "",
   });
   const [wrongReg, setWrongReg] = useState(false);
   const [editStatus, setEditStatus] = useState<any[]>([]);
@@ -95,7 +100,8 @@ function Page() {
         loadDirectory(data).then((dir) => {
           if (dir.courses.length) setCourseList(dir.courses);
         });
-        setStudyYears(studyYearsFor(data?.program_years ?? 2));
+        setStudyYears(studyYearsFor(data?.program_years ?? DEFAULT_PROGRAM_YEARS));
+        setProgramYears(Number(data?.program_years) || DEFAULT_PROGRAM_YEARS);
       });
     const saved = localStorage.getItem("student_reg");
     if (saved) {
@@ -112,9 +118,9 @@ function Page() {
       new_reg_no: data.reg_no,
       new_full_name: data.full_name,
       new_course: data.course || "",
-      new_study_year: data.study_year ? String(data.study_year) : "",
       new_semester: data.semester || "",
       new_academic_year: CURRENT_ACADEMIC_YEAR,
+      new_phone: data.phone || "",
     });
     localStorage.setItem("student_reg", data.reg_no);
     const { data: reqs } = await (supabase as any)
@@ -149,6 +155,14 @@ function Page() {
     toast.info(t("your_details"));
   };
 
+  // What the Reg Namba says the study year is. Shown read-only and used as the value the
+  // request carries, so the student and the request agree without the student choosing.
+  const autoYear = studyYearFromReg(
+    edit.new_reg_no || student?.reg_no,
+    CURRENT_ACADEMIC_YEAR,
+    programYears,
+  );
+
   const submitEdit = async () => {
     if (!student) return;
     if (!settings?.profile_edits_enabled) return toast.error(t("edits_disabled"));
@@ -165,17 +179,25 @@ function Page() {
     // seeds semina and group from the row so the card can display them, and the old
     // code sent that seed back on every save — which printed the student's own
     // values to the admin as corrections, on requests whose changed_fields was empty.
-    const yearNow = student.study_year == null ? "" : String(student.study_year);
     const courseNow = student.course || "";
     const semesterNow = student.semester || "";
+    const phoneNow = student.phone || "";
+    // The study year is not asked for: it is read from the Reg Namba. A correction to
+    // the Reg Namba therefore moves the year with it, which is the point — the two are
+    // the same fact. `null` means the Reg Namba carries no year, so the stored value
+    // stands and the year is left out of the request.
+    const regForYear = newRegUp || student.reg_no;
+    const derivedYear = studyYearFromReg(regForYear, CURRENT_ACADEMIC_YEAR, programYears);
+    const yearNow = student.study_year == null ? "" : String(student.study_year);
     const changed: string[] = [];
     // A wrongReg request is about the reg number by definition, even if the text is
     // unchanged, because the reason asks the admin to move earlier results across.
     if (wrongReg || (newRegUp && newRegUp !== student.reg_no)) changed.push("reg_no");
     if ((edit.new_full_name || "") !== (student.full_name || "")) changed.push("full_name");
     if ((edit.new_course || "") !== courseNow) changed.push("course");
-    if ((edit.new_study_year || "") !== yearNow) changed.push("study_year");
     if ((edit.new_semester || "") !== semesterNow) changed.push("semester");
+    if ((edit.new_phone || "") !== phoneNow) changed.push("phone");
+    if (derivedYear != null && String(derivedYear) !== yearNow) changed.push("study_year");
     const has = (k: string) => changed.includes(k);
     const basePayload: Record<string, unknown> = {
       student_id: student.id,
@@ -200,8 +222,9 @@ function Page() {
       current_study_year: student.study_year == null ? null : Number(student.study_year),
       current_semester: semesterNow || null,
       new_course: has("course") ? edit.new_course : null,
-      new_study_year: has("study_year") ? Number(edit.new_study_year) : null,
+      new_study_year: has("study_year") ? derivedYear : null,
       new_semester: has("semester") ? edit.new_semester : null,
+      new_phone: has("phone") ? edit.new_phone : null,
       new_academic_year: CURRENT_ACADEMIC_YEAR,
       changed_fields: changed,
     };
@@ -248,8 +271,9 @@ function Page() {
       // an untouched semester never trips the "column not migrated yet" warning.
       const acad: Record<string, unknown> = {};
       if (has("course")) acad.course = edit.new_course;
-      if (has("study_year")) acad.study_year = edit.new_study_year;
+      if (has("study_year")) acad.study_year = derivedYear;
       if (has("semester")) acad.semester = edit.new_semester;
+      if (has("phone")) acad.phone = edit.new_phone;
       const { error: acadErr, dropped: acadDropped } = await updateStudentProfile(
         student.id,
         acad as Parameters<typeof updateStudentProfile>[1],
@@ -432,7 +456,10 @@ function Page() {
           </Card>
         )}
 
-        <MyGroupCard initialReg={student?.reg_no || reg} />
+        {/* Anchored so the "Group Yangu" nav entry lands here, not at the top. */}
+        <div id="group-yangu" className="scroll-mt-20">
+          <MyGroupCard initialReg={student?.reg_no || reg} />
+        </div>
 
         {/* Check-in lives on its own page, reachable from the menu. Linking
             rather than embedding keeps one place to check in, not three. */}
@@ -549,21 +576,12 @@ function Page() {
                       </div>
                       <div>
                         <Label>{t("study_year")}</Label>
-                        <Select
-                          value={edit.new_study_year}
-                          onValueChange={(v) => setEdit({ ...edit, new_study_year: v })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder={t("choose_year")} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {studyYears.map((y) => (
-                              <SelectItem key={y} value={String(y)}>
-                                {t("year_n", { n: y })}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 font-mono text-sm">
+                          {autoYear != null ? t("year_n", { n: autoYear }) : "—"}
+                        </div>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          {autoYear != null ? t("year_auto") : t("year_auto_unknown")}
+                        </p>
                       </div>
                     </div>
                     <div className="grid sm:grid-cols-2 gap-3">
@@ -595,6 +613,16 @@ function Page() {
                           Umewekwa kiotomatiki — hauwezi kubadilishwa.
                         </p>
                       </div>
+                    </div>
+                    <div>
+                      <Label>{t("phone")}</Label>
+                      <Input
+                        value={edit.new_phone}
+                        onChange={(e) => setEdit({ ...edit, new_phone: e.target.value })}
+                        placeholder={t("phone_placeholder")}
+                        inputMode="tel"
+                      />
+                      <p className="mt-1 text-[11px] text-muted-foreground">{t("phone_help")}</p>
                     </div>
                     <label className="flex items-start gap-2 p-3 rounded-lg border-2 border-amber-500/40 bg-amber-500/5 cursor-pointer hover:bg-amber-500/10 transition-colors">
                       <input
