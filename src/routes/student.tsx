@@ -235,6 +235,16 @@ function Page() {
     await alertSuccess(t("group_confirmed_title"), t("group_confirmed_body"));
   };
 
+  /**
+   * What the save dialog lists. The student sees the seat they picked against the one the
+   * row holds, so "Hifadhi" is never a blind press. An empty list still saves — the point
+   * of the dialog is to confirm the seat, not to require a change.
+   */
+  const seatChanges = [
+    { label: t("semina"), from: student?.semina || "—", to: editSemina || "—" },
+    { label: t("group"), from: student?.student_group || "—", to: editGroup || "—" },
+  ].filter((c) => c.from !== c.to);
+
   const lookup = async (r: string) => {
     if (!r) return;
     const results = await findStudentsByQuery(r);
@@ -840,6 +850,34 @@ function Page() {
             <AlertDialogHeader>
               <AlertDialogTitle>{t("confirm_group_title")}</AlertDialogTitle>
               <AlertDialogDescription>{t("confirm_group_warning")}</AlertDialogDescription>
+              <div className="mt-3 space-y-2 text-sm">
+                {seatChanges.length > 0 ? (
+                  <>
+                    <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                      {t("confirm_changes")}
+                    </div>
+                    {seatChanges.map((c) => (
+                      <div
+                        key={c.label}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2"
+                      >
+                        <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                          {c.label}
+                        </span>
+                        <span className="flex items-center gap-2 text-sm font-semibold">
+                          <span className="text-muted-foreground line-through">{c.from}</span>
+                          <ArrowRight className="h-3.5 w-3.5 text-primary" />
+                          <span className="text-primary">{c.to}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground">
+                    {t("confirm_no_seat_change")}
+                  </div>
+                )}
+              </div>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>{t("confirm_cancel")}</AlertDialogCancel>
