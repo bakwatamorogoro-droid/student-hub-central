@@ -284,6 +284,23 @@ const dict: Record<string, { sw: string; en: string }> = {
   choose_semina: { sw: "Chagua semina", en: "Choose a semina" },
   choose_group: { sw: "Chagua group", en: "Choose a group" },
   choose_year: { sw: "Chagua mwaka", en: "Choose a year" },
+  step_reg: { sw: "Reg Namba", en: "Reg number" },
+  step_details: { sw: "Taarifa Zako", en: "Your details" },
+  step_group: { sw: "Group Yako", en: "Your group" },
+  step_issue: { sw: "Changamoto", en: "Report a problem" },
+  step_reg_help: {
+    sw: "Andika Reg Namba yako kisha gusa Tafuta. Ukikuta majina mengi, chagua lako.",
+    en: "Enter your Reg number and tap Search. If several names come back, pick yours.",
+  },
+  step_group_help: {
+    sw: "Hii ni semina na group ulilowekwa, mwakilishi wenu, na wanafunzi ulio nao.",
+    en: "This is the seminar and group you were placed in, your representative, and your classmates.",
+  },
+  step_issue_help: {
+    sw: "Kwa wasiofanya Test 1 / Test 2 au wenye matatizo yoyote — andika hapa, admin atapokea.",
+    en: "For missing Test 1 / Test 2 or any other problem — write here and the admin will receive it.",
+  },
+  next: { sw: "Mbele", en: "Next" },
   choose_semester: { sw: "Chagua semester", en: "Choose a semester" },
   academic_placeholder: { sw: "Mfano 2026/2027", en: "e.g. 2026/2027" },
   submit_request: { sw: "Tuma Ombi", en: "Submit request" },
