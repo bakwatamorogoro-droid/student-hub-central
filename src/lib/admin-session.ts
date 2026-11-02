@@ -34,6 +34,11 @@ export async function adminLogin(username: string, password: string): Promise<bo
     .single();
   if (error || !data) return false;
   if (data.admin_username === username && data.admin_password === password) {
+    // `isAdmin()` reads KEY, so writing only the legacy flag left the admin logged
+    // out on every reload: the screens unlocked for the current mount and then bounced
+    // straight back to the login form. Both keys are written to keep the older flag
+    // working for anything still reading it.
+    window.localStorage.setItem(KEY, crypto.randomUUID());
     window.localStorage.setItem(LEGACY_KEY, "1");
     return true;
   }
