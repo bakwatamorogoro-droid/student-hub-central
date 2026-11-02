@@ -880,13 +880,40 @@ migration that production may not have yet.
   carrying `already_marked` / `outside_area` is the check that PR #5 shipped. If a browser shows
   old code while the chunks are current, it is a cached `index.html`, not a failed deploy.
 
-## The `_redirects` CI check was fixed by an empty commit
+## The `_redirects` check is red on `main`, and Vercel deploys anyway
 
-`31eaed1` is titled *stop requiring a `_redirects` file Vercel does not use*, but `git show --stat`
-reports **no files changed**. The workflow still carried `test -f dist/_redirects`, so every run on
-that branch and on `main` kept failing at *Verify dist output* — the one red step blocking the
-Vercel deploy. The line is now actually removed. Verify a CI fix with `git show --stat <sha>`, not
-with the commit message.
+`31eaed1` is titled *stop requiring a `_redirects` file Vercel does not use*, but
+`git show --stat` reports **no files changed**. The workflow on `main` still carries
+`test -f dist/_redirects`, so every run — including every PR — fails at *Verify dist output*.
+Nothing after that step runs, and the `dist` artifact is never uploaded. The build itself passes.
+
+It is cosmetic, not blocking. GitHub does not gate Vercel, so production is current: the
+Friday lecture shipped with PR #6 even though that PR was red. Confirm a deploy from the
+deployments API rather than the checks tab:
+
+    curl -s -H "Authorization: Bearer $TOKEN" \
+      ".../repos/<owner>/<repo>/deployments?per_page=3"
+
+and read the newest `Production` entry's status. To confirm the *content* that is live, crawl
+the lazy chunks: `index.html` preloads only part of the app, so a string like
+`Muhadhara wa Ijumaa` lives in a chunk the HTML never names. Follow the `assets/*.js` references
+one level deeper before concluding a feature is missing.
+
+### Fixing it needs the `workflow` scope, which the workspace token does not have
+
+GitHub refuses a token without `workflow` for any path under `.github/workflows/`, on every
+write route. All three were tried and all three were refused:
+
+| Route | Result |
+|---|---|
+| `git push` | `refusing to allow a Personal Access Token to create or update workflow ... without workflow scope` |
+| Contents API (`PUT .../contents/...`) | `404 Not Found` |
+| Git Data API (`POST .../git/trees` naming the path) | `404 Not Found` |
+
+A plain `git push` of the same commits **without** the workflow file succeeds, which is how the
+groups work landed. So: split the workflow change out, push the rest, and edit `build.yml` in the
+GitHub UI (the pencil icon works with any write access) or with a token that has `workflow`.
+The ready-made commit is kept in the `backup-full-stack` tag.
 
 ## Groups and seminars (15 seminars x 11 groups x 8 students)
 
@@ -968,3 +995,10 @@ answer `Could not find the table ... in the schema cache` when queried with the
 publishable key, so the files exist and the changes do not. Before building on a
 recent column, probe it. `retryWithoutMissingColumns` is what keeps the app
 usable until the SQL is actually run.
+
+## Also in the repo but not in the database
+
+`exams.exam_area` (20261029090000) and `live_exam_sessions` (20261030120000) both answer
+`Could not find the table ... in the schema cache`, so those files exist and their changes do not.
+Probe a column before building on it. `retryWithoutMissingColumns` is what keeps the app usable
+until the SQL is actually run.
