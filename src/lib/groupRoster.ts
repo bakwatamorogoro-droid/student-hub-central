@@ -37,52 +37,75 @@ export type AssignOutcome = {
 };
 
 /**
- * Puts one student into their seminar and gender-pure group, and writes the
- * result. Runs over the whole roster rather than the single row, because the
- * "keep the group you already sit in, otherwise take the next free seat" rule
- * is only correct if every classmate's current seat is visible at once.
- *
- * Only rows whose value actually changes are written, so a student updating
- * their phone number does not stamp 1500 rows.
+ * Writes one UPDATE per distinct target instead of one per student. Everyone
+ * headed for `SEMINA 3 / GROUP 2` travels in a single `.in(ids)` call, which
+ * turns ~1500 sequential requests into at most 16 seminars x 2 genders x 11
+ * groups. A student saving their profile waits for this, so the difference is
+ * the difference between a second and a stall.
  */
-export async function assignStudentGroup(studentId: string): Promise<AssignOutcome> {
-  const roster = await loadRoster();
-  const plan = planAssignments(roster);
-  const me = roster.find((s) => s.id === studentId);
+async function writeByTarget(
+  wanted: Map<string, { semina: string; student_group: string }>,
+): Promise<{ updated: number; dropped: string[] }> {
+  const byTarget = new Map<string, { values: Record<string, unknown>; ids: string[] }>();
+  for (const [id, values] of wanted) {
+    const key = `${values.semina}||${values.student_group}`;
+    const bucket = byTarget.get(key) ?? { values: { ...values }, ids: [] };
+    bucket.ids.push(id);
+    byTarget.set(key, bucket);
+  }
 
+  const dropped = new Set<string>();
+  let updated = 0;
+  for (const { values, ids } of byTarget.values()) {
+    const { last, dropped: d } = await retryWithoutMissingColumns(values, (working) =>
+      supabase
+        .from("students")
+        .update(working as any)
+        .in("id", ids),
+    );
+    for (const col of d) dropped.add(col);
+    if (!last.error) updated += ids.length;
+  }
+  return { updated, dropped: [...dropped] };
+}
+
+/** Picks out the rows whose stored seminar/group differs from the plan. */
+function changedRows(
+  roster: RosterEntry[],
+  plan: ReturnType<typeof planAssignments>,
+  onlySemina?: string,
+): Map<string, { semina: string; student_group: string }> {
   const wanted = new Map<string, { semina: string; student_group: string }>();
   for (const s of roster) {
     const semina = plan.seminars[s.id] ?? normalizeSeminar(s.semina);
     const group = plan.groups[s.id];
     if (!semina || !group) continue;
-    const currentSemina = normalizeSeminar(s.semina);
-    const currentGroup = normalizeGroupName(s.student_group);
-    if (currentSemina === semina && currentGroup === group) continue;
+    if (onlySemina && semina !== onlySemina) continue;
+    if (normalizeSeminar(s.semina) === semina && normalizeGroupName(s.student_group) === group)
+      continue;
     wanted.set(s.id, { semina, student_group: group });
   }
+  return wanted;
+}
 
-  const dropped = new Set<string>();
-  let updated = 0;
-
-  for (const [id, values] of wanted) {
-    const { last, dropped: d } = await retryWithoutMissingColumns(
-      values as unknown as Record<string, unknown>,
-      (working) =>
-        supabase
-          .from("students")
-          .update(working as any)
-          .eq("id", id),
-    );
-    for (const col of d) dropped.add(col);
-    if (!last.error) updated++;
-  }
+/**
+ * Puts one student into their seminar and gender-pure group, and writes the
+ * result. The plan covers the whole roster rather than the single row, because
+ * the "keep the group you already sit in, otherwise take the next free seat"
+ * rule is only correct if every classmate's current seat is visible at once.
+ */
+export async function assignStudentGroup(studentId: string): Promise<AssignOutcome> {
+  const roster = await loadRoster();
+  const plan = planAssignments(roster);
+  const wanted = changedRows(roster, plan);
+  const { updated, dropped } = await writeByTarget(wanted);
 
   return {
     updated,
     me: wanted.get(studentId) ?? {},
     unknownGender: plan.unknownGender,
     unassigned: plan.unassigned,
-    dropped: [...dropped],
+    dropped,
   };
 }
 
@@ -90,39 +113,15 @@ export async function assignStudentGroup(studentId: string): Promise<AssignOutco
 export async function reassignSeminar(semina: string): Promise<AssignOutcome> {
   const roster = await loadRoster();
   const plan = planAssignments(roster);
-  const target = normalizeSeminar(semina);
-  const wanted = new Map<string, { semina: string; student_group: string }>();
-
-  for (const s of roster) {
-    if ((plan.seminars[s.id] ?? normalizeSeminar(s.semina)) !== target) continue;
-    const group = plan.groups[s.id];
-    if (!group) continue;
-    if (normalizeSeminar(s.semina) === target && normalizeGroupName(s.student_group) === group)
-      continue;
-    wanted.set(s.id, { semina: target, student_group: group });
-  }
-
-  const dropped = new Set<string>();
-  let updated = 0;
-  for (const [id, values] of wanted) {
-    const { last, dropped: d } = await retryWithoutMissingColumns(
-      values as unknown as Record<string, unknown>,
-      (working) =>
-        supabase
-          .from("students")
-          .update(working as any)
-          .eq("id", id),
-    );
-    for (const col of d) dropped.add(col);
-    if (!last.error) updated++;
-  }
+  const target = normalizeSeminar(semina) ?? "";
+  const { updated, dropped } = await writeByTarget(changedRows(roster, plan, target));
 
   return {
     updated,
     me: {},
     unknownGender: plan.unknownGender,
     unassigned: plan.unassigned,
-    dropped: [...dropped],
+    dropped,
   };
 }
 
