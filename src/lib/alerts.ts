@@ -3,12 +3,17 @@ import Swal from "sweetalert2";
 /**
  * SweetAlert2 themed to the app's palette. The default stylesheet is imported
  * once here so every caller gets the same look without repeating the CSS.
+ *
+ * The theme tokens are complete `oklch()` colours, so they are passed through
+ * as `var(--primary)`. Wrapping them as `hsl(var(--primary))` produces an
+ * invalid declaration that the browser drops, which left the confirm and cancel
+ * buttons transparent with white text — invisible against the white popup.
  */
 import "sweetalert2/dist/sweetalert2.min.css";
 
 const themed = Swal.mixin({
-  confirmButtonColor: "hsl(var(--primary))",
-  cancelButtonColor: "hsl(var(--muted-foreground))",
+  confirmButtonColor: "var(--primary)",
+  cancelButtonColor: "var(--muted-foreground)",
   buttonsStyling: true,
   customClass: { popup: "rounded-2xl" },
 });

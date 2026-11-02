@@ -1249,3 +1249,41 @@ Two consequences worth remembering:
   lock stops a student moving their own seat by accident; it does not stop a determined attacker.
   Moving it behind real auth means Supabase auth or a service-role key, and the project has
   neither set.
+
+## `hsl(var(--x))` is invalid here, and it hid every alert button
+
+The theme tokens in `src/styles.css` are **complete `oklch()` colours**
+(`--primary: oklch(0.52 0.15 245)`), not the bare HSL triplets that shadcn's older
+templates used. `src/lib/alerts.ts` wrapped them anyway:
+
+```js
+confirmButtonColor: "hsl(var(--primary))",   // -> invalid, dropped
+```
+
+The browser parses `hsl(oklch(0.52 0.15 245))` as nonsense and **discards the whole
+declaration**, so SweetAlert2's own `#fff` text colour survived while the background
+went transparent. On the white popup that is white text on white: the confirm and
+cancel buttons were present, clickable, and invisible. Proved headlessly against the
+real bundle:
+
+```
+confirmBg=rgba(0, 0, 0, 0)  confirmColor=rgb(255, 255, 255)  popupBg=rgb(255, 255, 255)
+```
+
+Pass the token through as `var(--primary)`, which resolves to `oklch(...)` and paints.
+`src/components/RichTextEditor.tsx` carries the same `hsl(var(--…))` pattern inside its
+injected editor CSS, so its link and blockquote colours are dropped the same way —
+harmless so far, but the same fix applies if that styling ever matters.
+
+This is why "the OK/Cancel text does not show" is a CSS bug and not a missing button:
+`showConfirmButton` was never false. Check the computed `background-color` before
+touching the SweetAlert2 options.
+
+## Step 3 saves and confirms in one press
+
+There is no separate "Hakiki" button. The step-3 button reads **Hifadhi**, and saving is
+what stamps `group_confirmed_at` — the student asked for the word "Hifadhi" to stay and
+to be the thing that confirms. The dialog lists the seat change (old value struck
+through, new value in primary) so the press is never blind, and falls back to
+`confirm_no_seat_change` when the pickers already match the row. An unchanged seat still
+confirms: the dialog's job is to confirm the seat, not to require an edit.
