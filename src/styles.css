@@ -168,7 +168,11 @@
         color-mix(in oklch, var(--primary) 7%, transparent),
         transparent 34rem
       );
-    background-attachment: fixed;
+    /* Deliberately not `background-attachment: fixed`. That forces a repaint of
+       the whole viewport on every scroll frame, which is the most expensive
+       thing on the page on a mid-range Android; iOS ignores the property
+       outright, so the effect was never consistent anyway. */
+    background-repeat: no-repeat;
   }
 
   h1,

@@ -1287,3 +1287,40 @@ to be the thing that confirms. The dialog lists the seat change (old value struc
 through, new value in primary) so the press is never blind, and falls back to
 `confirm_no_seat_change` when the pickers already match the row. An unchanged seat still
 confirms: the dialog's job is to confirm the seat, not to require an edit.
+
+## The browser floor is Chrome 87 / Safari 14, and the CSS floor is lower
+
+Tailwind 4 emits `oklch()` and `color-mix()`. `color-mix()` is the newest thing on
+the page: Chrome 111+, Safari 16.4+, Firefox 113+. On anything older the declaration
+is dropped, and a custom property that holds it does *not* fall back — the same
+failure mode as `hsl(var(--primary))` below. The page still renders; it just paints
+with no colour in the theme tokens.
+
+`vite.config.ts` therefore sets `css.transformer: "lightningcss"` with explicit
+targets. lightningcss rewrites each colour to a hex fallback and upgrades it inside
+`@supports`, so `--primary` keeps `#006eaf` for old browsers and the `oklch()` form
+for new ones. The cost is ~0.4 KB gzip (24.6 -> 25.0 KB), and `oklch(` drops to zero
+occurrences in the built CSS. Verified: `.bg-emerald-500\/10` ships
+`background-color:#00bb7f1a` first, then the `@supports` block.
+
+The two targets differ on purpose. CSS targets `safari13`/`chrome80`/`firefox78`,
+but the JS target is `es2020` (Chrome 87 / Safari 14) because
+`String.prototype.replaceAll` is used in `src/lib/i18n.tsx` and
+`src/lib/islamic-knowledge.ts`, and that is Chrome 85 / Safari 13.1. A browser older
+than `es2020` needs an API polyfill, not a syntax downlevel, so do not lower
+`build.target` without adding one.
+
+Three other things that were fixed at the same time, all worth keeping:
+
+- Do not add `background-attachment: fixed`. It forces a viewport repaint on every
+  scroll frame, and iOS ignores the property outright, so the effect was never
+  consistent anyway.
+- `crypto.randomUUID()` needs a secure context (Chrome 92+/Safari 15.4+) and throws
+  a `TypeError` over plain HTTP. Use `randomUuid()` from `src/lib/pin-crypto.ts`,
+  which the codebase already had for exactly this reason.
+- `public/favicon.ico` and the PNG icons exist because the browser requested
+  `/favicon.ico` on every page load and got a 404. They are PNG rather than SVG
+  because Safari only learned SVG favicons in 16.4. `index.html` also carries a
+  `preconnect` to the Supabase origin; without it the first query waited for DNS
+  and TLS to finish.
+
