@@ -24,6 +24,7 @@ import { Route as StudentRouteImport } from './routes/student'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminAttendanceRouteImport } from './routes/admin.attendance'
 import { Route as AdminExamsRouteImport } from './routes/admin.exams'
+import { Route as AdminGroupsRouteImport } from './routes/admin.groups'
 import { Route as AdminIssuesRouteImport } from './routes/admin.issues'
 import { Route as AdminPdfRouteImport } from './routes/admin.pdf'
 import { Route as AdminRequestsRouteImport } from './routes/admin.requests'
@@ -108,6 +109,11 @@ const AdminExamsRoute = AdminExamsRouteImport.update({
   path: '/exams',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminGroupsRoute = AdminGroupsRouteImport.update({
+  id: '/groups',
+  path: '/groups',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminIssuesRoute = AdminIssuesRouteImport.update({
   id: '/issues',
   path: '/issues',
@@ -164,6 +170,7 @@ export interface FileRoutesByFullPath {
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/exams': typeof AdminExamsRoute
+  '/admin/groups': typeof AdminGroupsRoute
   '/admin/issues': typeof AdminIssuesRoute
   '/admin/pdf': typeof AdminPdfRoute
   '/admin/requests': typeof AdminRequestsRoute
@@ -188,6 +195,7 @@ export interface FileRoutesByTo {
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/exams': typeof AdminExamsRoute
+  '/admin/groups': typeof AdminGroupsRoute
   '/admin/issues': typeof AdminIssuesRoute
   '/admin/pdf': typeof AdminPdfRoute
   '/admin/requests': typeof AdminRequestsRoute
@@ -214,6 +222,7 @@ export interface FileRoutesById {
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/exams': typeof AdminExamsRoute
+  '/admin/groups': typeof AdminGroupsRoute
   '/admin/issues': typeof AdminIssuesRoute
   '/admin/pdf': typeof AdminPdfRoute
   '/admin/requests': typeof AdminRequestsRoute
@@ -241,6 +250,7 @@ export interface FileRouteTypes {
     | '/student'
     | '/admin/attendance'
     | '/admin/exams'
+    | '/admin/groups'
     | '/admin/issues'
     | '/admin/pdf'
     | '/admin/requests'
@@ -265,6 +275,7 @@ export interface FileRouteTypes {
     | '/student'
     | '/admin/attendance'
     | '/admin/exams'
+    | '/admin/groups'
     | '/admin/issues'
     | '/admin/pdf'
     | '/admin/requests'
@@ -290,6 +301,7 @@ export interface FileRouteTypes {
     | '/student'
     | '/admin/attendance'
     | '/admin/exams'
+    | '/admin/groups'
     | '/admin/issues'
     | '/admin/pdf'
     | '/admin/requests'
@@ -425,6 +437,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminExamsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/groups': {
+      id: '/admin/groups'
+      path: '/groups'
+      fullPath: '/admin/groups'
+      preLoaderRoute: typeof AdminGroupsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/issues': {
       id: '/admin/issues'
       path: '/issues'
@@ -487,6 +506,7 @@ declare module '@tanstack/react-router' {
 interface AdminRouteChildren {
   AdminAttendanceRoute: typeof AdminAttendanceRoute
   AdminExamsRoute: typeof AdminExamsRoute
+  AdminGroupsRoute: typeof AdminGroupsRoute
   AdminIssuesRoute: typeof AdminIssuesRoute
   AdminPdfRoute: typeof AdminPdfRoute
   AdminRequestsRoute: typeof AdminRequestsRoute
@@ -499,6 +519,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAttendanceRoute: AdminAttendanceRoute,
   AdminExamsRoute: AdminExamsRoute,
+  AdminGroupsRoute: AdminGroupsRoute,
   AdminIssuesRoute: AdminIssuesRoute,
   AdminPdfRoute: AdminPdfRoute,
   AdminRequestsRoute: AdminRequestsRoute,

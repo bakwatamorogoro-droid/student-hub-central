@@ -1,7 +1,18 @@
 export const STUDY_YEARS = [1, 2, 3, 4] as const;
 
-/** Fixed group range: GROUP 1 … GROUP 20. */
-export const GROUPS = Array.from({ length: 20 }, (_, i) => `GROUP ${i + 1}`);
+/**
+ * Fixed group range: GROUP 1 … GROUP 11, 8 students each.
+ *
+ * The real shape lives in `groupAssignment.ts` (11 groups × 8 seats, separate
+ * for men and women). This re-export keeps the older pickers in step with it
+ * instead of letting them offer a GROUP 12 that can never be filled.
+ */
+export {
+  GROUP_NAMES as GROUPS,
+  GROUPS_PER_SEMINAR,
+  GROUP_SIZE,
+  SEMINARS,
+} from "@/lib/groupAssignment";
 
 /**
  * Only SEMESTER 1 is active. SEMESTER 2 is still listed so the owner can see

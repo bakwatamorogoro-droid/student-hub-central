@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   Settings,
   FileUp,
+  UsersRound,
 } from "lucide-react";
 import {
   Sidebar,
@@ -35,6 +36,7 @@ const NAV = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/admin/exams", label: "Mitihani", icon: FileText },
   { to: "/admin/students", label: "Wanafunzi", icon: Users },
+  { to: "/admin/groups", label: "Magroup na Semina", icon: UsersRound },
   { to: "/admin/attendance", label: "Mahudhurio", icon: ClipboardCheck },
   { to: "/admin/submissions", label: "Matokeo", icon: BarChart3 },
   { to: "/admin/pdf", label: "Assignment", icon: FileUp },
