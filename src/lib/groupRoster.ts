@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllStudents } from "@/lib/fetchAllStudents";
 import { retryWithoutMissingColumns, missingColumnFrom } from "@/lib/schema-retry";
+import { GRANT_STATUS } from "@/lib/editPermission";
 import {
   GROUP_SIZE,
   buildSeminarReports,
@@ -201,16 +202,48 @@ export async function unlockStudentGroup(studentId: string): Promise<Error | nul
 /**
  * Opens one student's Update Taarifa form, even while the global switch is off, and
  * releases their seat so a wrong seminar or group can be fixed. The admin panel calls
- * this. A database without the migration answers PGRST202, so the caller can say which
- * migration to run rather than showing a raw PostgREST error.
+ * this.
+ *
+ * The grant is `students.edit_unlocked_at`, set by `grant_student_edit`. The student page
+ * reads it straight off the row it already loads, so no extra query is needed, and the
+ * RPC clears `group_confirmed_at` in the same call so a student inside a frozen window is
+ * handed the form and the seat together.
+ *
+ * `20261104120000_student_edit_grant.sql` adds the column and the RPCs. Until it is
+ * applied the RPC answers PGRST202, and the grant falls back to a
+ * `profile_update_requests` row with `status = "edit_granted"`, which is live and writable
+ * from the browser today. Both shapes are read the same way, so the feature works before
+ * and after the migration.
  */
-export async function grantStudentEdit(
-  studentId: string,
-): Promise<{ error: Error | null; needsMigration: boolean }> {
+export async function grantStudentEdit(student: {
+  id: string;
+  reg_no?: string | null;
+  full_name?: string | null;
+}): Promise<{ error: Error | null; needsMigration: boolean }> {
   const { error } = await (supabase as any).rpc("grant_student_edit", {
-    p_student_id: studentId,
+    p_student_id: student.id,
   });
-  return { error: (error as unknown as Error) ?? null, needsMigration: isMissingRpc(error) };
+  if (!error) return { error: null, needsMigration: false };
+  if (!isMissingRpc(error)) {
+    return { error: error as unknown as Error, needsMigration: false };
+  }
+
+  const { error: insertError } = await (supabase as any).from("profile_update_requests").insert({
+    student_id: student.id,
+    current_reg_no: student.reg_no ?? "",
+    current_full_name: student.full_name ?? "",
+    new_reg_no: student.reg_no ?? null,
+    new_full_name: student.full_name ?? null,
+    status: GRANT_STATUS,
+    changed_fields: [],
+    reason: null,
+    reviewed_at: new Date().toISOString(),
+  });
+  if (insertError) {
+    return { error: insertError as unknown as Error, needsMigration: false };
+  }
+  await unlockStudentGroup(student.id);
+  return { error: null, needsMigration: false };
 }
 
 /** Takes a grant back, leaving everything the student already saved alone. */
@@ -220,7 +253,15 @@ export async function revokeStudentEdit(
   const { error } = await (supabase as any).rpc("revoke_student_edit", {
     p_student_id: studentId,
   });
-  return { error: (error as unknown as Error) ?? null, needsMigration: isMissingRpc(error) };
+  if (!error || !isMissingRpc(error)) {
+    return { error: (error as unknown as Error) ?? null, needsMigration: false };
+  }
+  const { error: deleteError } = await (supabase as any)
+    .from("profile_update_requests")
+    .delete()
+    .eq("student_id", studentId)
+    .eq("status", GRANT_STATUS);
+  return { error: (deleteError as unknown as Error) ?? null, needsMigration: false };
 }
 
 /** Spends the grant after a save lands, so one grant buys one correction. */
@@ -228,7 +269,13 @@ export async function consumeStudentEdit(studentId: string): Promise<Error | nul
   const { error } = await (supabase as any).rpc("consume_student_edit", {
     p_student_id: studentId,
   });
-  return (error as unknown as Error) ?? null;
+  if (!error || !isMissingRpc(error)) return (error as unknown as Error) ?? null;
+  const { error: deleteError } = await (supabase as any)
+    .from("profile_update_requests")
+    .delete()
+    .eq("student_id", studentId)
+    .eq("status", GRANT_STATUS);
+  return (deleteError as unknown as Error) ?? null;
 }
 
 /** PostgREST reports a missing function as PGRST202 rather than a missing column. */
