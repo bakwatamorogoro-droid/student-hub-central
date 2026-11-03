@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllStudents } from "@/lib/fetchAllStudents";
 import { retryWithoutMissingColumns, missingColumnFrom } from "@/lib/schema-retry";
+import { GRANT_STATUS } from "@/lib/editPermission";
 import {
   GROUP_SIZE,
   buildSeminarReports,
@@ -228,33 +229,57 @@ export async function unlockStudentGroup(studentId: string): Promise<Error | nul
 /**
  * Opens one student's Update Taarifa form, even while the global switch is off, and
  * releases their seat so a wrong seminar or group can be fixed. The admin panel calls
- * this. A database without the migration answers PGRST202, so the caller can say which
- * migration to run rather than showing a raw PostgREST error.
+ * this.
+ *
+ * The grant is a row in `profile_update_requests` with `status = "edit_granted"`, not a
+ * column on `students`: that table is live and writable from the browser today, while a
+ * new column would need DDL this environment cannot run. The student's own page reads the
+ * same rows it already fetches for their request history, so the two agree without a
+ * second query.
+ *
+ * The seat is released with `unlock_student_group`, which is already live. Without it a
+ * student inside the frozen window would be handed the form and then refused the seat.
  */
-export async function grantStudentEdit(
-  studentId: string,
-): Promise<{ error: Error | null; needsMigration: boolean }> {
-  const { error } = await (supabase as any).rpc("grant_student_edit", {
-    p_student_id: studentId,
+export async function grantStudentEdit(student: {
+  id: string;
+  reg_no?: string | null;
+  full_name?: string | null;
+}): Promise<{ error: Error | null; needsMigration: boolean }> {
+  const { error } = await (supabase as any).from("profile_update_requests").insert({
+    student_id: student.id,
+    current_reg_no: student.reg_no ?? "",
+    current_full_name: student.full_name ?? "",
+    new_reg_no: student.reg_no ?? null,
+    new_full_name: student.full_name ?? null,
+    status: GRANT_STATUS,
+    changed_fields: [],
+    reason: null,
+    reviewed_at: new Date().toISOString(),
   });
-  return { error: (error as unknown as Error) ?? null, needsMigration: isMissingRpc(error) };
+  if (error) return { error: error as unknown as Error, needsMigration: isMissingRpc(error) };
+  await unlockStudentGroup(student.id);
+  return { error: null, needsMigration: false };
 }
 
 /** Takes a grant back, leaving everything the student already saved alone. */
 export async function revokeStudentEdit(
   studentId: string,
 ): Promise<{ error: Error | null; needsMigration: boolean }> {
-  const { error } = await (supabase as any).rpc("revoke_student_edit", {
-    p_student_id: studentId,
-  });
+  const { error } = await (supabase as any)
+    .from("profile_update_requests")
+    .delete()
+    .eq("student_id", studentId)
+    .eq("status", GRANT_STATUS);
   return { error: (error as unknown as Error) ?? null, needsMigration: isMissingRpc(error) };
 }
 
 /** Spends the grant after a save lands, so one grant buys one correction. */
 export async function consumeStudentEdit(studentId: string): Promise<Error | null> {
-  const { error } = await (supabase as any).rpc("consume_student_edit", {
-    p_student_id: studentId,
-  });
+  const { error } = await (supabase as any)
+    .from("profile_update_requests")
+    .delete()
+    .eq("student_id", studentId)
+    .eq("status", GRANT_STATUS);
   return (error as unknown as Error) ?? null;
 }
 

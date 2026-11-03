@@ -304,8 +304,9 @@ changed from "24.x" to "26.x"`, so each deploy installed from scratch and a tool
 - Both `Update Taarifa` (edits) and `Changamoto` (issue reports) are gated by admin switches in
   `app_settings`: `profile_edits_enabled` (toggled on `/admin/requests`) and `issues_enabled`
   (toggled on `/admin/issues`). Students cannot submit while the relevant switch is off.
-- The per-student grant in `students.edit_unlocked_at` is the second door into `Update Taarifa`.
-  See "One student's form can be opened while the switch is off" below.
+- The per-student grant is a row in `profile_update_requests` with `status = 'edit_granted'`, not
+  a column. It is the second door into `Update Taarifa`. See "One student's form can be opened
+  while the switch is off" below.
 - `study_images` is the table behind the real-photo gallery; rows need `active = true` to show.
   Its rows currently have `title = null`, so they render without a caption and without alt text.
 
@@ -1336,31 +1337,46 @@ carries `changed_fields`, which is what the admin list reads.
 
 `profile_edits_enabled` is all-or-nothing, so the single student who saved the wrong seminar or
 group after the admin turned the switch off had no route back short of the admin editing their row
-by hand. The per-student grant is that route: `students.edit_unlocked_at` is one student's name on
-the door, set by `grant_student_edit(uuid)` and read by the student page.
+by hand. The per-student grant is that route.
 
-The rule lives in `src/lib/editPermission.ts` (`canEdit`, `hasGrant`) rather than in the route, so
-the combination can be tested without a browser and the form and the database cannot drift apart on
-who may write. `canEdit` is `globallyEnabled || unlockedAt`; `hasGrant` is `!!unlockedAt` and drives
-both the banner and the forced-open seat.
+The grant is a row in `profile_update_requests` with `status = 'edit_granted'`, not a column on
+`students`. That table is already live and already writable from the browser, so the feature works
+the moment it is deployed. The first version of this feature used a `students.edit_unlocked_at`
+column and three RPCs, and it did nothing on the live site: the migration that created them was in
+`supabase/migrations/` but had never been applied, and **nothing in this environment can run DDL
+against the live project** — no service-role key, no management token. Building on a table that is
+already there is the only shape that ships. If a future feature needs a new column, it has to be
+designed around the same constraint or the column has to be added by hand in the Supabase SQL
+editor first.
+
+The rule lives in `src/lib/editPermission.ts` (`canEdit`, `hasGrant`, `grantFromRows`,
+`unlockedAtFromRows`, `requestHistory`) rather than in the route, so the combination can be tested
+without a browser and the form and the database cannot drift apart on who may write. `canEdit` is
+`globallyEnabled || unlockedAt`; `hasGrant` is `!!unlockedAt` and drives both the banner and the
+forced-open seat.
+
+The student page already fetches their `profile_update_requests` rows for the history it shows, so
+the grant is read from that same fetch — `unlockedAtFromRows(editStatus, student.id)` — and no
+second query is needed. `requestHistory` filters the grant rows out of the list the student reads,
+because a grant is an admin instruction rather than a correction the student made.
 
 A grant also releases the seat. "I updated my details wrongly" is exactly the case where the
-seminar or group is what went wrong, so `grant_student_edit` clears `group_confirmed_at` in the same
-call — a grant that could not move the seat could not fix the mistake it was issued for. Because
-the page's row still carries the old stamp, the route reads `seatForForm = editUnlocked ? "open" :
-seat`, or the student would be granted the form and then shown a locked seat.
+seminar or group is what went wrong, so `grantStudentEdit` calls `unlock_student_group` (already
+live) right after inserting the grant row — a grant that could not move the seat could not fix the
+mistake it was issued for. Because the page's row still carries the old stamp, the route reads
+`seatForForm = editUnlocked ? "open" : seat`, or the student would be granted the form and then
+shown a locked seat.
 
-The grant is spent by the save, not by the clock. `consume_student_edit` clears
-`edit_unlocked_at` after a successful write, and the local row is cleared in the same commit as the
+The grant is spent by the save, not by the clock. `consumeStudentEdit` deletes the grant rows for
+that student after a successful write, and the local rows are filtered in the same commit as the
 seat stamp so the banner cannot outlive the grant. Pressing confirm with nothing changed still
 spends it: a grant is one correction, and a grant that was never used is still a door left open.
 
 The admin's side is `src/components/EditPermissionPanel.tsx`, mounted at the top of
 `/admin/requests`. It searches by Reg Namba through the same `findStudentsByQuery` the student page
 uses, grants and revokes, and lists everyone currently holding a grant so a forgotten one is
-visible. A database without the migration answers `PGRST202`, so the panel names
-`supabase/migrations/20261103140000_student_edit_permission.sql` instead of showing the raw
-PostgREST error.
+visible. The admin request list and its "Futa Yote" button both skip grant rows: a grant is not a
+request, and wiping the outstanding ones would silently close doors the admin opened on purpose.
 
 ## The page must survive a browser that blocks storage
 

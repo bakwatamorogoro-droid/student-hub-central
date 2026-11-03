@@ -14,6 +14,7 @@ import { ACADEMIC_YEARS, STUDY_YEARS, SEMESTERS } from "@/lib/academicTargeting"
 import { isMissingColumnError } from "@/lib/studentProfile";
 import { assignStudentGroup } from "@/lib/groupRoster";
 import { diffRows, placementRows, FIELD_LABELS } from "@/lib/requestDiff";
+import { requestHistory, GRANT_STATUS } from "@/lib/editPermission";
 import { EditPermissionPanel } from "@/components/EditPermissionPanel";
 
 export const Route = createFileRoute("/admin/requests")({ component: Page });
@@ -39,7 +40,9 @@ function Page() {
       .from("profile_update_requests")
       .select("*")
       .order("created_at", { ascending: false });
-    setRows(data || []);
+    // A grant is an admin instruction, not a request a student submitted, so it is kept out
+    // of this list. `EditPermissionPanel` is where grants are read and taken back.
+    setRows(requestHistory((data || []) as RequestRow[]));
     setLoading(false);
   };
   useEffect(() => {
@@ -211,15 +214,17 @@ function Page() {
     if (
       !(await confirmAction(
         `Futa MAOMBI YOTE (${rows.length})?`,
-        "Haitarudishwa.",
+        "Haitarudishwa. Ruhusa za marekebisho ulizotoa hazifutwi.",
         "Ndiyo, futa yote",
       ))
     )
       return;
+    // Only the requests. A grant is not a request, and wiping the outstanding ones here
+    // would silently close doors the admin opened on purpose.
     const { error } = await (supabase as any)
       .from("profile_update_requests")
       .delete()
-      .not("id", "is", null);
+      .neq("status", GRANT_STATUS);
     if (error) return alertError("Imeshindikana kufuta", error.message);
     await alertSuccess("Maombi yote yamefutwa");
     load();
