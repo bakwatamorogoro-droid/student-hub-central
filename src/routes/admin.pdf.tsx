@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { FilePreview } from "@/components/FilePreview";
 import { toast } from "@/lib/toast";
 import { confirmAction } from "@/lib/alerts";
 import { FileText, ExternalLink, Trash2, Upload, Sparkles } from "lucide-react";
@@ -510,20 +511,19 @@ function Page() {
       </Card>
 
       <Dialog open={!!grading} onOpenChange={(o) => !o && setGrading(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Sahihisha — {grading?.full_name}</DialogTitle>
           </DialogHeader>
           {grading && (
             <div className="space-y-3">
-              <a
-                href={grading.file_url}
-                target="_blank"
-                rel="noreferrer"
-                className="block text-primary underline text-sm"
-              >
-                📄 Fungua faili ya mwanafunzi
-              </a>
+              {grading.file_url ? (
+                <FilePreview src={grading.file_url} fileName={grading.file_name} height={360} />
+              ) : (
+                <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+                  Kazi hii haikuwa na faili.
+                </p>
+              )}
               {grading.ai_suggested_feedback && (
                 <div className="text-xs p-2 rounded bg-primary/10 border border-primary/30">
                   <b className="inline-flex items-center gap-1">
