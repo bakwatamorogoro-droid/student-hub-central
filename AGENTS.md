@@ -13,6 +13,7 @@
 
 - Use shared semantic glass surfaces, Outfit headings, and Figtree body text across public and admin UI so visual updates remain consistent and theme-safe.
 - Keep academic targeting centralized through the shared year helpers so student, exam, quiz, and assignment visibility stays consistent.
+- Treat a *missing* student field as "no mismatch", not as a mismatch, when filtering by academic target. Most of the cohort has no `study_year` (945/1623) and almost none has an `academic_year` (1562/1623 have null), so an equality check silently hides published work from the majority. Only a value that is present *and* different should exclude. This lives in `matchesAcademicTarget` (`src/lib/academicTargeting.ts`); call it rather than re-writing the check inline, because `Number(null) === 0` makes an inline copy fail closed in a way that looks like "no work assigned".
 
 ## Deployment
 
