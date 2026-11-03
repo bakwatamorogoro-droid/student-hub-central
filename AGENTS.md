@@ -1173,29 +1173,33 @@ re-exports its symbols for the older callers. That re-export must be a plain `ex
 local `import`, not `export ... from`: the inline form leaves the names out of local scope and the
 file fails to compile.
 
-## Update Taarifa is a four-step wizard, not a page of stacked cards
+## Update Taarifa is a two-step wizard
 
 The page used to be a search box, a details card, a group card, an attendance card and a
 two-tab editor, all visible at once. A student could not tell what to do first, and the
-attendance card was a third door to a page that already has a menu entry. It is now four
-steps with Back and Next:
+attendance card was a third door to a page that already has a menu entry. It then became a
+four-step wizard, and the group step has since folded back into the details step:
 
 ```
 1 Reg Namba   -> search, StudentMatchesPicker when several names match
-2 Taarifa Zako -> the edit form, study year read-only
-3 Group Yako  -> GroupRosterView: seminar, group, representative, classmates
-4 Changamoto  -> the issue form
+2 Taarifa Zako -> the edit form, plus semina and group pickers, then one save
 ```
 
 `step` is local state, not a route. `confirmStudent` moves to step 2, a failed lookup returns
 to step 1, and the step chips allow jumping anywhere the student is allowed to go. The
 attendance card is gone; `/attendance` is reachable from the menu and nowhere else.
 
-`#group-yangu` is still a hash, not a route: the header links to `/student#group-yangu`, and
-the page listens for `hashchange` and opens step 3. That keeps the old link working without
-adding a route for one step.
+Step 2 holds everything: name, Reg Namba, course, study year (read-only), semester, phone,
+seminar and group, then the roster. The single **Hifadhi** press saves the details *and*
+confirms the seat, so there is no separate group step to walk. A student who already
+confirmed sees a locked summary instead of the pickers, and the button reads
+**Hifadhi Taarifa** and saves their details without touching the seat.
 
-`GroupRosterView` renders the roster and is used by both step 3 and `MyGroupCard`, so the two
+`#group-yangu` is still a hash, not a route: the header links to `/student#group-yangu`, and
+the page listens for `hashchange` and opens step 2, which is where the group now lives. That
+keeps the old link working without adding a route for one step.
+
+`GroupRosterView` renders the roster, shown inside step 2 and by `MyGroupCard`, so the two
 cannot drift apart.
 
 ## The roster contains duplicate Reg Namba values
@@ -1205,14 +1209,14 @@ differing only by a trailing space or a missing `MUM` prefix (`GOD BLESS MLYUKA`
 `GODBLESS MLYUKA`). Every `id` is unique, so this is duplicate enrolment, not a pagination
 bug: `fetchAllStudents` pages correctly and `findMyGroup` keys on `id`.
 
-The visible effect is a classmate listed twice in step 3. The fix is a data cleanup, not code:
+The visible effect is a classmate listed twice in the roster. The fix is a data cleanup, not code:
 deduplicate on `upper(trim(reg_no))`, keeping the row that carries the results and attendance.
 Do not "fix" this in `findMyGroup` by de-duplicating by Reg Namba — two real students can share
 a Reg Namba only through the data error, and hiding it in the view makes the cleanup harder.
 
 ## Confirming a group locks it, and the lock lives in the database
 
-Step 3 of `Update Taarifa` confirms the seat rather than merely saving it. The browser holds the
+Step 2 of `Update Taarifa` confirms the seat rather than merely saving it. The browser holds the
 **publishable key**, so a disabled dropdown proves nothing: `apply_profile_update` is a Postgres
 function reachable straight from PostgREST, and it used to rewrite `semina` and `student_group`
 on any row it was handed. The lock has to be a database rule.
@@ -1279,14 +1283,19 @@ This is why "the OK/Cancel text does not show" is a CSS bug and not a missing bu
 `showConfirmButton` was never false. Check the computed `background-color` before
 touching the SweetAlert2 options.
 
-## Step 3 saves and confirms in one press
+## The single save on step 2 saves and confirms in one press
 
-There is no separate "Hakiki" button. The step-3 button reads **Hifadhi**, and saving is
-what stamps `group_confirmed_at` — the student asked for the word "Hifadhi" to stay and
-to be the thing that confirms. The dialog lists the seat change (old value struck
-through, new value in primary) so the press is never blind, and falls back to
-`confirm_no_seat_change` when the pickers already match the row. An unchanged seat still
-confirms: the dialog's job is to confirm the seat, not to require an edit.
+There is no separate "Hakiki" button, and no separate group step. The step-2 button reads
+**Hifadhi**, and that one press writes the details and stamps `group_confirmed_at` — the
+student asked for the word "Hifadhi" to stay and to be the thing that confirms. The dialog
+lists the seat change (old value struck through, new value in primary) so the press is never
+blind, and falls back to `confirm_no_seat_change` when the pickers already match the row. An
+unchanged seat still confirms: the dialog's job is to confirm the seat, not to require an
+edit.
+
+A student whose seat is already confirmed is not offered the pickers again. Their button
+reads **Hifadhi Taarifa**, and `saveAndConfirm` skips `lockSeat` for them: the seat is
+frozen, so re-stamping it would be a no-op at best and a stale-seat write at worst.
 
 ## The browser floor is Chrome 87 / Safari 14, and the CSS floor is lower
 
