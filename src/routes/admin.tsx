@@ -40,6 +40,7 @@ const NAV = [
   { to: "/admin/attendance", label: "Mahudhurio", icon: ClipboardCheck },
   { to: "/admin/submissions", label: "Matokeo", icon: BarChart3 },
   { to: "/admin/pdf", label: "Assignment", icon: FileUp },
+  { to: "/admin/group-assignments", label: "Kazi za Group", icon: UsersRound },
   { to: "/admin/requests", label: "Maombi", icon: Inbox },
   { to: "/admin/issues", label: "Changamoto", icon: AlertTriangle },
   { to: "/admin/settings", label: "Mipangilio", icon: Settings },

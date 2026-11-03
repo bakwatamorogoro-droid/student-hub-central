@@ -992,6 +992,31 @@ back in on the next save.
 the migration. `src/routes/admin.groups.tsx` is the admin surface; `GroupManager` renders it and
 `groupExports.ts` writes Excel/Word/PDF/CSV from `xlsx`, `docx` and `jspdf`.
 
+## Group assignments ("Kazi za Kufanya")
+
+A group's work lives in `pdf_submissions`, not a new table: the live project has no way to run DDL
+from the workspace, so a group row reuses the columns the single-student assignment flow already
+has. `src/lib/groupAssignmentSubmission.ts` holds the pure rules (import-free, so `node --test`
+loads it without a bundler) and `src/lib/groupAssignmentApi.ts` holds the Supabase half.
+
+The row is identified by `reg_no`, which for a group is not a registration number but the canonical
+key `GROUP::<semina>::<gender>::<group>` from `groupKey()`. `status` is `group_submitted` and is
+left at that value even after the admin answers, so "is this a group's work?" stays a single column
+test. The answer is what `teacher_confirmed`, `feedback` and the envelope's `answer` mark.
+
+The question, the presenters and the submitter are packed into `ai_extracted_text` as a JSON
+envelope (`parseEnvelope` / `serializeEnvelope`). `parseEnvelope` only adds an optional key when it
+is present — writing `submitted_by: undefined` produced a key the round-trip test then failed on.
+
+Because a group row is a `pdf_submissions` row, every single-student list must filter it out or one
+group's file appears as if one student sent it. `admin.pdf.tsx` and `pdf-quiz.tsx` both drop rows
+whose `status` is `GROUP_SUBMISSION_STATUS`.
+
+The feature is one submission per group, not per student. `submitGroupAssignment` re-checks for an
+existing row after the caller checked, so two phones in the same group cannot slip a duplicate
+through. The admin reviews on `/admin/group-assignments` and answers with a system-drawn signature
+(`SignaturePad`, `react-signature-canvas`) stored as a PNG data URL in the envelope.
+
 ## A new table needs a GRANT, not just a policy
 
 Row level security decides _which rows_ a role may touch. It does not grant the

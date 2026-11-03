@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { ACADEMIC_YEARS, STUDY_YEARS, SEMESTERS, isSemesterActive } from "@/lib/academicTargeting";
 import { isMissingColumnError } from "@/lib/studentProfile";
+import { GROUP_SUBMISSION_STATUS } from "@/lib/groupAssignmentSubmission";
 
 export const Route = createFileRoute("/admin/pdf")({ component: Page });
 
@@ -58,7 +59,10 @@ function Page() {
         .select("*")
         .order("created_at", { ascending: false }),
     ]);
-    setSubs((s as any[]) || []);
+    // A group's work is a `pdf_submissions` row too, but it belongs to the whole
+    // group and is reviewed on /admin/group-assignments. Keeping it out of this
+    // list stops one group's file appearing as if one student sent it.
+    setSubs(((s as any[]) || []).filter((r) => r.status !== GROUP_SUBMISSION_STATUS));
     setExams(e || []);
     setExamPdfs((ep as any[]) || []);
   };

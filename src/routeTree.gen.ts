@@ -24,6 +24,7 @@ import { Route as StudentRouteImport } from './routes/student'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminAttendanceRouteImport } from './routes/admin.attendance'
 import { Route as AdminExamsRouteImport } from './routes/admin.exams'
+import { Route as AdminGroupAssignmentsRouteImport } from './routes/admin.group-assignments'
 import { Route as AdminGroupsRouteImport } from './routes/admin.groups'
 import { Route as AdminIssuesRouteImport } from './routes/admin.issues'
 import { Route as AdminPdfRouteImport } from './routes/admin.pdf'
@@ -109,6 +110,11 @@ const AdminExamsRoute = AdminExamsRouteImport.update({
   path: '/exams',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminGroupAssignmentsRoute = AdminGroupAssignmentsRouteImport.update({
+  id: '/group-assignments',
+  path: '/group-assignments',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminGroupsRoute = AdminGroupsRouteImport.update({
   id: '/groups',
   path: '/groups',
@@ -170,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/exams': typeof AdminExamsRoute
+  '/admin/group-assignments': typeof AdminGroupAssignmentsRoute
   '/admin/groups': typeof AdminGroupsRoute
   '/admin/issues': typeof AdminIssuesRoute
   '/admin/pdf': typeof AdminPdfRoute
@@ -195,6 +202,7 @@ export interface FileRoutesByTo {
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/exams': typeof AdminExamsRoute
+  '/admin/group-assignments': typeof AdminGroupAssignmentsRoute
   '/admin/groups': typeof AdminGroupsRoute
   '/admin/issues': typeof AdminIssuesRoute
   '/admin/pdf': typeof AdminPdfRoute
@@ -222,6 +230,7 @@ export interface FileRoutesById {
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/exams': typeof AdminExamsRoute
+  '/admin/group-assignments': typeof AdminGroupAssignmentsRoute
   '/admin/groups': typeof AdminGroupsRoute
   '/admin/issues': typeof AdminIssuesRoute
   '/admin/pdf': typeof AdminPdfRoute
@@ -250,6 +259,7 @@ export interface FileRouteTypes {
     | '/student'
     | '/admin/attendance'
     | '/admin/exams'
+    | '/admin/group-assignments'
     | '/admin/groups'
     | '/admin/issues'
     | '/admin/pdf'
@@ -275,6 +285,7 @@ export interface FileRouteTypes {
     | '/student'
     | '/admin/attendance'
     | '/admin/exams'
+    | '/admin/group-assignments'
     | '/admin/groups'
     | '/admin/issues'
     | '/admin/pdf'
@@ -301,6 +312,7 @@ export interface FileRouteTypes {
     | '/student'
     | '/admin/attendance'
     | '/admin/exams'
+    | '/admin/group-assignments'
     | '/admin/groups'
     | '/admin/issues'
     | '/admin/pdf'
@@ -437,6 +449,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminExamsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/group-assignments': {
+      id: '/admin/group-assignments'
+      path: '/group-assignments'
+      fullPath: '/admin/group-assignments'
+      preLoaderRoute: typeof AdminGroupAssignmentsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/groups': {
       id: '/admin/groups'
       path: '/groups'
@@ -506,6 +525,7 @@ declare module '@tanstack/react-router' {
 interface AdminRouteChildren {
   AdminAttendanceRoute: typeof AdminAttendanceRoute
   AdminExamsRoute: typeof AdminExamsRoute
+  AdminGroupAssignmentsRoute: typeof AdminGroupAssignmentsRoute
   AdminGroupsRoute: typeof AdminGroupsRoute
   AdminIssuesRoute: typeof AdminIssuesRoute
   AdminPdfRoute: typeof AdminPdfRoute
@@ -519,6 +539,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAttendanceRoute: AdminAttendanceRoute,
   AdminExamsRoute: AdminExamsRoute,
+  AdminGroupAssignmentsRoute: AdminGroupAssignmentsRoute,
   AdminGroupsRoute: AdminGroupsRoute,
   AdminIssuesRoute: AdminIssuesRoute,
   AdminPdfRoute: AdminPdfRoute,
