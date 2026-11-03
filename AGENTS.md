@@ -1657,3 +1657,43 @@ message, not a spinner that never stops.
 CI installs with `bun install --frozen-lockfile`, so a dependency added to
 `package.json` must also be recorded in `bun.lock` or the install step fails
 before the build ever runs.
+
+## The CR screen (`/cr`)
+
+A CR is the class representative: not an admin, not a student. Their credentials
+are fixed (`IS2026` / `CR2026`) in `src/lib/crAccess.ts`, and the sign-in state is
+its own key in `src/lib/cr-session.ts` so a CR is never signed in as an admin.
+The gate is not a security boundary — the publishable key ships in the bundle, so
+those constants are readable in devtools. It keeps an honest visitor off the wrong
+screen; real protection is the RLS that cannot yet be applied.
+
+The page has three tabs, and only these:
+
+1. **Fungua Akaunti** — `CrUnlockPanel`. The CR's original single job.
+2. **Magroup** — `CrGroupsOverview`. Read-only: search a Reg Namba to see the
+   student's seminar, gender, group number and everyone in it, plus browse every
+   seminar's groups. It reads the same `buildSeminarReports` the admin's pages use,
+   so the CR and the owner never see two different rosters.
+3. **QR ya Mahudhurio** — `CrAttendanceQr`. Download/print the attendance poster,
+   but only for sessions the owner has opened to the CR.
+
+### Permission for the CR to print a poster
+
+The owner flips a switch in the live session panel (`AttendanceSessionPanel`),
+which calls `setSessionCrQr`. The flag rides in the session's own JSON payload
+(`cr_qr_allowed`) rather than a new column, because nothing in this environment
+can run DDL against the live project — the same constraint that shaped all of
+`attendance.ts`. A new session starts closed (`cr_qr_allowed: false`), and ending
+the session ends the permission with it: a printed poster only means anything
+while the join code is still being accepted.
+
+`src/lib/crPoster.ts` owns the rule (`crPosterDecision`) and is pure, so
+`crPoster.test.ts` pins it. Three things must hold, in this order, each with its
+own reason the screen can show: the owner allowed it, the session is still open,
+and there is a join code to encode. Both the admin's switch and the CR's screen
+call this one rule, so they cannot disagree about who may print what.
+
+The CR's print station deliberately shows the **stable join code**, never the
+25-second rotating token: a CR is not in the room running the session, and the
+only useful thing they can do with attendance is carry a poster to the wall
+before students arrive.

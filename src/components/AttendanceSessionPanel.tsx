@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   endAttendanceSession,
   fetchSessionPresent,
+  setSessionCrQr,
   type Session as AttendanceSession,
   makeJoinCode,
   rotateSessionToken,
@@ -27,7 +28,7 @@ import {
 import { GROUPS } from "@/lib/academicTargeting";
 import { loadDirectory } from "@/lib/directory";
 import { toast } from "@/lib/toast";
-import { Crosshair, Loader2, Play, Square, Users } from "lucide-react";
+import { Crosshair, Loader2, Play, Square, Users, QrCode } from "lucide-react";
 
 const ROTATE_MS = 25_000;
 
@@ -191,6 +192,26 @@ export function AttendanceSessionPanel({ onSessionChange }: { onSessionChange?: 
     setPresent([]);
     setBusy(false);
     toast.success("Kipindi kimefungwa");
+    onSessionChange?.();
+  };
+
+  /**
+   * Opens or closes this session's poster to the CR.
+   *
+   * The switch is optimistic-free: the write has to land before the panel shows
+   * the new state, because the CR reads the same flag and a switch that lied
+   * would send them to a screen with nothing on it.
+   */
+  const toggleCrQr = async (allowed: boolean) => {
+    if (!session) return;
+    setBusy(true);
+    const res = await setSessionCrQr(session.id, allowed);
+    setBusy(false);
+    if (!res.ok) return toast.error(res.message);
+    setSession({ ...session, crQrAllowed: allowed });
+    toast.success(
+      allowed ? "CR anaweza kuchapisha QR ya kipindi hiki." : "CR haruhusiwi kuchapisha QR.",
+    );
     onSessionChange?.();
   };
 
@@ -358,6 +379,27 @@ export function AttendanceSessionPanel({ onSessionChange }: { onSessionChange?: 
               }}
               joinCode={joinCode}
             />
+          )}
+          {joinCode && (
+            <div className="w-full rounded-xl border border-border p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-start gap-2">
+                  <QrCode className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <div>
+                    <p className="text-sm font-semibold">Ruhusu CR kuchapisha QR</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      CR anaweza kupakua na kuchapisha QR ya kipindi hiki. Ruhusa inaisha kipindi
+                      kikifungwa.
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={session.crQrAllowed}
+                  onCheckedChange={(v) => void toggleCrQr(v)}
+                  disabled={busy}
+                />
+              </div>
+            </div>
           )}
         </div>
         <div>

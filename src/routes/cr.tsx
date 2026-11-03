@@ -4,11 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CrUnlockPanel } from "@/components/CrUnlockPanel";
+import { CrGroupsOverview } from "@/components/CrGroupsOverview";
+import { CrAttendanceQr } from "@/components/CrAttendanceQr";
 import { crLogin, crLogout, isCr } from "@/lib/cr-session";
 import { CR_USERNAME } from "@/lib/crAccess";
 import { toast } from "@/lib/toast";
-import { Loader2, LogIn, LogOut, ShieldCheck, UserCog, Unlock } from "lucide-react";
+import { Loader2, LogIn, LogOut, ShieldCheck, UserCog, Users, QrCode, Unlock } from "lucide-react";
 
 export const Route = createFileRoute("/cr")({
   component: Page,
@@ -17,19 +20,22 @@ export const Route = createFileRoute("/cr")({
       { title: "CR — Kufungua Akaunti — Islamic Studies Test" },
       {
         name: "description",
-        content: "CR anafungua akaunti za wanafunzi waliokosea ili kurekebisha taarifa zao.",
+        content:
+          "CR anafungua akaunti za wanafunzi waliokosea, anaona magroup, na kuchapisha QR ya mahudhurio.",
       },
     ],
   }),
 });
 
 /**
- * The CR's screen, and only that.
+ * The CR's screen.
  *
- * A CR's job is narrow — open the account of a classmate who is stuck, so they can
- * sign in, correct their details and set their own PIN. That is `CrUnlockPanel`,
- * and nothing else lives here. Marks, exams and settings stay behind the admin's
- * door, because a CR who needs those is an admin and should sign in as one.
+ * A CR's job is narrow: open the account of a classmate who is stuck, so they can
+ * sign in, correct their details and set their own PIN; know which group anyone
+ * sits in; and — only once the owner says so — carry a printed attendance poster
+ * to the wall. Those are the three tabs, and nothing else lives here. Marks,
+ * exams and settings stay behind the admin's door, because a CR who needs those
+ * is an admin and should sign in as one.
  *
  * The page is reachable directly at `/cr`; it is not linked from `/admin`, whose
  * nav belongs to the admin.
@@ -54,8 +60,7 @@ function Page() {
             <UserCog className="h-5 w-5 text-primary" /> Mwenyekiti wa Darasa (CR)
           </h1>
           <p className="text-sm text-muted-foreground">
-            Kazi yako ni moja: kumfungulia mwanafunzi aliyekosea ili kuingia na kurekebisha taarifa
-            zake.
+            Fungua akaunti za waliokosea, ona magroup, na chapisha QR ya mahudhurio.
           </p>
         </div>
         <Button
@@ -70,17 +75,41 @@ function Page() {
         </Button>
       </div>
 
-      <Card className="border-primary/25 bg-gradient-to-br from-primary/10 to-transparent">
-        <CardContent className="flex items-start gap-3 py-4">
-          <Unlock className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-          <p className="text-sm text-muted-foreground">
-            Unapomfungulia, mwanafunzi anaweza kuingia na kurekebisha taarifa zake. Ruhusa ya
-            marekebisho inaisha mara tu anapohifadhi, na yeye mwenyewe hubadilisha PIN yake.
-          </p>
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="unlock">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="unlock" className="gap-1 font-bold">
+            <Unlock className="h-3.5 w-3.5" /> Fungua Akaunti
+          </TabsTrigger>
+          <TabsTrigger value="groups" className="gap-1 font-bold">
+            <Users className="h-3.5 w-3.5" /> Magroup
+          </TabsTrigger>
+          <TabsTrigger value="qr" className="gap-1 font-bold">
+            <QrCode className="h-3.5 w-3.5" /> QR ya Mahudhurio
+          </TabsTrigger>
+        </TabsList>
 
-      <CrUnlockPanel />
+        <TabsContent value="unlock" className="space-y-4 pt-3">
+          <Card className="border-primary/25 bg-gradient-to-br from-primary/10 to-transparent">
+            <CardContent className="flex items-start gap-3 py-4">
+              <Unlock className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+              <p className="text-sm text-muted-foreground">
+                Unapomfungulia, mwanafunzi anaweza kuingia na kurekebisha taarifa zake. Ruhusa ya
+                marekebisho inaisha mara tu anapohifadhi, na yeye mwenyewe hubadilisha PIN yake.
+              </p>
+            </CardContent>
+          </Card>
+
+          <CrUnlockPanel />
+        </TabsContent>
+
+        <TabsContent value="groups" className="pt-3">
+          <CrGroupsOverview />
+        </TabsContent>
+
+        <TabsContent value="qr" className="pt-3">
+          <CrAttendanceQr />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

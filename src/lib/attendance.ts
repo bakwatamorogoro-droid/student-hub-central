@@ -102,6 +102,8 @@ export type OpenSession = {
   kind: "lecture" | "class";
   /** Open to every student, regardless of their seminar or group. */
   openToAll: boolean;
+  /** The owner has let the CR print this session's wall poster. */
+  crQrAllowed: boolean;
 };
 
 export type Session = {
@@ -113,6 +115,8 @@ export type Session = {
   joinCode: string | null;
   kind: "lecture" | "class";
   openToAll: boolean;
+  /** The owner has let the CR print this session's wall poster. */
+  crQrAllowed: boolean;
 };
 
 export type PresentRow = {
@@ -145,6 +149,14 @@ type SessionPayload = {
   kind?: "lecture" | "class";
   /** The lecture is for everyone, so the group filter never applies to it. */
   open_to_all?: boolean;
+  /**
+   * The owner has let the CR print this session's wall poster.
+   *
+   * Absent on every row written before this switch existed, so a missing value
+   * must read as "not allowed" — the safe default, and the state those sessions
+   * were actually in.
+   */
+  cr_qr_allowed?: boolean;
 };
 
 type TokenPayload = {
@@ -244,6 +256,9 @@ export async function startAttendanceSession(input: {
     join_code: code,
     active: true,
     closes_at: null,
+    // A new session starts closed to the CR: the owner opens the poster to the CR
+    // only when they mean to, so permission is a deliberate act, not a default.
+    cr_qr_allowed: false,
   };
 
   const { error } = await supabase.from("quiz_participants").insert({
@@ -270,6 +285,7 @@ export async function startAttendanceSession(input: {
       joinCode: code,
       kind: "class",
       openToAll: false,
+      crQrAllowed: false,
     },
   };
 }
@@ -333,6 +349,7 @@ export async function ensureLectureSession(
     closes_at: window.closesAt,
     kind: "lecture",
     open_to_all: true,
+    cr_qr_allowed: false,
   };
 
   const { error } = await supabase.from("quiz_participants").insert({
@@ -363,6 +380,7 @@ export async function ensureLectureSession(
       joinCode: payload.join_code,
       kind: "lecture",
       openToAll: true,
+      crQrAllowed: false,
     },
     window,
   };
@@ -406,6 +424,7 @@ export async function listOpenSessions(
       joinCode: p.join_code,
       kind: p.kind === LECTURE_KIND ? "lecture" : "class",
       openToAll,
+      crQrAllowed: p.cr_qr_allowed === true,
     });
   }
 
@@ -424,6 +443,7 @@ export async function listOpenSessions(
         joinCode: null,
         kind: "lecture",
         openToAll: true,
+        crQrAllowed: false,
       });
     }
   }
@@ -450,7 +470,43 @@ export async function getSession(sessionId: string): Promise<Session | null> {
     joinCode: p.join_code,
     kind: p.kind === LECTURE_KIND ? "lecture" : "class",
     openToAll: p.open_to_all === true,
+    crQrAllowed: p.cr_qr_allowed === true,
   };
+}
+
+/**
+ * Opens or closes one session's poster to the CR.
+ *
+ * The permission rides in the session's own JSON payload rather than in a new
+ * table or column, because nothing in this environment can run DDL against the
+ * live project — the same constraint that shaped the rest of this file. It is
+ * read back by `listOpenSessions`, so the CR's screen and the admin's switch
+ * agree without either telling the other.
+ *
+ * Only the session's owner opens it, and only for as long as the session lives:
+ * ending the session ends the permission with it, because the poster is only
+ * meaningful while the join code is being accepted.
+ */
+export async function setSessionCrQr(
+  sessionId: string,
+  allowed: boolean,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const { data, error } = await supabase
+    .from("quiz_participants")
+    .select("semina")
+    .eq("id", sessionId)
+    .limit(1);
+  if (error || !data?.length) return { ok: false, message: "Kipindi hakipatikani" };
+
+  const p = parse<SessionPayload>((data[0] as { semina: string | null }).semina);
+  if (!p || p.t !== "session") return { ok: false, message: "Kipindi hakipatikani" };
+
+  const { error: writeError } = await supabase
+    .from("quiz_participants")
+    .update({ semina: JSON.stringify({ ...p, cr_qr_allowed: allowed }) })
+    .eq("id", sessionId);
+  if (writeError) return { ok: false, message: writeError.message ?? "Imeshindikana kubadilisha" };
+  return { ok: true };
 }
 
 /** Closes a session so no further check-ins are accepted. */
@@ -779,6 +835,8 @@ export type SessionSummary = {
   presentCount: number;
   kind: "lecture" | "class";
   openToAll: boolean;
+  /** The owner has let the CR print this session's wall poster. */
+  crQrAllowed: boolean;
 };
 
 /**
@@ -823,6 +881,7 @@ export async function listSessionSummaries(): Promise<SessionSummary[]> {
       presentCount: counts.get(row.id) ?? 0,
       kind: p.kind === LECTURE_KIND ? "lecture" : "class",
       openToAll: p.open_to_all === true,
+      crQrAllowed: p.cr_qr_allowed === true,
     });
   }
   return out.sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""));
@@ -898,6 +957,7 @@ export async function fetchMyCheckIns(studentToken: string): Promise<SessionSumm
       radiusM: 0,
       joinCode: null,
       active: false,
+      crQrAllowed: false,
       startedAt: p.check_in_at ?? row.joined_at,
       closedAt: null,
       presentCount: 0,
