@@ -9,8 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FilePreview } from "@/components/FilePreview";
 import { SignaturePad, type SignaturePadHandle } from "@/components/SignaturePad";
+import { AssignmentAnnotator, AnnotationTally } from "@/components/AssignmentAnnotator";
 import { toast } from "@/lib/toast";
 import { confirmAction } from "@/lib/alerts";
+import { annotationSummary, type Annotation } from "@/lib/assignmentAnnotations";
 import {
   DEFAULT_MARK_MAX,
   allMarksRows,
@@ -383,6 +385,23 @@ function SubmissionCard({
             <p className="line-clamp-2 text-sm italic">{sub.answer}</p>
           </div>
         )}
+        {sub.annotations.length > 0 && (
+          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                Alama kwenye kazi
+              </span>
+              <AnnotationTally items={sub.annotations} />
+            </div>
+            <ul className="mt-1 space-y-0.5">
+              {annotationSummary(sub.annotations).map((line) => (
+                <li key={line} className="text-[11px] text-muted-foreground">
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {sub.mark && (
           <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 px-3 py-2">
             <div className="flex items-center justify-between gap-2">
@@ -454,6 +473,7 @@ function ReviewDialog({
   const [mark, setMark] = useState(sub.mark ?? "");
   const [spread, setSpread] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [annotations, setAnnotations] = useState<Annotation[]>(sub.annotations);
   const padRef = useRef<SignaturePadHandle>(null);
 
   const parsed = useMemo(() => parseMark(mark, DEFAULT_MARK_MAX), [mark]);
@@ -470,12 +490,26 @@ function ReviewDialog({
     }
     setSaving(true);
     const signature = padRef.current?.toDataUrl() ?? null;
-    const err = await saveAdminAnswer({
-      row: sub.row,
-      answer,
-      signature,
-      mark: parsed.ok ? parsed.mark : null,
-    });
+    let err: Error | null;
+    try {
+      err = await saveAdminAnswer({
+        row: sub.row,
+        answer,
+        signature,
+        mark: parsed.ok ? parsed.mark : null,
+        annotations,
+      });
+    } catch (e) {
+      // A thrown error used to leave the button spinning forever; the admin was
+      // left guessing whether the answer had been sent. Say what happened.
+      setSaving(false);
+      toast.error(
+        e instanceof Error && e.message
+          ? `Imeshindikana kutuma: ${e.message}`
+          : "Imeshindikana kutuma jibu. Angalia intaneti kisha ujaribu tena.",
+      );
+      return;
+    }
     if (err) {
       setSaving(false);
       return toast.error(err.message);
@@ -488,16 +522,22 @@ function ReviewDialog({
     if (spread && parsed.ok) {
       for (const other of others) {
         if (other.row.id === sub.row.id) continue;
-        const e = await saveGroupMark(other.row, parsed.mark);
-        if (!e) spreadCount += 1;
+        try {
+          const e = await saveGroupMark(other.row, parsed.mark);
+          if (!e) spreadCount += 1;
+        } catch {
+          // One group failing must not lose the mark already saved on this one.
+        }
       }
     }
     setSaving(false);
+    const tickNote = annotations.length ? ` · alama ${annotations.length} kwenye kazi` : "";
     toast.success(
       parsed.ok
         ? `Jibu na alama ${formatMark(parsed.mark.score, parsed.mark.max)} zimetumwa` +
+            tickNote +
             (spreadCount ? ` · alama zimesambaa kwa magroup ${spreadCount}` : "")
-        : "Jibu limetumwa kwa group",
+        : `Jibu limetumwa kwa group${tickNote}`,
     );
     onChanged();
   };
@@ -529,7 +569,12 @@ function ReviewDialog({
             </div>
 
             {sub.row.file_url ? (
-              <FilePreview src={sub.row.file_url} fileName={sub.row.file_name} height={460} />
+              <AssignmentAnnotator
+                src={sub.row.file_url}
+                fileName={sub.row.file_name}
+                value={annotations}
+                onChange={setAnnotations}
+              />
             ) : (
               <p className="rounded-xl border border-dashed border-border p-4 text-xs text-muted-foreground">
                 Group hili halikuambatanisha faili.

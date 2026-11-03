@@ -22,6 +22,7 @@
  */
 
 import { formatMark } from "./assignmentMarks.ts";
+import { parseAnnotations, type Annotation } from "./assignmentAnnotations.ts";
 
 export const GROUP_SUBMISSION_STATUS = "group_submitted";
 
@@ -66,6 +67,14 @@ export type GroupEnvelope = {
    * the mark.
    */
   mark?: { score: number; max: number };
+  /**
+   * The teacher's marks on the group's own work: a tick, a note or an error, on
+   * the page it belongs to. A tick may carry no words; a note or an error always
+   * does. Kept as plain data (see `assignmentAnnotations.ts`) so the same list
+   * can be drawn on the page for the group, written into an export, or handed to
+   * a prompt.
+   */
+  annotations?: Annotation[];
 };
 
 /**
@@ -139,6 +148,12 @@ export function parseEnvelope(raw: string | null | undefined): GroupEnvelope | n
     if (parsed.answered_at != null) env.answered_at = String(parsed.answered_at);
     if (parsed.mark && Number.isFinite(Number(parsed.mark.score))) {
       env.mark = { score: Number(parsed.mark.score), max: Number(parsed.mark.max) };
+    }
+    // Re-validated rather than trusted: the envelope is written by the browser
+    // and comes back from the database, so a damaged list must not reach a page.
+    if (parsed.annotations != null) {
+      const list = parseAnnotations(parsed.annotations);
+      if (list.length) env.annotations = list;
     }
     return env;
   } catch {
@@ -282,6 +297,8 @@ export type GroupSubmission = {
   mark: string | null;
   markScore: number | null;
   markMax: number | null;
+  /** The teacher's ticks, notes and errors, per page. */
+  annotations: Annotation[];
 };
 
 /** Reads one row back into the shape the screens use. */
@@ -308,6 +325,7 @@ export function toGroupSubmission(row: GroupSubmissionRow): GroupSubmission {
     submittedAt: row.created_at ?? null,
     answered: isAnswered(row),
     mark: formatMark(score, max),
+    annotations: env?.annotations ?? [],
     markScore: score,
     markMax: max,
   };
