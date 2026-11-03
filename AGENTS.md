@@ -1241,45 +1241,47 @@ deduplicate on `upper(trim(reg_no))`, keeping the row that carries the results a
 Do not "fix" this in `findMyGroup` by de-duplicating by Reg Namba — two real students can share
 a Reg Namba only through the data error, and hiding it in the view makes the cleanup harder.
 
-## Confirming a group opens a one-hour window, then locks it
+## Confirming a group writes the seat; there is no lock and no window
 
-Step 2 of `Update Taarifa` confirms the seat rather than merely saving it, and the button says
-**Thibitisha Mabadiliko**. There is no approval step anywhere on this page: the student is the
-only one who knows their own name and phone number, and the request row is written straight to
-`status: approved` as an audit trail, never as a queue. The "Maombi yako" list shows the field
-names the student changed, not an `approved`/`rejected` status, because every row in it is
-already in effect.
+Step 2 of `Update Taarifa` writes the student's seat and the button says **Hifadhi Marekebisho**.
+There is no approval step anywhere on this page: the student is the only one who knows their own
+name and phone number, and the request row is written straight to `status: approved` as an audit
+trail, never as a queue. The "Maombi yako" list shows the field names the student changed, not an
+`approved`/`rejected` status, because every row in it is already in effect.
 
-Confirming is not final on the instant. `supabase/migrations/20261103120000_group_edit_grace_window.sql`
-keeps the seat editable for **one hour** after `group_confirmed_at`, so a student who notices the
-wrong group on the next screen can fix it without an admin. After the hour the seat is frozen.
-The deadline is derived from the stamp rather than stored separately, so a save inside the window
-does not push it out — one confirmation, one hour, then locked, and the window cannot be extended
-by saving again. `src/lib/groupLock.ts` holds the rule (`seatState` / `canEditSeat`) and the
-database applies the same boundary (`confirmed_at <= now() - interval '1 hour'`), so the form
-never offers a dropdown the write then refuses. The three states share one card: open pickers, a
-countdown badge, or a locked summary.
+The seat is the student's to change at any time. An earlier design confirmed the seat and then
+refused to move it again — first forever, then for one hour via
+`supabase/migrations/20261103120000_group_edit_grace_window.sql`. In practice that left a student
+who had saved the wrong group stuck in it: `confirm_student_group` answered `false` to every later
+move and `apply_profile_update` ignored the incoming seminar and group, so a change made on the
+form was **silently dropped**. That is what "kwa wengine haibadiliki" was: the student saved a new
+group, the page showed success, and the row kept the old one.
 
-The browser holds the **publishable key**, so a disabled dropdown proves nothing:
-`apply_profile_update` is a Postgres function reachable straight from PostgREST, and it used to
-rewrite `semina` and `student_group` on any row it was handed. The lock has to be a database rule.
+`src/lib/groupRoster.ts` now writes the seat with a plain table update
+(`saveStudentSeat(id, semina, group)`), and `apply_profile_update` is only asked for reg/name — the
+seat never travels through a function that can refuse it. `src/lib/groupLock.ts` and its
+`GRACE_MS`/`seatState`/`canEditSeat` rule are gone, along with the countdown badge, the locked
+summary and the "three states share one card" UI. The pickers are always live; there is no
+`seatForForm`.
 
-`supabase/migrations/20261102140000_group_confirmation.sql` adds `students.group_confirmed_at`
-and rewrites `apply_profile_update` so that once the hour has run out the incoming seminar and
-group are **ignored, not rejected** — a name or Reg Namba correction on a locked student still
-works. `confirm_student_group(id, semina, group)` takes `FOR UPDATE`, returns `true` when this
-call opened or moved the seat, and `false` when the window has closed, in which case it leaves
-the row untouched. `unlock_student_group(id)` clears the stamp. All three are
-`SECURITY DEFINER` and `GRANT EXECUTE` is issued to `anon`/`authenticated`/`service_role`,
-because RLS does not grant function access and the call is refused before it runs without it.
+`group_confirmed_at` survives, because the planner reads it (`isConfirmed` in
+`src/lib/groupAssignment.ts`) to leave a student where they put themselves rather than re-seating
+them. It is a marker that says "the student chose this seat", not a lock.
 
-Verified against the live database with a throwaway student (deleted afterwards):
+`supabase/migrations/20261104090000_remove_seat_lock.sql` brings a database that still holds the
+old rule into line: it rewrites `confirm_student_group` to move the seat on every call (kept under
+the old name so a stale client still gets a real write rather than a silent no-op) and rewrites
+`apply_profile_update` to apply the incoming seminar and group unconditionally. **The app does not
+depend on that migration**: the direct write works against the live database as it stands, which is
+why the fix ships without DDL.
+
+Verified against the live database with a throwaway student (deleted afterwards), running the real
+`saveStudentSeat` and `updateStudentProfile`:
 
 ```
-before=[SEMINA 15/GROUP 9] first=t
-after_save=[SEMINA 15/GROUP 9] locked=t   <- apply_profile_update did not move the seat
-second=f                                    <- second confirm is a no-op
-unlocked=t                                  <- admin unlock restores editability
+first  saveStudentSeat(SEMINA 4, GROUP 6) -> row [SEMINA 4/GROUP 6], stamp set
+second saveStudentSeat(SEMINA 9, GROUP 3) -> row [SEMINA 9/GROUP 3]   <- the old bug dropped this
+third  saveStudentSeat(SEMINA 1, GROUP 1) -> row [SEMINA 1/GROUP 1]
 ```
 
 Two consequences worth remembering:
@@ -1326,14 +1328,14 @@ This is why "the OK/Cancel text does not show" is a CSS bug and not a missing bu
 `showConfirmButton` was never false. Check the computed `background-color` before
 touching the SweetAlert2 options.
 
-## Step 2 confirms, step 3 shows the new group, and the hour runs from step 2
+## Step 2 writes the seat, step 3 shows the new group
 
 The wizard is three steps: Reg Namba, then the details and the seat, then the group. There is no
-separate "Hakiki" button and no fourth step. The step-2 button reads **Thibitisha Mabadiliko**,
-and that one press writes the details, stamps `group_confirmed_at`, and opens the one-hour window
-described above. The dialog lists every field the student changed — old value struck through, new
-value in primary, seat fields first — so the press is never blind. An unchanged seat still
-confirms: the dialog's job is to confirm, not to require an edit.
+separate "Hakiki" button and no fourth step. The step-2 button reads **Hifadhi Marekebisho**, and
+that one press writes the details, writes the seat, and stamps `group_confirmed_at`. The dialog
+lists every field the student changed — old value struck through, new value in primary, seat fields
+first — so the press is never blind. An unchanged seat still saves: the dialog's job is to save,
+not to require an edit.
 
 Step 3 is where the payoff lands. It renders `GroupRosterView` — the group the student just
 entered, the representative, and the classmates sitting with them — followed by the audit list of
@@ -1343,13 +1345,9 @@ make; rendering it after the save is why `saveAndConfirm` bumps `rosterEpoch` an
 as its last act. `Maliza` writes nothing: by then the row is already saved, so the press only
 reports what the student is holding.
 
-The button label tracks the window, not just whether a stamp exists. `seat === "open"` reads
-**Thibitisha Mabadiliko**; a seat inside the hour or already locked reads **Hifadhi Marekebisho**.
-A locked seat is not offered the pickers at all — it renders the read-only summary, and
-`saveAndConfirm` skips `lockSeat` for it, because re-stamping would be a no-op at best and a
-stale-seat write at worst. A seat inside the hour keeps its pickers and shows the countdown badge.
-Step 3's Back button is disabled once the seat is locked, so the student cannot walk back into
-pickers the database would refuse.
+The label does not track any window, because there is none: the button always reads **Hifadhi
+Marekebisho**, the pickers are always live, and step 3's Back button is always enabled. The student
+can walk back to step 2 and change the seat again as many times as they like.
 
 There is no "Nilikosea Reg Namba" checkbox and no `reason` prefix on the request. Correcting the
 Reg Namba already moves the student's submissions in the same transaction inside
@@ -1367,13 +1365,7 @@ the door, set by `grant_student_edit(uuid)` and read by the student page.
 The rule lives in `src/lib/editPermission.ts` (`canEdit`, `hasGrant`) rather than in the route, so
 the combination can be tested without a browser and the form and the database cannot drift apart on
 who may write. `canEdit` is `globallyEnabled || unlockedAt`; `hasGrant` is `!!unlockedAt` and drives
-both the banner and the forced-open seat.
-
-A grant also releases the seat. "I updated my details wrongly" is exactly the case where the
-seminar or group is what went wrong, so `grant_student_edit` clears `group_confirmed_at` in the same
-call — a grant that could not move the seat could not fix the mistake it was issued for. Because
-the page's row still carries the old stamp, the route reads `seatForForm = editUnlocked ? "open" :
-seat`, or the student would be granted the form and then shown a locked seat.
+the banner.
 
 The grant is spent by the save, not by the clock. `consume_student_edit` clears
 `edit_unlocked_at` after a successful write, and the local row is cleared in the same commit as the

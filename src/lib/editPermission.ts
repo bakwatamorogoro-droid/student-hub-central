@@ -1,5 +1,5 @@
 /**
- * Who may edit, and whether their seat is open.
+ * Who may edit.
  *
  * Two switches decide whether the Update Taarifa form works. `profile_edits_enabled` in
  * `app_settings` is the cohort-wide switch the admin flips during a correction week. The
@@ -25,11 +25,8 @@ export function canEdit({ globallyEnabled, unlockedAt }: EditPermission): boolea
 /**
  * True when the admin has opened this one form.
  *
- * `grant_student_edit` clears `group_confirmed_at` in the same call, but the row the page
- * already holds still carries the old stamp. The route reads this to force the seat open,
- * without which the student would be granted the form and then shown a locked seat — the
- * one thing the grant exists to undo. The same flag drives the banner, so the student is
- * never left guessing why the form suddenly works.
+ * The flag drives the banner, so the student is never left guessing why the form suddenly
+ * works, and the route reads it to spend the grant after a save.
  */
 export function hasGrant({ unlockedAt }: EditPermission): boolean {
   return !!unlockedAt;
