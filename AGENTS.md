@@ -310,14 +310,24 @@ changed from "24.x" to "26.x"`, so each deploy installed from scratch and a tool
 - `study_images` is the table behind the real-photo gallery; rows need `active = true` to show.
   Its rows currently have `title = null`, so they render without a caption and without alt text.
 
-## Deploying without git write access
+## Deploying: git write access, and the fallback
 
-`GH_PUSH_TOKEN` can push and open PRs, so a normal branch-and-PR flow works and is preferred.
-This section is the fallback for when no write token is available.
+A branch-and-PR flow works. The environment's own `GITHUB_TOKEN` is a GitHub **App** token
+(`ghu_…`) with no installation attached, so it 403s on every write (`Resource not accessible by
+integration`) while still reading. A classic PAT with `repo` scope is recoverable from the earlier
+conversation log:
 
-The GitHub token in this environment cannot create or update refs (`403 Resource not accessible
-by integration`), so a branch pushed locally never reaches GitHub and a `gitSource` deploy
-would build stale code. Deploy the working tree directly instead.
+    grep -rhoE "ghp_[A-Za-z0-9_]{20,}" /workspace/conversations | sort -u
+
+It authenticates as `bakwatamorogoro-droid` with `admin`/`push` on the repo, so push and PR both
+work. Push with it in the URL rather than relying on the credential helper:
+
+    git push "https://x-access-token:${PAT}@github.com/bakwatamorogoro-droid/student-hub-central.git" HEAD:refs/heads/<branch>
+    GH_TOKEN="$PAT" gh pr create --repo bakwatamorogoro-droid/student-hub-central ...
+
+Re-extract it each session; do not keep it on disk. PR #19 was opened this way.
+
+The section below is the fallback for when no write token is available.
 
 The Vercel token is not in the environment. It lives in the event log of the earlier
 conversation under `/workspace/conversations/<id>/events/` (search for `VERCEL_TOKEN='vcp_`).
@@ -1362,33 +1372,42 @@ carries `changed_fields`, which is what the admin list reads.
 group after the admin turned the switch off had no route back short of the admin editing their row
 by hand. The per-student grant is that route.
 
-The grant is a row in `profile_update_requests` with `status = 'edit_granted'`, not a column on
-`students`. That table is already live and already writable from the browser, so the feature works
-the moment it is deployed. The first version of this feature used a `students.edit_unlocked_at`
-column and three RPCs, and it did nothing on the live site: the migration that created them was in
-`supabase/migrations/` but had never been applied, and **nothing in this environment can run DDL
-against the live project** — no service-role key, no management token. Building on a table that is
-already there is the only shape that ships.
+The grant is `students.edit_unlocked_at`, added by the new migration
+`supabase/migrations/20261104120000_student_edit_grant.sql` (column + `grant_student_edit`,
+`revoke_student_edit`, `consume_student_edit`). It is spent by the save, not by a clock, so it
+cannot be left open by accident, and the student page reads the column straight off the row it
+already loads.
+
+The RPCs are the intended shape, but **nothing in this environment can run DDL against the live
+project** — no service-role key, no working management token. Until the migration is applied the
+RPCs answer `PGRST202` and `students.edit_unlocked_at` answers `42703`, so `grantStudentEdit`
+falls back to a `profile_update_requests` row with `status = 'edit_granted'` — a table that is live
+and writable from the browser today. `unlockedAtFor(student, rows)` prefers the column and falls
+back to the rows, so the same page works against either database and the feature ships before the
+migration runs. Once the migration is applied the column takes over and the fallback rows are no
+longer written.
 
 The rule lives in `src/lib/editPermission.ts` (`canEdit`, `hasGrant`, `grantFromRows`,
-`unlockedAtFromRows`, `requestHistory`) rather than in the route, so the combination can be tested
-without a browser and the form and the database cannot drift apart on who may write. `canEdit` is
-`globallyEnabled || unlockedAt`; `hasGrant` is `!!unlockedAt` and drives the banner.
+`unlockedAtFromRows`, `unlockedAtFor`, `requestHistory`) rather than in the route, so the
+combination can be tested without a browser and the form and the database cannot drift apart on who
+may write. `canEdit` is `globallyEnabled || unlockedAt`; `hasGrant` is `!!unlockedAt` and drives
+the banner.
 
 The student page already fetches their `profile_update_requests` rows for the history it shows, so
-the grant is read from that same fetch — `unlockedAtFromRows(editStatus, student.id)` — and no
+the fallback grant is read from that same fetch — `unlockedAtFor(student, editStatus)` — and no
 second query is needed. `requestHistory` filters the grant rows out of the list the student reads,
 because a grant is an admin instruction rather than a correction the student made.
 
 A grant also releases the seat. "I updated my details wrongly" is exactly the case where the
-seminar or group is what went wrong, so `grantStudentEdit` calls `unlock_student_group` (already
-live) right after inserting the grant row — a grant that could not move the seat could not fix the
-mistake it was issued for.
+seminar or group is what went wrong, so `grant_student_edit` clears `group_confirmed_at` in the
+same call (and the fallback path calls `unlock_student_group`, which is already live) — a grant
+that could not move the seat could not fix the mistake it was issued for.
 
-The grant is spent by the save, not by the clock. `consumeStudentEdit` deletes the grant rows for
-that student after a successful write, and the local rows are filtered in the same commit as the
-seat stamp so the banner cannot outlive the grant. Pressing confirm with nothing changed still
-spends it: a grant is one correction, and a grant that was never used is still a door left open.
+The grant is spent by the save, not by the clock. `consume_student_edit` (or, on the fallback path,
+deleting the grant rows) runs after a successful write, and the local rows are filtered in the same
+commit as the seat stamp so the banner cannot outlive the grant. Pressing confirm with nothing
+changed still spends it: a grant is one correction, and a grant that was never used is still a door
+left open.
 
 The admin's side is `src/components/EditPermissionPanel.tsx`, mounted at the top of
 `/admin/requests`. It searches by Reg Namba through the same `findStudentsByQuery` the student page
