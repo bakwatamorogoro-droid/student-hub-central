@@ -18,12 +18,20 @@ import {
   allMarksRows,
   formatMark,
   gradeLabel,
+  gradeOrDash,
+  groupMarkId,
+  groupMarksRows,
+  groupOverviewRows,
+  marksSummary,
   markPercent,
   parseMark,
   type GroupMark,
+  type GroupOverview,
   type MarkRosterPerson,
 } from "@/lib/assignmentMarks";
 import {
+  exportGroupMarks,
+  exportGroupMarksCsv,
   exportMarks,
   exportMarksCsv,
   marksRowsForGroup,
@@ -68,6 +76,8 @@ function Page() {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<GroupSubmission | null>(null);
   const [exporting, setExporting] = useState<ExportKind | null>(null);
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [overviewExporting, setOverviewExporting] = useState<ExportKind | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -109,6 +119,50 @@ function Page() {
   const allRows = useMemo(() => allMarksRows(roster, groupMarks), [roster, groupMarks]);
 
   const markedGroups = submissions.filter((s) => s.markScore !== null).length;
+
+  /**
+   * The groups that did the work, one line each — the admin's "who has
+   * finished?" list, and the source of the export picker.
+   */
+  const overview = useMemo(() => groupOverviewRows(submissions), [submissions]);
+  const summary = useMemo(() => marksSummary(overview), [overview]);
+
+  /** Every group that submitted, keyed for the export selection. */
+  const allIds = useMemo(() => overview.map((g) => g.id), [overview]);
+  const allSelected = allIds.length > 0 && chosen.length === allIds.length;
+
+  const toggleGroup = (id: string) =>
+    setChosen((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const toggleAll = () => setChosen(allSelected ? [] : allIds);
+
+  /**
+   * The chosen groups' students and marks, or everyone's when nothing is ticked.
+   * `chosen` holds group keys, so an unticked list means "all" rather than "none"
+   * — an empty sheet would read as a bug.
+   */
+  const chosenRows = useMemo(() => {
+    const groups = chosen.length ? chosen : allIds;
+    return groupMarksRows(roster, groupMarks, groups);
+  }, [roster, groupMarks, chosen, allIds]);
+
+  const chosenTitle = chosen.length ? `Magroup ${chosen.length} yaliyochaguliwa` : "Magroup Yote";
+
+  const doExportChosen = async (kind: ExportKind) => {
+    if (!chosenRows.length) {
+      toast.error("Hakuna wanafunzi kwenye magroup uliyochagua.");
+      return;
+    }
+    setOverviewExporting(kind);
+    try {
+      await exportGroupMarks(chosenRows, kind, chosenTitle);
+      toast.success(`Faili la alama za magroup (${kind.toUpperCase()}) limetengenezwa.`);
+    } catch (e) {
+      toast.error(`Imeshindikana kutengeneza faili: ${(e as Error).message}`);
+    } finally {
+      setOverviewExporting(null);
+    }
+  };
 
   const doExport = async (kind: ExportKind) => {
     setExporting(kind);
@@ -229,6 +283,24 @@ function Page() {
         </CardContent>
       </Card>
 
+      <OverviewCard
+        overview={overview}
+        summary={summary}
+        chosen={chosen}
+        allSelected={allSelected}
+        exporting={overviewExporting}
+        onToggle={toggleGroup}
+        onToggleAll={toggleAll}
+        onExport={(kind) => void doExportChosen(kind)}
+        onExportCsv={() => exportGroupMarksCsv(chosenRows, chosenTitle)}
+        onOpen={(id) => {
+          const found = submissions.find(
+            (s) => groupMarkId(s.key.semina, s.key.gender, s.key.group) === id,
+          );
+          if (found) setOpen(found);
+        }}
+      />
+
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -276,6 +348,207 @@ function Page() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * "Taarifa za kazi za group" — who did the work, how it is going, and the export
+ * picker.
+ *
+ * The card grid below answers "what did each group send?"; this answers "which
+ * groups have finished, and what did they score?" in one glance, and is where
+ * the admin ticks the groups to download. Ticking nothing means everyone, so the
+ * buttons are never a dead end.
+ */
+function OverviewCard({
+  overview,
+  summary,
+  chosen,
+  allSelected,
+  exporting,
+  onToggle,
+  onToggleAll,
+  onExport,
+  onExportCsv,
+  onOpen,
+}: {
+  overview: GroupOverview[];
+  summary: ReturnType<typeof marksSummary>;
+  chosen: string[];
+  allSelected: boolean;
+  exporting: ExportKind | null;
+  onToggle: (id: string) => void;
+  onToggleAll: () => void;
+  onExport: (kind: ExportKind) => void;
+  onExportCsv: () => void;
+  onOpen: (id: string) => void;
+}) {
+  const selected = chosen.length;
+  const scope = selected ? `${selected} magroup yaliyochaguliwa` : "Magroup yote";
+
+  return (
+    <Card className="border-2 border-emerald-600/25">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+          <Users className="h-4 w-4 text-emerald-700 dark:text-emerald-300" /> Taarifa za kazi za
+          group
+          <span className="text-xs font-normal text-muted-foreground">
+            magroup {summary.total} yaliyofanya kazi
+          </span>
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Kila group liliyofanya kazi, idadi ya waliotuma, alama na daraja. Chagua magroup kisha
+          pakua — au acha wote wachaguliwe kupakua kila kitu.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Stat label="Yaliyofanya kazi" value={String(summary.submitted)} />
+          <Stat label="Yaliyojibiwa" value={String(summary.answered)} />
+          <Stat label="Yaliyopewa alama" value={String(summary.marked)} />
+          <Stat
+            label="Wastani wa alama"
+            value={summary.average === null ? "—" : `${summary.average.toFixed(1)}%`}
+          />
+        </div>
+
+        {summary.marked > 0 && (
+          <p className="text-[11px] text-muted-foreground">
+            Alama bora {summary.best?.toFixed(1)}% · Alama ya chini {summary.lowest?.toFixed(1)}%
+          </p>
+        )}
+
+        {overview.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+            Hakuna group lililofanya kazi bado.
+          </p>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+              <label className="flex cursor-pointer items-center gap-2 text-xs font-bold">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-emerald-600"
+                  checked={allSelected}
+                  onChange={onToggleAll}
+                  aria-label="Chagua magroup yote"
+                />
+                Chagua yote
+              </label>
+              <span className="text-[11px] text-muted-foreground">
+                {selected ? `${selected} yamechaguliwa` : "Yote yatapakuliwa"}
+              </span>
+            </div>
+
+            <div className="max-h-72 overflow-y-auto rounded-lg border border-border">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-muted/60 text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="w-8 p-2" />
+                    <th className="p-2 text-left">Group</th>
+                    <th className="p-2 text-left">Hali</th>
+                    <th className="p-2 text-left">Waliotuma</th>
+                    <th className="p-2 text-left">Alama</th>
+                    <th className="p-2 text-left">Daraja</th>
+                    <th className="p-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {overview.map((g) => (
+                    <tr key={g.id} className="border-t border-border">
+                      <td className="p-2">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-emerald-600"
+                          checked={chosen.includes(g.id)}
+                          onChange={() => onToggle(g.id)}
+                          aria-label={`Chagua ${g.label}`}
+                        />
+                      </td>
+                      <td className="p-2 font-semibold">{g.label}</td>
+                      <td className="p-2">
+                        {g.answered ? (
+                          <Badge className="gap-1 bg-emerald-600 text-white">Imejibiwa</Badge>
+                        ) : (
+                          <Badge variant="outline">Inasubiri</Badge>
+                        )}
+                      </td>
+                      <td className="p-2">
+                        {g.presenters.length ? (
+                          <span title={g.presenters.join(", ")}>
+                            {g.presenters.length} walioandaa
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="p-2 font-mono font-bold">
+                        {g.mark || (
+                          <span className="font-sans font-normal text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="p-2 font-bold">{g.grade || "—"}</td>
+                      <td className="p-2 text-right">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs font-bold"
+                          onClick={() => onOpen(g.id)}
+                        >
+                          <ExternalLink className="h-3 w-3" /> Fungua
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-600/25 bg-emerald-600/5 p-2">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                Pakua {scope}:
+              </span>
+              {(["xlsx", "docx", "pdf"] as const).map((kind) => (
+                <Button
+                  key={kind}
+                  size="sm"
+                  variant="outline"
+                  className="gap-1 font-bold"
+                  disabled={exporting !== null}
+                  onClick={() => onExport(kind)}
+                >
+                  {exporting === kind ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Download className="h-3.5 w-3.5" />
+                  )}
+                  {kind === "xlsx" ? "Excel" : kind === "docx" ? "Word" : "PDF"}
+                </Button>
+              ))}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="gap-1 font-bold"
+                disabled={exporting !== null}
+                onClick={onExportCsv}
+              >
+                <Download className="h-3.5 w-3.5" /> CSV
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** One small number with its label, for the overview's summary strip. */
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2">
+      <div className="text-lg font-bold leading-tight">{value}</div>
+      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
     </div>
   );
 }

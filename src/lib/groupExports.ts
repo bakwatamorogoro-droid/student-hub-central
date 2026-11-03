@@ -17,10 +17,13 @@ import { saveAs } from "file-saver";
 import { genderLabel, type SeminarReport } from "@/lib/groupAssignment";
 import {
   ALL_MARKS_HEADERS,
+  GROUP_MARKS_HEADERS,
   allMarksRows,
   allMarksTable,
+  groupMarksTable,
   type AllMarksRow,
   type GroupMark,
+  type GroupMarksRow,
   type MarkRosterPerson,
 } from "@/lib/assignmentMarks";
 
@@ -390,4 +393,141 @@ export async function exportMarks(
 
 export function exportMarksCsv(rows: AllMarksRow[], title = "Magroup Yote"): void {
   writeMarksCsv(rows, title);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Per-group marks export — "Alama za Group"                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The owner's second request: the admin finishes marking, then either downloads
+ * everyone at once, or ticks the groups they want and downloads those alone —
+ * each with its own students and its own mark.
+ *
+ * This is the per-group shape, not the flat "everyone" shape: the group, the
+ * seminar and the gender are carried on every line so a sheet that holds three
+ * groups is still readable on its own. `groupMarksRows` builds those rows; this
+ * section only turns them into a file.
+ */
+
+const GROUP_MARKS_TITLE = "Alama za Kazi — Kazi za Kufanya (kwa Group)";
+const GROUP_MARKS_SUBTITLE =
+  "Kila group na wanafunzi wake, kozi na alama zake. Alama zilizowekwa na mwalimu.";
+
+function exportGroupMarksXlsx(rows: GroupMarksRow[], title: string) {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows, { header: [...GROUP_MARKS_HEADERS] });
+  ws["!cols"] = [
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 20 },
+    { wch: 32 },
+    { wch: 44 },
+    { wch: 10 },
+    { wch: 14 },
+  ];
+  XLSX.utils.book_append_sheet(wb, ws, "Alama");
+  XLSX.writeFile(wb, `${slug(title)}-alama-group-${stamp()}.xlsx`);
+}
+
+function writeGroupMarksCsv(rows: GroupMarksRow[], title: string) {
+  const ws = XLSX.utils.json_to_sheet(rows, { header: [...GROUP_MARKS_HEADERS] });
+  const csv = XLSX.utils.sheet_to_csv(ws);
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${slug(title)}-alama-group-${stamp()}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function exportGroupMarksDocx(rows: GroupMarksRow[], title: string) {
+  const table = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [
+      new TableRow({
+        tableHeader: true,
+        children: GROUP_MARKS_HEADERS.map((h) => headerCell(h)),
+      }),
+      ...rows.map(
+        (r) =>
+          new TableRow({
+            children: [
+              bodyCell(r.Group),
+              bodyCell(r.Semina),
+              bodyCell(r.Jinsia),
+              bodyCell(r["Reg Namba"]),
+              bodyCell(r.Jina),
+              bodyCell(r.Kozi),
+              bodyCell(r.Alama),
+              bodyCell(r["Daraja (Grade)"]),
+            ],
+          }),
+      ),
+    ],
+  });
+
+  const doc = new Document({
+    sections: [
+      {
+        properties: {},
+        children: [
+          new Paragraph({ text: GROUP_MARKS_TITLE, heading: HeadingLevel.HEADING_1 }),
+          new Paragraph({
+            children: [
+              new TextRun(
+                `${title}${GAP}·${GAP}Wanafunzi ${rows.length}${GAP}·${GAP}${GROUP_MARKS_SUBTITLE}`,
+              ),
+            ],
+          }),
+          new Paragraph(""),
+          table,
+        ],
+      },
+    ],
+  });
+  const blob = await Packer.toBlob(doc);
+  saveAs(blob, `${slug(title)}-alama-group-${stamp()}.docx`);
+}
+
+function exportGroupMarksPdf(rows: GroupMarksRow[], title: string) {
+  const doc = new jsPDF({ orientation: "landscape" });
+  doc.setFontSize(14);
+  doc.text(GROUP_MARKS_TITLE, 14, 15);
+  doc.setFontSize(9);
+  doc.text(
+    `${title}  ·  Imezalishwa: ${new Date().toLocaleString("sw-TZ")}  ·  Wanafunzi ${rows.length}`,
+    14,
+    21,
+  );
+  autoTable(doc, {
+    startY: 26,
+    head: [[...GROUP_MARKS_HEADERS]],
+    body: groupMarksTable(rows),
+    styles: { fontSize: 8, cellPadding: 1.6 },
+    headStyles: { fillColor: [16, 122, 87] },
+    columnStyles: { 3: { cellWidth: 32 }, 4: { cellWidth: 55 }, 5: { cellWidth: 70 } },
+  });
+  doc.save(`${slug(title)}-alama-group-${stamp()}.pdf`);
+}
+
+/**
+ * Writes the per-group marks out.
+ *
+ * `title` names the file and heads the document — one group's label, or a
+ * summary such as "Magroup 5 yaliyochaguliwa" for a hand-picked set.
+ */
+export async function exportGroupMarks(
+  rows: GroupMarksRow[],
+  kind: MarksExportKind,
+  title = "Magroup Yote",
+): Promise<void> {
+  if (kind === "xlsx") return exportGroupMarksXlsx(rows, title);
+  if (kind === "docx") return exportGroupMarksDocx(rows, title);
+  return exportGroupMarksPdf(rows, title);
+}
+
+export function exportGroupMarksCsv(rows: GroupMarksRow[], title = "Magroup Yote"): void {
+  writeGroupMarksCsv(rows, title);
 }
