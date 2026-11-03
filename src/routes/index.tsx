@@ -24,6 +24,7 @@ import { RealPhotoHero } from "@/components/RealPhotoHero";
 import { UpdateTaarifaCard } from "@/components/UpdateTaarifaCard";
 import { AnnouncementBanner } from "@/components/AnnouncementBanner";
 import { Odometer } from "@/components/Odometer";
+import { testCategory, TEST_NUMBERS } from "@/lib/examCatalog";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -48,14 +49,6 @@ type TestStat = { key: string; labelKey: string; count: number };
 
 /** Read by the home stats so the admin can hide a counter without a rebuild. */
 type StatVisibility = { showSubmissions: boolean; showTest1: boolean; hiddenSince: string | null };
-
-function categorize(title: string): string {
-  const t = (title || "").toLowerCase();
-  if (/\btest\s*0*1\b/.test(t) || /\bmtihani\s*0*1\b/.test(t)) return "test1";
-  if (/\btest\s*0*2\b/.test(t) || /\bmtihani\s*0*2\b/.test(t)) return "test2";
-  if (/\btest\s*0*3\b/.test(t) || /\bmtihani\s*0*3\b/.test(t)) return "test3";
-  return "others";
-}
 
 function Index() {
   const { t } = useI18n();
@@ -111,22 +104,22 @@ function Index() {
           .from("daily_visits")
           .select("id", { count: "exact", head: true })
           .eq("visit_date", localDate),
-        supabase.from("exams").select("id,title"),
+        supabase.from("exams").select("id,title,test_number"),
       ]);
       setStats({ students: s.count || 0, submissions: sub.count || 0, visitsToday: v.count || 0 });
 
-      const exams = (ex.data || []) as { id: string; title: string }[];
+      const exams = (ex.data || []) as { id: string; title: string; test_number: number | null }[];
       // Only keys are stored here: translating inside this one-shot effect would
       // freeze the label to whichever language was active on first paint.
       const groups: { key: string; labelKey: string }[] = [
-        { key: "test1", labelKey: "test_1" },
-        { key: "test2", labelKey: "test_2" },
-        { key: "test3", labelKey: "test_3" },
+        ...TEST_NUMBERS.map((n) => ({ key: `test${n}`, labelKey: `test_${n}` })),
         { key: "others", labelKey: "test_other" },
       ];
       const results = await Promise.all(
         groups.map(async (g) => {
-          const ids = exams.filter((e) => categorize(e.title) === g.key).map((e) => e.id);
+          // Filed by the admin's `test_number`, with the title only as a fallback,
+          // so a Test 1 named "MAJARIO" counts as Test 1 here too.
+          const ids = exams.filter((e) => testCategory(e) === g.key).map((e) => e.id);
           if (ids.length === 0) return { ...g, count: 0 };
           let q = supabase
             .from("submissions")

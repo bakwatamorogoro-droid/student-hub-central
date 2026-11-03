@@ -1368,6 +1368,46 @@ Reg Namba already moves the student's submissions in the same transaction inside
 student to describe a correction the system had already decided to accept. The request row still
 carries `changed_fields`, which is what the admin list reads.
 
+## Exam visibility and the Test number label live in one module
+
+`src/lib/examCatalog.ts` owns both rules the Test Online page kept getting wrong:
+
+- **`test_number` is the label; the title is only a fallback.** The admin's picker
+  writes `test_number` (1–5). The tabs used to read the title, so an exam named
+  `MAJARIO` with `test_number = 1` was filed under "Others" and looked like it was
+  not a test at all. A number outside 1–5 is not trusted (`test_number = 9` falls
+  back to the title); a title is matched on the whole word, so "Testimony" and
+  "latest" are not Test numbers.
+- **A published exam reaches every signed-in student.** `visibleExams` does no
+  academic filtering. The old filter hid an exam from anyone with no `study_year`
+  or `academic_year` — **959 of 1623 students** — so a published Test 1 reached 56
+  of them. `target_study_year` / `academic_year` still record who an exam was
+  written for; they no longer hide it from the rest.
+
+`TEST_CATEGORIES` drives the tabs and the home per-test counters, so an exam cannot
+be counted in one place and missed in the other. It is `test1…test5` (the admin
+picker offers all five) plus `others`. Extending the picker means extending
+`TEST_CATEGORIES`, `TEST_NUMBERS`, the `test_N` i18n keys, and the `categoryCounts`
+seed together — `examCatalog.test.ts` fails if they drift.
+
+## The step wizard is one component and one module
+
+`src/lib/stepWizard.ts` holds the arithmetic (which steps are done, which is
+current, how far along) and `src/components/StepWizard.tsx` renders it. Both the
+assignment flow (`/quiz`, three steps) and the attendance flow (`/attendance`, two)
+read the same helpers, so the two pages cannot drift into different ideas of what
+step 2 means. Add a third flow through these rather than hand-rolling another
+progress bar.
+
+`GroupPicker` takes a `view` prop (`all` | `pick` | `members`): the assignment
+wizard shows the picker on step 1 and the members list on step 2 instead of stacking
+both cards on one screen. The default, `all`, is the original single-page behaviour.
+
+`/attendance` defers the check-in. A scan or a typed code records *which* session
+and advances to a confirm step; the actual `checkIn` only fires on the second tap.
+Do not move the check-in back into the scan handler — a poster QR read by accident
+would mark attendance on the spot.
+
 ## One student's form can be opened while the switch is off
 
 `profile_edits_enabled` is all-or-nothing, so the single student who saved the wrong seminar or

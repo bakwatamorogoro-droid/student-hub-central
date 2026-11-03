@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { QrScanner } from "@/components/QrScanner";
+import { WizardNav, WizardProgress, type WizardStep } from "@/components/StepWizard";
 import { parseAttendanceQr, type ScannedAttendance } from "@/lib/attendance-qr";
 import {
   checkIn,
@@ -63,6 +64,7 @@ export function QrAttendanceCheckIn({
   const [code, setCode] = useState(initialJoinCode ?? "");
   const [sessions, setSessions] = useState<OpenSession[]>([]);
   const [studentToken, setTokenState] = useState<string | null>(() => getStudentToken());
+  const [step, setStep] = useState(0);
 
   // Sign-in happens on this page rather than sending the student to /account and
   // back: a scanned link arrives with a session to join, and a detour loses it.
@@ -78,6 +80,20 @@ export function QrAttendanceCheckIn({
         ? { kind: "join", joinCode: initialJoinCode }
         : null,
   );
+  // The session the student picked on step 1 and is about to confirm on step 2.
+  const [chosen, setChosen] = useState<ScannedAttendance | null>(pendingRef.current);
+
+  /**
+   * The two steps a student walks: say which session, then confirm it.
+   *
+   * Signing in is part of step 1 because identity has to be settled before a
+   * session can be joined, and the scanned poster link already carries the code —
+   * so step 1 is "who and which", step 2 is "yes, check me in".
+   */
+  const steps: WizardStep[] = [
+    { key: "pick", title: "Kipindi", hint: "Jitambulishe na chagua kipindi" },
+    { key: "confirm", title: "Thibitisha", hint: "Ruhusu GPS na hudhuria" },
+  ];
 
   const refreshSessions = useCallback(async () => {
     const token = getStudentToken();
@@ -153,6 +169,18 @@ export function QrAttendanceCheckIn({
     [record],
   );
 
+  /**
+   * Step 1 → step 2. A scan or a typed code no longer checks the student in on
+   * the spot; it records which session they mean and moves them to the confirm
+   * step, so the check-in is always a deliberate second tap.
+   */
+  const chooseSession = useCallback((scanned: ScannedAttendance) => {
+    setChosen(scanned);
+    setFailure(null);
+    setScanning(false);
+    setStep(1);
+  }, []);
+
   const handleToken = useCallback(
     async (raw: string) => {
       setScanning(false);
@@ -167,21 +195,21 @@ export function QrAttendanceCheckIn({
       if (!st) {
         pendingRef.current = scanned;
         if (scanned.kind === "join") setCode(scanned.joinCode);
-        toast.error("Weka Reg Namba na PIN yako hapa chini, kisha mahudhurio yataendelea.");
+        toast.error("Weka Reg Namba na PIN yako, kisha mahudhurio yataendelea.");
         return;
       }
-      await runScan(scanned, st);
+      chooseSession(scanned);
     },
-    [runScan],
+    [chooseSession],
   );
 
   // Finishes a scan that was waiting on sign-in.
   useEffect(() => {
-    if (!studentToken || !pendingRef.current || busy) return;
+    if (!studentToken || !pendingRef.current) return;
     const scanned = pendingRef.current;
     pendingRef.current = null;
-    void runScan(scanned, studentToken);
-  }, [studentToken, busy, runScan]);
+    chooseSession(scanned);
+  }, [studentToken, chooseSession]);
 
   const signIn = useCallback(async () => {
     if (!regNo.trim()) return toast.error("Weka Reg Namba yako");
@@ -213,15 +241,42 @@ export function QrAttendanceCheckIn({
   const handleCode = useCallback(async () => {
     const st = getStudentToken();
     if (!st) {
-      toast.error("Weka Reg Namba na PIN yako hapa chini kwanza.");
+      toast.error("Weka Reg Namba na PIN yako kwanza.");
       return;
     }
     if (code.trim().length < 4) {
       toast.error("Andika msimbo wa kipindi");
       return;
     }
-    await runScan({ kind: "join", joinCode: code.trim() }, st);
-  }, [code, runScan]);
+    chooseSession({ kind: "join", joinCode: code.trim() });
+  }, [code, chooseSession]);
+
+  /** Step 2: the deliberate tap that actually records the attendance. */
+  const confirmCheckIn = useCallback(async () => {
+    const st = getStudentToken();
+    if (!st) {
+      toast.error("Weka Reg Namba na PIN yako kwanza.");
+      setStep(0);
+      return;
+    }
+    if (!chosen) {
+      setStep(0);
+      return;
+    }
+    await runScan(chosen, st);
+  }, [chosen, runScan]);
+
+  const backToPick = useCallback(() => {
+    setFailure(null);
+    setStep(0);
+  }, []);
+
+  /** The words for the session waiting to be confirmed, so step 2 can name it. */
+  const chosenLabel = chosen
+    ? chosen.kind === "join"
+      ? chosen.joinCode
+      : "QR ya kipindi"
+    : "";
 
   if (done) {
     return (
@@ -238,7 +293,14 @@ export function QrAttendanceCheckIn({
               Umbali uliothibitishwa: {Math.round(done.distanceM)}m
             </p>
           </div>
-          <Button variant="outline" onClick={() => setDone(null)}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setDone(null);
+              setChosen(null);
+              setStep(0);
+            }}
+          >
             Sajili kipindi kingine
           </Button>
         </CardContent>
@@ -253,10 +315,12 @@ export function QrAttendanceCheckIn({
           <QrCode className="h-4 w-4" /> Hudhuria kwa QR Code
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Skani QR ya kipindi ukiwa darasani. Umbali unaotakiwa unawekwa na mwalimu.
+          Hatua mbili tu: chagua kipindi, kisha thibitisha. Umbali unaotakiwa unawekwa na mwalimu.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
+        <WizardProgress steps={steps} current={step} onJump={(i) => i === 0 && backToPick()} />
+
         {failure && (
           <div className="flex gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
             <XCircle className="h-5 w-5 shrink-0 text-destructive" />
@@ -277,7 +341,7 @@ export function QrAttendanceCheckIn({
           </div>
         )}
 
-        {!studentToken && (
+        {step === 0 && !studentToken && (
           <div className="space-y-3 rounded-xl border border-primary/30 bg-primary/5 p-3">
             <div className="flex gap-2">
               <ShieldAlert className="h-5 w-5 shrink-0 text-primary" />
@@ -329,7 +393,7 @@ export function QrAttendanceCheckIn({
           </div>
         )}
 
-        {sessions.length > 0 && (
+        {step === 0 && sessions.length > 0 && (
           <div className="space-y-1.5">
             <p className="text-xs font-medium text-muted-foreground">Vipindi vinavyoendelea sasa</p>
             {sessions.map((s) => (
@@ -346,58 +410,87 @@ export function QrAttendanceCheckIn({
           </div>
         )}
 
-        {busy ? (
-          <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
-            <Loader2 className="h-8 w-8 animate-spin" />
-            <p className="text-sm">Inathibitisha eneo lako…</p>
-          </div>
-        ) : scanning ? (
-          <QrScanner
-            onResult={handleToken}
-            onError={(m) => {
-              setScanning(false);
-              toast.error(m);
-            }}
-          />
-        ) : (
-          <>
-            <Button onClick={() => setScanning(true)} className="w-full">
-              <QrCode className="h-4 w-4" /> Fungua kamera kuscan QR
-            </Button>
+        {step === 0 ? (
+          busy ? (
+            <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
+              <Loader2 className="h-8 w-8 animate-spin" />
+              <p className="text-sm">Inaangalia kipindi…</p>
+            </div>
+          ) : scanning ? (
+            <QrScanner
+              onResult={handleToken}
+              onError={(m) => {
+                setScanning(false);
+                toast.error(m);
+              }}
+            />
+          ) : (
+            <>
+              <Button onClick={() => setScanning(true)} className="w-full">
+                <QrCode className="h-4 w-4" /> Fungua kamera kuscan QR
+              </Button>
 
-            <div className="space-y-2 rounded-xl border border-border p-3">
-              <Label htmlFor="join-code" className="text-xs">
-                Huna kamera? Andika msimbo wa kipindi
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  id="join-code"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  placeholder="Mfano K7M2QX"
-                  className="font-mono tracking-widest"
-                  maxLength={12}
-                />
-                <Button variant="outline" onClick={handleCode} disabled={code.trim().length < 4}>
-                  Hudhuria
-                </Button>
+              <div className="space-y-2 rounded-xl border border-border p-3">
+                <Label htmlFor="join-code" className="text-xs">
+                  Huna kamera? Andika msimbo wa kipindi
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="join-code"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.toUpperCase())}
+                    placeholder="Mfano K7M2QX"
+                    className="font-mono tracking-widest"
+                    maxLength={12}
+                  />
+                  <Button variant="outline" onClick={handleCode} disabled={code.trim().length < 4}>
+                    Endelea
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Mwalimu husoma msimbo kwa sauti. Umbali unahitajika sawa na wa QR.
+                </p>
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                Mwalimu husoma msimbo kwa sauti. Umbali unahitajika sawa na wa QR.
-              </p>
-            </div>
 
-            <p className="flex items-center justify-center gap-1 text-[11px] text-muted-foreground">
-              <MapPin className="h-3 w-3" /> GPS itatumika kuthibitisha eneo lako
-            </p>
-            <div className="flex gap-2 rounded-lg border border-border bg-muted/40 p-3">
-              <ShieldAlert className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <p className="text-[11px] text-muted-foreground">
-                Mahudhurio yanarekodiwa mara moja tu kwa kipindi. QR inabadilika mara kwa mara, kwa
-                hiyo picha iliyotumwa kwa mwenzako haitafanya kazi.
+              <p className="flex items-center justify-center gap-1 text-[11px] text-muted-foreground">
+                <MapPin className="h-3 w-3" /> GPS itatumika kuthibitisha eneo lako
               </p>
+              <div className="flex gap-2 rounded-lg border border-border bg-muted/40 p-3">
+                <ShieldAlert className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <p className="text-[11px] text-muted-foreground">
+                  Mahudhurio yanarekodiwa mara moja tu kwa kipindi. QR inabadilika mara kwa mara, kwa
+                  hiyo picha iliyotumwa kwa mwenzako haitafanya kazi.
+                </p>
+              </div>
+            </>
+          )
+        ) : (
+          <div className="space-y-3 rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-3">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+              <div className="text-sm">
+                <p className="font-bold">Thibitisha mahudhurio</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Kipindi ulichochagua: <b className="font-mono">{chosenLabel}</b>. Ukibonyeza
+                  Hudhuria, eneo lako litathibitishwa kwa GPS.
+                </p>
+              </div>
             </div>
-          </>
+            {busy ? (
+              <div className="flex flex-col items-center gap-2 py-6 text-muted-foreground">
+                <Loader2 className="h-8 w-8 animate-spin" />
+                <p className="text-sm">Inathibitisha eneo lako…</p>
+              </div>
+            ) : (
+              <WizardNav
+                current={step}
+                count={steps.length}
+                onBack={backToPick}
+                onNext={confirmCheckIn}
+                nextLabel="Hudhuria"
+              />
+            )}
+          </div>
         )}
       </CardContent>
     </Card>

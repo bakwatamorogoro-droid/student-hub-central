@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { GroupPicker, memberNames, useGroupMembers } from "@/components/GroupAssignmentPicker";
 import { FilePreview, PreviewLoading } from "@/components/FilePreview";
 import { StudentMatchesPicker, type Student } from "@/components/StudentMatchesPicker";
+import { WizardNav, WizardProgress, type WizardStep } from "@/components/StepWizard";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { storageGet, storageSet } from "@/lib/safe-storage";
 import { toast } from "@/lib/toast";
@@ -38,7 +39,6 @@ import {
   FileText,
   Loader2,
   Lock,
-  Send,
   Sparkles,
   Upload,
   Users,
@@ -81,6 +81,7 @@ function Page() {
   const [sending, setSending] = useState(false);
   const [existing, setExisting] = useState<GroupSubmissionRow | null>(null);
   const [checkingExisting, setCheckingExisting] = useState(false);
+  const [step, setStep] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const members = useGroupMembers(roster, confirmedKey);
@@ -194,6 +195,9 @@ function Page() {
     if (!semina || !group || !gender) return;
     setConfirmedKey({ semina, group, gender });
     setSelected(new Set());
+    // Confirming the group is what step 1 was for, so move straight to naming
+    // who presented rather than making the student find the Next button.
+    setStep(1);
   };
 
   const changeGroup = () => {
@@ -203,11 +207,49 @@ function Page() {
     setQuestion("");
     setFile(null);
     setPreviewed(false);
+    setStep(0);
   };
 
   const presenters = memberNames(members, selected);
   const check = canSubmit({ question, presenters, file, previewed });
   const canSend = check.ok && !!confirmedKey && !existing && !sending;
+
+  const wizardSteps: WizardStep[] = useMemo(
+    () => [
+      {
+        key: "group",
+        title: t("ga_wizard_step1"),
+        hint: confirmedKey ? `${semina} · ${group}` : t("ga_wizard_step1_hint"),
+      },
+      {
+        key: "presenters",
+        title: t("ga_wizard_step2"),
+        hint: presenters.length
+          ? `${presenters.length} ${t("ga_wizard_chosen")}`
+          : t("ga_wizard_step2_hint"),
+      },
+      { key: "send", title: t("ga_wizard_step3"), hint: t("ga_wizard_step3_hint") },
+    ],
+    [t, confirmedKey, semina, group, presenters.length],
+  );
+
+  // Step 1 needs a confirmed group, step 2 needs at least one presenter. Step 3
+  // is the send action itself, so it is never "blocked" by Next — the Send button
+  // reports what is still missing instead.
+  const stepBlocked = step === 0 ? !confirmedKey : step === 1 ? presenters.length === 0 : false;
+
+  const goNext = () => {
+    if (step === 0 && !confirmedKey) {
+      toast.error(t("ga_confirm"));
+      return;
+    }
+    if (step === 1 && presenters.length === 0) {
+      toast.error(t("ga_need_presenter"));
+      return;
+    }
+    setStep((s) => Math.min(s + 1, wizardSteps.length - 1));
+  };
+  const goBack = () => setStep((s) => Math.max(s - 1, 0));
 
   const send = async () => {
     if (!confirmedKey || !file) return;
@@ -325,6 +367,16 @@ function Page() {
               <SentCard row={existing} onChangeGroup={changeGroup} />
             ) : (
               <>
+                <WizardProgress
+                  steps={wizardSteps}
+                  current={step}
+                  onJump={(i) => {
+                    // Only a step already unlocked can be jumped to, and step 2
+                    // needs a confirmed group behind it.
+                    if (i <= step || (i === 1 && confirmedKey)) setStep(i);
+                  }}
+                />
+
                 <GroupPicker
                   roster={roster}
                   loadingRoster={loadingRoster}
@@ -340,9 +392,33 @@ function Page() {
                   selected={selected}
                   onToggle={toggle}
                   readOnly={checkingExisting}
+                  view={step === 0 ? "pick" : "members"}
                 />
 
-                {confirmedKey && (
+                {step === 2 && confirmedKey && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-primary/20 bg-primary/5 px-3 py-2.5 text-sm">
+                    <Users className="h-4 w-4 shrink-0 text-primary" />
+                    <b>
+                      {semina} · {group}
+                    </b>
+                    <span className="text-muted-foreground">
+                      {t("ga_presenters_summary")}:{" "}
+                      {presenters.length ? presenters.join(", ") : "—"}
+                    </span>
+                  </div>
+                )}
+
+                {step <= 1 && (
+                  <WizardNav
+                    current={step}
+                    count={wizardSteps.length}
+                    onBack={goBack}
+                    onNext={goNext}
+                    nextDisabled={stepBlocked}
+                  />
+                )}
+
+                {step === 2 && confirmedKey && (
                   <>
                     <Card className="border-primary/25">
                       <CardHeader className="pb-3">
@@ -452,24 +528,15 @@ function Page() {
                           </div>
                         )}
 
-                        <div className="flex flex-col gap-2 sm:flex-row">
-                          <Button className="flex-1 font-bold" disabled={!canSend} onClick={send}>
-                            {sending ? (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                              <Send className="mr-2 h-4 w-4" />
-                            )}
-                            {sending ? t("ga_submitting") : t("ga_submit")}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={changeGroup}
-                            disabled={sending}
-                            className="gap-1"
-                          >
-                            <ArrowLeft className="h-4 w-4" /> {t("ga_back")}
-                          </Button>
-                        </div>
+                        <WizardNav
+                          current={step}
+                          count={wizardSteps.length}
+                          onBack={goBack}
+                          onNext={send}
+                          nextLabel={t("ga_submit")}
+                          nextDisabled={!canSend}
+                          busy={sending}
+                        />
 
                         <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
                           <Lock className="h-3 w-3" /> {t("ga_already")}
