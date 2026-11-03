@@ -290,6 +290,20 @@ test("the preview knows a PDF from a Word file", () => {
   assert.equal(previewKindFor(null), "other");
 });
 
+test("a missing file name falls back to the URL, so a PDF is not called unshowable", () => {
+  const url = "https://x.supabase.co/storage/v1/object/public/exam-media/a/b/work.pdf";
+  assert.equal(previewKindFor(null, url), "pdf");
+  assert.equal(previewKindFor("", url), "pdf");
+  assert.equal(previewKindFor("   ", url), "pdf");
+  assert.equal(previewKindFor(null, "https://x/y/kazi.docx"), "word");
+  // A name is the stronger signal: it wins even when the URL disagrees.
+  assert.equal(previewKindFor("kazi.pdf", "https://x/y/thing.bin"), "pdf");
+  // A signed URL's query string must not hide the extension.
+  assert.equal(previewKindFor(null, "https://x/y/work.pdf?token=abc.def"), "pdf");
+  assert.equal(previewKindFor(null, "https://x/y/archive.zip"), "other");
+  assert.equal(previewKindFor(null, null), "other");
+});
+
 test("byte sizes read the way a student expects", () => {
   assert.equal(formatBytes(500 * 1024), "500KB");
   assert.equal(formatBytes(2 * 1024 * 1024), "2.0MB");

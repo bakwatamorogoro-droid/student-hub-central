@@ -554,9 +554,29 @@ export function checkPresenterTurns(input: {
   return { ok: true };
 }
 
-/** The file extension label the preview needs. */
-export function previewKindFor(fileName: string | null | undefined): "pdf" | "word" | "other" {
-  const name = String(fileName ?? "").toLowerCase();
+/**
+ * What kind of preview a file needs, from its name and, failing that, its URL.
+ *
+ * The name is what the student's file was called and is the better signal, but
+ * it is not always there: a row can carry a `file_url` with no `file_name`, and
+ * a name the upload stripped can arrive empty. Falling back to the URL's
+ * extension is what keeps such a file from being declared "cannot be shown"
+ * when it is a perfectly ordinary PDF.
+ */
+export function previewKindFor(
+  fileName: string | null | undefined,
+  src?: string | null,
+): "pdf" | "word" | "other" {
+  const fromName = kindOfName(fileName);
+  if (fromName !== "other") return fromName;
+  return kindOfName(src);
+}
+
+function kindOfName(value: string | null | undefined): "pdf" | "word" | "other" {
+  // A query string or fragment on a signed URL must not hide the extension.
+  const name = String(value ?? "")
+    .toLowerCase()
+    .split(/[?#]/)[0];
   if (name.endsWith(".pdf")) return "pdf";
   if (name.endsWith(".doc") || name.endsWith(".docx")) return "word";
   return "other";

@@ -37,6 +37,252 @@ type PdfPage = {
   };
 };
 
+/**
+ * Opens a PDF once per `src` and reports its page count.
+ *
+ * Both viewers below need the same three things — the worker, the document and
+ * the failure message — so they share this instead of each importing pdfjs. The
+ * `onLoaded` callback is held in a ref so a parent's inline arrow does not
+ * reopen the document on every render.
+ */
+function usePdfDocument(src: string, onLoaded?: (pages: number) => void) {
+  const [doc, setDoc] = useState<PdfDoc | null>(null);
+  const [pages, setPages] = useState(0);
+  const [busy, setBusy] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const loadedRef = useRef(onLoaded);
+  loadedRef.current = onLoaded;
+
+  useEffect(() => {
+    let cancelled = false;
+    setBusy(true);
+    setError(null);
+    setPages(0);
+    setDoc(null);
+
+    (async () => {
+      try {
+        const pdfjs = await import("pdfjs-dist");
+        // The worker is what keeps a 40-page document from freezing the tab.
+        const worker = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+        pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+        const opened = (await pdfjs.getDocument({ url: src }).promise) as unknown as PdfDoc;
+        if (cancelled) return;
+        setDoc(opened);
+        setPages(opened.numPages);
+        loadedRef.current?.(opened.numPages);
+      } catch (e) {
+        if (!cancelled) setError((e as Error).message || "Imeshindikana kufungua PDF.");
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  return { doc, pages, busy, error };
+}
+
+/** The zoom control both viewers show. */
+function ZoomControls({ scale, setScale }: { scale: number; setScale: (s: number) => void }) {
+  return (
+    <div className="flex items-center gap-1">
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className="h-7 px-2"
+        onClick={() => setScale(Math.max(0.6, Number((scale - 0.2).toFixed(1))))}
+        aria-label="Punguza"
+      >
+        <ZoomOut className="h-3.5 w-3.5" />
+      </Button>
+      <span className="text-[11px] text-muted-foreground">{Math.round(scale * 100)}%</span>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className="h-7 px-2"
+        onClick={() => setScale(Math.min(3, Number((scale + 0.2).toFixed(1))))}
+        aria-label="Kuza"
+      >
+        <ZoomIn className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  );
+}
+
+/** The shared "could not open" panel. */
+function PdfError({ error, src }: { error: string; src: string }) {
+  return (
+    <div className="space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
+      <div className="flex items-center gap-2 font-bold text-amber-700 dark:text-amber-300">
+        <FileWarning className="h-4 w-4" /> PDF haikufunguka hapa
+      </div>
+      <p className="text-xs text-muted-foreground">{error}</p>
+      <Button asChild size="sm" variant="outline">
+        <a href={src} target="_blank" rel="noreferrer">
+          Fungua PDF kwenye tab mpya
+        </a>
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * Every page of a PDF, stacked and scrollable.
+ *
+ * This is the reading view: an admin opening a student's work wants to read it
+ * top to bottom, not press "Mbele" through it. Each page is drawn to its own
+ * canvas by `pdfjs-dist`, so the words are the app's own render rather than
+ * whatever the browser's built-in viewer decides to do — which is the whole
+ * point, since a browser without one shows an empty frame and no error.
+ */
+export function PdfDocumentView({
+  src,
+  onLoaded,
+  height = 460,
+}: {
+  src: string;
+  onLoaded?: (pages: number) => void;
+  height?: number;
+}) {
+  const { doc, pages, busy, error } = usePdfDocument(src, onLoaded);
+  const [scale, setScale] = useState(1.1);
+
+  if (error) return <PdfError error={error} src={src} />;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-bold text-muted-foreground">
+          {pages ? `Kurasa ${pages}` : "Inafungua..."}
+        </span>
+        <ZoomControls scale={scale} setScale={setScale} />
+      </div>
+      <div
+        className="relative overflow-auto rounded-xl border border-border bg-muted/30 p-2"
+        style={{ maxHeight: height }}
+      >
+        <div className="mx-auto w-fit space-y-2">
+          {doc &&
+            Array.from({ length: pages }, (_, i) => (
+              <PdfCanvas key={i + 1} doc={doc} page={i + 1} scale={scale} />
+            ))}
+        </div>
+        {busy && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/40">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** One page drawn to its own canvas, and only once it is near the viewport. */
+function PdfCanvas({ doc, page, scale }: { doc: PdfDoc; page: number; scale: number }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const [near, setNear] = useState(false);
+
+  // Ask the page for its box without drawing it. This is metadata only, so it
+  // is cheap, and it lets the stack reserve the right space before the pixels
+  // exist — otherwise every page below the fold would collapse to zero height
+  // and the scrollbar would jump as each one rendered.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const p = await doc.getPage(page);
+        if (cancelled) return;
+        const viewport = p.getViewport({ scale });
+        setSize({ width: viewport.width, height: viewport.height });
+      } catch {
+        // The render effect below reports the failure; sizing is best-effort.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [doc, page, scale]);
+
+  // A 40-page document drawn eagerly is ~390 MB of canvas on a phone, so a page
+  // is only painted once it comes near the visible area. The margin means it is
+  // already drawn by the time it scrolls into view.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      setNear(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setNear(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: "400px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !size || !near) return;
+    let cancelled = false;
+    let task: { promise: Promise<void>; cancel: () => void } | null = null;
+
+    (async () => {
+      try {
+        const p = await doc.getPage(page);
+        if (cancelled) return;
+        const viewport = p.getViewport({ scale });
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        // A device-pixel-ratio-aware backing store keeps the text sharp on a
+        // retina phone; the CSS size stays the layout size.
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        canvas.width = Math.floor(viewport.width * dpr);
+        canvas.height = Math.floor(viewport.height * dpr);
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        task = p.render({ canvasContext: ctx, viewport });
+        await task.promise;
+      } catch {
+        // A cancelled render is the normal path when zoom changes quickly.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      task?.cancel();
+    };
+  }, [doc, page, scale, size, near]);
+
+  return (
+    <div
+      ref={wrapRef}
+      className="relative rounded bg-white shadow"
+      style={size ? { width: size.width, height: size.height } : undefined}
+    >
+      <canvas ref={canvasRef} className="block rounded" />
+      {!size && (
+        <div className="flex h-40 w-[min(70vw,34rem)] items-center justify-center">
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function PdfPageView({
   src,
   page,
@@ -47,53 +293,19 @@ export function PdfPageView({
   height = 460,
 }: PdfPageViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const docRef = useRef<PdfDoc | null>(null);
   const taskRef = useRef<{ cancel: () => void } | null>(null);
-  const [pages, setPages] = useState(0);
+  const { doc, pages, busy: opening, error } = usePdfDocument(src, onLoaded);
   const [scale, setScale] = useState(1.2);
-  const [busy, setBusy] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Open the document once per src.
-  useEffect(() => {
-    let cancelled = false;
-    setBusy(true);
-    setError(null);
-    setPages(0);
-    docRef.current = null;
-
-    (async () => {
-      try {
-        const pdfjs = await import("pdfjs-dist");
-        // The worker is what keeps a 40-page document from freezing the tab.
-        const worker = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
-        pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
-        const doc = (await pdfjs.getDocument({ url: src }).promise) as unknown as PdfDoc;
-        if (cancelled) return;
-        docRef.current = doc;
-        setPages(doc.numPages);
-        onLoaded?.(doc.numPages);
-      } catch (e) {
-        if (!cancelled) setError((e as Error).message || "Imeshindikana kufungua PDF.");
-      } finally {
-        if (!cancelled) setBusy(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      taskRef.current?.cancel();
-    };
-  }, [src, onLoaded]);
+  const [rendering, setRendering] = useState(false);
+  const [renderError, setRenderError] = useState<string | null>(null);
 
   // Draw the current page whenever the page or the zoom changes.
   useEffect(() => {
-    const doc = docRef.current;
     const canvas = canvasRef.current;
     if (!doc || !canvas || page < 1 || page > doc.numPages) return;
 
     let cancelled = false;
-    setBusy(true);
+    setRendering(true);
     (async () => {
       try {
         const p = await doc.getPage(page);
@@ -113,20 +325,21 @@ export function PdfPageView({
         const task = p.render({ canvasContext: ctx, viewport });
         taskRef.current = task;
         await task.promise;
+        setRenderError(null);
       } catch (e) {
         // A cancelled render is the normal path when the page changes quickly.
         if (!cancelled && (e as { name?: string })?.name !== "RenderingCancelledException") {
-          setError((e as Error).message || "Imeshindikana kuonyesha ukurasa.");
+          setRenderError((e as Error).message || "Imeshindikana kuonyesha ukurasa.");
         }
       } finally {
-        if (!cancelled) setBusy(false);
+        if (!cancelled) setRendering(false);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [page, scale, pages]);
+  }, [doc, page, scale]);
 
   const click = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -138,21 +351,8 @@ export function PdfPageView({
     [onPageClick],
   );
 
-  if (error) {
-    return (
-      <div className="space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
-        <div className="flex items-center gap-2 font-bold text-amber-700 dark:text-amber-300">
-          <FileWarning className="h-4 w-4" /> PDF haikufunguka hapa
-        </div>
-        <p className="text-xs text-muted-foreground">{error}</p>
-        <Button asChild size="sm" variant="outline">
-          <a href={src} target="_blank" rel="noreferrer">
-            Fungua PDF kwenye tab mpya
-          </a>
-        </Button>
-      </div>
-    );
-  }
+  const failure = error ?? renderError;
+  if (failure) return <PdfError error={failure} src={src} />;
 
   return (
     <div className="space-y-2">
@@ -183,29 +383,7 @@ export function PdfPageView({
             Mbele <ChevronRight className="h-3.5 w-3.5" />
           </Button>
         </div>
-        <div className="flex items-center gap-1">
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2"
-            onClick={() => setScale((s) => Math.max(0.6, Number((s - 0.2).toFixed(1))))}
-            aria-label="Punguza"
-          >
-            <ZoomOut className="h-3.5 w-3.5" />
-          </Button>
-          <span className="text-[11px] text-muted-foreground">{Math.round(scale * 100)}%</span>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2"
-            onClick={() => setScale((s) => Math.min(3, Number((s + 0.2).toFixed(1))))}
-            aria-label="Kuza"
-          >
-            <ZoomIn className="h-3.5 w-3.5" />
-          </Button>
-        </div>
+        <ZoomControls scale={scale} setScale={setScale} />
       </div>
 
       <div
@@ -219,7 +397,7 @@ export function PdfPageView({
           <canvas ref={canvasRef} className="block rounded bg-white shadow" />
           {overlay?.(page)}
         </div>
-        {busy && (
+        {(opening || rendering) && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/40">
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
           </div>
