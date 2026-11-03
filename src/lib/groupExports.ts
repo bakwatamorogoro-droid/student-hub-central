@@ -15,10 +15,26 @@ import {
 } from "docx";
 import { saveAs } from "file-saver";
 import { genderLabel, type SeminarReport } from "@/lib/groupAssignment";
+import {
+  ALL_MARKS_HEADERS,
+  allMarksRows,
+  allMarksTable,
+  type AllMarksRow,
+  type GroupMark,
+  type MarkRosterPerson,
+} from "@/lib/assignmentMarks";
 
 export type ExportKind = "xlsx" | "docx" | "pdf";
 
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+
+/** A safe file-name fragment: the group label is "SEMINA 3 · GROUP 5 · WANAUME". */
+const slug = (value: string) =>
+  String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[^\w]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase() || "alama";
 const GAP = " ";
 
 /** One flat row per group, which is what a spreadsheet wants. */
@@ -236,4 +252,142 @@ export async function exportGroups(reports: SeminarReport[], kind: ExportKind): 
 
 export function exportGroupsCsv(reports: SeminarReport[]): void {
   exportCsv(reports);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Marks export — "Alama za Kazi"                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The owner asked for two things the group export does not cover:
+ *
+ * 1. Mark a group's work (the pen and the mark live on the admin screen).
+ * 2. Export the marks to Excel, Word and PDF — one group at a time, or every
+ *    group at once. When every group is exported, the sheet shows **only** the
+ *    student's name, registration number, course and marks, because that is the
+ *    list the owner hands back to the class.
+ *
+ * `allMarksRows` already produces that four-column shape; this file only turns
+ * those rows into a file. The single-group export keeps the group label and the
+ * group's mark in the heading so the owner can see which work was marked.
+ */
+
+const MARKS_TITLE = "Alama za Kazi — Kazi za Kufanya";
+const MARKS_SUBTITLE =
+  "Jina, Reg Namba, Kozi na Alama. Alama zilizowekwa na mwalimu kwa kazi za group.";
+
+function exportMarksXlsx(rows: AllMarksRow[], title: string) {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows, { header: [...ALL_MARKS_HEADERS] });
+  ws["!cols"] = [{ wch: 20 }, { wch: 32 }, { wch: 44 }, { wch: 10 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(wb, ws, "Alama");
+  XLSX.writeFile(wb, `${slug(title)}-alama-${stamp()}.xlsx`);
+}
+
+function writeMarksCsv(rows: AllMarksRow[], title: string) {
+  const ws = XLSX.utils.json_to_sheet(rows, { header: [...ALL_MARKS_HEADERS] });
+  const csv = XLSX.utils.sheet_to_csv(ws);
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${slug(title)}-alama-${stamp()}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function exportMarksDocx(rows: AllMarksRow[], title: string) {
+  const table = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [
+      new TableRow({
+        tableHeader: true,
+        children: ALL_MARKS_HEADERS.map((h) => headerCell(h)),
+      }),
+      ...rows.map(
+        (r) =>
+          new TableRow({
+            children: [
+              bodyCell(r["Reg Namba"]),
+              bodyCell(r.Jina),
+              bodyCell(r.Kozi),
+              bodyCell(r.Alama),
+              bodyCell(r["Daraja (Grade)"]),
+            ],
+          }),
+      ),
+    ],
+  });
+
+  const doc = new Document({
+    sections: [
+      {
+        properties: {},
+        children: [
+          new Paragraph({ text: MARKS_TITLE, heading: HeadingLevel.HEADING_1 }),
+          new Paragraph({
+            children: [
+              new TextRun(
+                `${title}${GAP}·${GAP}Wanafunzi ${rows.length}${GAP}·${GAP}${MARKS_SUBTITLE}`,
+              ),
+            ],
+          }),
+          new Paragraph(""),
+          table,
+        ],
+      },
+    ],
+  });
+  const blob = await Packer.toBlob(doc);
+  saveAs(blob, `${slug(title)}-alama-${stamp()}.docx`);
+}
+
+function exportMarksPdf(rows: AllMarksRow[], title: string) {
+  const doc = new jsPDF({ orientation: "landscape" });
+  doc.setFontSize(14);
+  doc.text(MARKS_TITLE, 14, 15);
+  doc.setFontSize(9);
+  doc.text(
+    `${title}  ·  Imezalishwa: ${new Date().toLocaleString("sw-TZ")}  ·  Wanafunzi ${rows.length}`,
+    14,
+    21,
+  );
+  autoTable(doc, {
+    startY: 26,
+    head: [[...ALL_MARKS_HEADERS]],
+    body: allMarksTable(rows),
+    styles: { fontSize: 8, cellPadding: 1.6 },
+    headStyles: { fillColor: [16, 122, 87] },
+    columnStyles: { 0: { cellWidth: 40 }, 1: { cellWidth: 70 }, 2: { cellWidth: 90 } },
+  });
+  doc.save(`${slug(title)}-alama-${stamp()}.pdf`);
+}
+
+/** The group's own mark, in the same four-column shape, for a one-group export. */
+export function marksRowsForGroup(
+  roster: MarkRosterPerson[],
+  mark: GroupMark | null,
+): AllMarksRow[] {
+  return allMarksRows(roster, mark ? [mark] : []);
+}
+
+export type MarksExportKind = ExportKind;
+
+/**
+ * Writes the marks out.
+ *
+ * `title` is what names the file and heads the document — the group label for one
+ * group, or "Magroup Yote" for everyone.
+ */
+export async function exportMarks(
+  rows: AllMarksRow[],
+  kind: MarksExportKind,
+  title = "Magroup Yote",
+): Promise<void> {
+  if (kind === "xlsx") return exportMarksXlsx(rows, title);
+  if (kind === "docx") return exportMarksDocx(rows, title);
+  return exportMarksPdf(rows, title);
+}
+
+export function exportMarksCsv(rows: AllMarksRow[], title = "Magroup Yote"): void {
+  writeMarksCsv(rows, title);
 }

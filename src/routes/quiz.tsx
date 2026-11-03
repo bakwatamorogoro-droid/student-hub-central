@@ -30,6 +30,7 @@ import {
   type GroupKey,
   type GroupSubmissionRow,
 } from "@/lib/groupAssignmentSubmission";
+import { gradeLabel, markPercent } from "@/lib/assignmentMarks";
 import {
   AlertCircle,
   ArrowLeft,
@@ -611,6 +612,17 @@ function SentCard({ row, onChangeGroup }: { row: GroupSubmissionRow; onChangeGro
                   alt="Sahihi ya mfumo"
                   className="max-h-24 rounded-lg border bg-white p-1"
                 />
+              )}
+              {sub.mark && (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-background px-3 py-2">
+                  <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                    {t("ga_mark_label")}
+                  </span>
+                  <span className="font-mono text-lg font-bold text-primary">{sub.mark}</span>
+                  <Badge variant="secondary">
+                    {gradeLabel(markPercent(sub.markScore, sub.markMax))}
+                  </Badge>
+                </div>
               )}
             </div>
           ) : (

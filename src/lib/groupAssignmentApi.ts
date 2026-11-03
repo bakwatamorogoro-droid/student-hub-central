@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import type { Mark } from "@/lib/assignmentMarks";
 import {
   GROUP_MAX_SCORE,
   GROUP_SUBMISSION_STATUS,
@@ -125,6 +126,8 @@ export type SaveAnswerInput = {
   answer: string;
   /** The system pen's PNG data URL, or null when nothing was drawn. */
   signature: string | null;
+  /** The mark the admin typed, e.g. "7/24". Absent means no mark was given. */
+  mark?: Mark | null;
 };
 
 /**
@@ -134,6 +137,10 @@ export type SaveAnswerInput = {
  * envelope still sees the answer, and `teacher_confirmed` is what marks the work
  * answered. `status` is deliberately left alone: it is what identifies the row as
  * a group's work.
+ *
+ * The mark goes to both places it is useful: the envelope keeps the exact pair of
+ * numbers the admin typed, and the row's own `score`/`max_score` columns keep it
+ * visible to anything that reads the table without knowing the envelope.
  */
 export async function saveAdminAnswer(input: SaveAnswerInput): Promise<Error | null> {
   const env =
@@ -153,6 +160,7 @@ export async function saveAdminAnswer(input: SaveAnswerInput): Promise<Error | n
     answered_at: new Date().toISOString(),
   };
   if (input.signature) next.answer_signature = input.signature;
+  if (input.mark) next.mark = input.mark;
 
   const update: Database["public"]["Tables"]["pdf_submissions"]["Update"] = {
     feedback: input.answer,
@@ -160,8 +168,33 @@ export async function saveAdminAnswer(input: SaveAnswerInput): Promise<Error | n
     teacher_confirmed: true,
     graded_at: new Date().toISOString(),
   };
+  if (input.mark) {
+    update.score = input.mark.score;
+    update.max_score = input.mark.max;
+  }
 
   const { error } = await supabase.from("pdf_submissions").update(update).eq("id", input.row.id);
+  return (error as unknown as Error) ?? null;
+}
+
+/**
+ * Writes a mark onto a group's row without touching the answer or the signature.
+ *
+ * The owner asked for a mark entered once to be "propagated to the other groups".
+ * That is a separate, explicit action rather than something the answer save does
+ * silently: a whole seminar is often marked the same way, but a mark carried to a
+ * group that has not been read would be a mark nobody gave.
+ */
+export async function saveGroupMark(row: GroupSubmissionRow, mark: Mark): Promise<Error | null> {
+  const env = parseEnvelope(row.ai_extracted_text);
+  const next: GroupEnvelope | null = env ? { ...env, mark } : null;
+  const update: Database["public"]["Tables"]["pdf_submissions"]["Update"] = {
+    score: mark.score,
+    max_score: mark.max,
+    graded_at: new Date().toISOString(),
+  };
+  if (next) update.ai_extracted_text = serializeEnvelope(next);
+  const { error } = await supabase.from("pdf_submissions").update(update).eq("id", row.id);
   return (error as unknown as Error) ?? null;
 }
 

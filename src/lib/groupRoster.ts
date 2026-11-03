@@ -17,6 +17,7 @@ import {
   type RosterEntry,
   type SeminarReport,
 } from "@/lib/groupAssignment";
+import type { MarkRosterPerson } from "@/lib/assignmentMarks";
 
 export type { MyGroup, SeminarReport };
 
@@ -144,6 +145,26 @@ export async function reassignSeminar(semina: string): Promise<AssignOutcome> {
 
 export async function loadSeminarReports(): Promise<SeminarReport[]> {
   return buildSeminarReports(await loadRoster());
+}
+
+/**
+ * The roster with each student's course, which the marks export needs and the
+ * group logic does not. Kept separate so the group pages are not made to fetch a
+ * column they never read.
+ */
+export async function loadMarkRoster(): Promise<MarkRosterPerson[]> {
+  const columns = "id, reg_no, full_name, course, semina, gender, student_group";
+  const fallbacks = [columns, "id, reg_no, full_name, semina, gender, student_group"];
+  let lastError: unknown = null;
+  for (const cols of fallbacks) {
+    try {
+      return await fetchAllStudents<MarkRosterPerson>(cols, { orderBy: "reg_no" });
+    } catch (e) {
+      lastError = e;
+      if (!missingColumnFrom(e)) throw e;
+    }
+  }
+  throw lastError;
 }
 
 export async function loadMyGroup(regNo: string): Promise<MyGroup | null> {

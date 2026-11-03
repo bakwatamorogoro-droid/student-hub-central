@@ -1539,3 +1539,34 @@ Three other things that were fixed at the same time, all worth keeping:
   because Safari only learned SVG favicons in 16.4. `index.html` also carries a
   `preconnect` to the Supabase origin; without it the first query waited for DNS
   and TLS to finish.
+
+## Marks, the red pen and the marks export (Kazi za Kufanya)
+
+The admin marks a group's work the way a teacher writes on paper: one short
+string, `7/24`. `src/lib/assignmentMarks.ts` owns every rule around that, and it
+is pure and import-free so `node --test` pins it:
+
+- `parseMark` accepts `7/24`, `7 / 24`, `7-24`, `7 out of 24`, `7 kati ya 24`, and
+  a bare `7` (out of `DEFAULT_MARK_MAX`). It rejects a score above the total,
+  a total of zero, a negative score, and a trailing `%` — a percentage is not a
+  mark out of a total, so reading `7%` as `7` would silently change the mark.
+- The mark lives in two places on purpose. The envelope (`ai_extracted_text`)
+  keeps the exact `{score, max}` pair; the row's own `score`/`max_score` columns
+  keep it visible to anything reading `pdf_submissions` without knowing the
+  envelope. `toGroupSubmission` reads the envelope first and falls back to the
+  columns, so a row written before the mark moved into the envelope still shows.
+- "Sambaza alama kwa magroup mengine" is an explicit checkbox, not a side effect
+  of saving an answer. A whole seminar is often marked alike, but a mark carried
+  to a group nobody read is a mark nobody gave. It copies the mark only — never
+  the answer or the signature.
+
+The export (`exportMarks` in `src/lib/groupExports.ts`) writes the same rows to
+Excel, Word, PDF and CSV, for one group or for all. When every group is exported
+the sheet shows **only** Reg Namba, Jina, Kozi, Alama and grade, which is what the
+owner asked for; `allMarksRows` builds exactly that shape. Students in a group
+with no mark yet stay on the roll with a blank mark, because dropping them would
+hide who is still outstanding.
+
+`SignaturePad` signs in red (`#dc2626`) by default, with black, blue and green
+swatches. Red is the requested default, but a red tick can be lost against red
+text, so the choice is kept.

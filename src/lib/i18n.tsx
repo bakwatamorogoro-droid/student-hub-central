@@ -143,6 +143,7 @@ const dict: Record<string, { sw: string; en: string }> = {
   ga_presenters_summary: { sw: "Mliopresent", en: "Presented by" },
   ga_question_summary: { sw: "Swali letu", en: "Our question" },
   ga_answer_from_admin: { sw: "Jibu la mwalimu", en: "Teacher's answer" },
+  ga_mark_label: { sw: "Alama", en: "Mark" },
   ga_waiting_answer: {
     sw: "Mwalimu bado hajatuma jibu. Subirini.",
     en: "The teacher has not sent an answer yet. Please wait.",
