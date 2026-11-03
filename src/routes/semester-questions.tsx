@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker, type Student } from "@/components/StudentMatchesPicker";
-import { ACTIVE_SEMESTERS } from "@/lib/academicTargeting";
+import { ACTIVE_SEMESTERS, matchesAcademicTarget } from "@/lib/academicTargeting";
 import { useI18n } from "@/lib/i18n";
 import { storageGet, storageSet } from "@/lib/safe-storage";
 
@@ -95,10 +95,9 @@ function Page() {
     const rows = (data || []).filter((p) => {
       // Only the semester the owner has switched on is visible.
       if (p.target_semester && !ACTIVE_SEMESTERS.includes(p.target_semester)) return false;
-      // A paper aimed at one study year only shows for that year.
-      if (p.target_study_year && s && Number(p.target_study_year) !== Number(s.study_year))
-        return false;
-      return true;
+      // A paper aimed at one study year only shows for that year. A student whose
+      // year is unknown keeps it: see `matchesAcademicTarget`.
+      return matchesAcademicTarget(p, s);
     });
     setPapers(rows);
   };
