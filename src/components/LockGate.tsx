@@ -6,7 +6,10 @@ import { Lock, Clock, ShieldAlert, CalendarClock, BellRing, KeyRound } from "luc
 function useTypeEraseLoop(text: string, typeSpeed = 70, eraseSpeed = 35, pause = 1400) {
   const [out, setOut] = useState("");
   useEffect(() => {
-    if (!text) { setOut(""); return; }
+    if (!text) {
+      setOut("");
+      return;
+    }
     let i = 0;
     let phase: "type" | "pause" | "erase" = "type";
     let cancelled = false;
@@ -16,19 +19,28 @@ function useTypeEraseLoop(text: string, typeSpeed = 70, eraseSpeed = 35, pause =
       if (phase === "type") {
         i++;
         setOut(text.slice(0, i));
-        if (i >= text.length) { phase = "pause"; delay = pause; }
+        if (i >= text.length) {
+          phase = "pause";
+          delay = pause;
+        }
       } else if (phase === "pause") {
-        phase = "erase"; delay = eraseSpeed;
+        phase = "erase";
+        delay = eraseSpeed;
       } else {
         i--;
         setOut(text.slice(0, i));
-        if (i <= 0) { phase = "type"; delay = 500; }
-        else delay = eraseSpeed;
+        if (i <= 0) {
+          phase = "type";
+          delay = 500;
+        } else delay = eraseSpeed;
       }
       timer = setTimeout(step, delay);
     };
     let timer = setTimeout(step, 300);
-    return () => { cancelled = true; clearTimeout(timer); };
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [text, typeSpeed, eraseSpeed, pause]);
   return out;
 }
@@ -36,7 +48,10 @@ function useTypeEraseLoop(text: string, typeSpeed = 70, eraseSpeed = 35, pause =
 function useCountdown(target: string | null | undefined) {
   const [ms, setMs] = useState<number | null>(null);
   useEffect(() => {
-    if (!target) { setMs(null); return; }
+    if (!target) {
+      setMs(null);
+      return;
+    }
     const tick = () => setMs(new Date(target).getTime() - Date.now());
     tick();
     const id = setInterval(tick, 1000);
@@ -62,7 +77,11 @@ export function LockGate({ children }: { children: React.ReactNode }) {
   const [loaded, setLoaded] = useState(false);
 
   const load = async () => {
-    const { data } = await supabase.from("app_settings").select("system_locked, lock_message, lock_until, results_secret_slug").eq("id", 1).single();
+    const { data } = await supabase
+      .from("app_settings")
+      .select("system_locked, lock_message, lock_until, results_secret_slug")
+      .eq("id", 1)
+      .single();
     setSettings(data);
     setLoaded(true);
   };
@@ -71,10 +90,15 @@ export function LockGate({ children }: { children: React.ReactNode }) {
     load();
     const ch = supabase
       .channel("lock-gate")
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "app_settings" }, () => load())
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "app_settings" }, () =>
+        load(),
+      )
       .subscribe();
     const poll = setInterval(load, 30000);
-    return () => { supabase.removeChannel(ch); clearInterval(poll); };
+    return () => {
+      supabase.removeChannel(ch);
+      clearInterval(poll);
+    };
   }, []);
 
   const lockUntilMs = settings?.lock_until ? new Date(settings.lock_until).getTime() : null;
@@ -85,25 +109,39 @@ export function LockGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!loaded || !settings?.system_locked || !lockUntilMs) return;
     if (lockUntilMs <= Date.now()) {
-      supabase.from("app_settings").update({ system_locked: false }).eq("id", 1).then(() => load());
+      supabase
+        .from("app_settings")
+        .update({ system_locked: false })
+        .eq("id", 1)
+        .then(() => load());
     }
   }, [loaded, settings, lockUntilMs, remaining]);
 
   const secretSlug = settings?.results_secret_slug || "siri-alama";
   const isAdminRoute = pathname.startsWith("/admin");
+  // The CR's page opens accounts for correction, which is the same kind of
+  // housekeeping as the admin's, so a locked system must not shut the CR out of
+  // it — otherwise a mistyped Reg Namba waits for the lock to lift.
+  const isCrRoute = pathname === "/cr" || pathname.startsWith("/cr/");
   const isSecretRoute = pathname === `/r/${secretSlug}` || pathname.startsWith(`/r/${secretSlug}/`);
   const animated = useTypeEraseLoop(settings?.lock_message || "");
 
   if (!loaded) return <>{children}</>;
-  if (!isLocked || isAdminRoute || isSecretRoute) return <>{children}</>;
+  if (!isLocked || isAdminRoute || isCrRoute || isSecretRoute) return <>{children}</>;
 
   return (
     <div className="fixed inset-0 z-[100] min-h-screen overflow-y-auto bg-gradient-to-br from-background via-background to-primary/10 px-4 py-10 flex items-center justify-center">
       {/* Animated background glows */}
       <div className="absolute inset-0 opacity-40 pointer-events-none">
         <div className="absolute -top-24 -left-24 w-[28rem] h-[28rem] bg-primary/25 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute -bottom-24 -right-24 w-[28rem] h-[28rem] bg-secondary/30 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "1s" }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[36rem] h-[36rem] bg-primary/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "2s" }} />
+        <div
+          className="absolute -bottom-24 -right-24 w-[28rem] h-[28rem] bg-secondary/30 rounded-full blur-3xl animate-pulse"
+          style={{ animationDelay: "1s" }}
+        />
+        <div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[36rem] h-[36rem] bg-primary/10 rounded-full blur-3xl animate-pulse"
+          style={{ animationDelay: "2s" }}
+        />
       </div>
 
       <div className="relative max-w-3xl w-full text-center animate-fade-in">
@@ -133,8 +171,12 @@ export function LockGate({ children }: { children: React.ReactNode }) {
               <Clock className="h-6 w-6 text-primary animate-pulse" />
             </div>
             <div className="text-left">
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Mfumo utafunguka baada ya</div>
-              <div className="text-3xl md:text-4xl font-mono font-extrabold text-primary tabular-nums">{fmt(remaining)}</div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">
+                Mfumo utafunguka baada ya
+              </div>
+              <div className="text-3xl md:text-4xl font-mono font-extrabold text-primary tabular-nums">
+                {fmt(remaining)}
+              </div>
             </div>
           </div>
         )}
@@ -145,14 +187,16 @@ export function LockGate({ children }: { children: React.ReactNode }) {
             <CalendarClock className="h-5 w-5 text-primary" />
             <div className="font-bold text-sm">Kwa nini imefungwa?</div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Msimamizi amefunga mfumo kwa muda — huenda ni matengenezo, maandalizi ya mtihani, au kusasisha taarifa.
+              Msimamizi amefunga mfumo kwa muda — huenda ni matengenezo, maandalizi ya mtihani, au
+              kusasisha taarifa.
             </p>
           </div>
           <div className="rounded-2xl border bg-card/70 backdrop-blur p-4 space-y-2 hover:border-primary/40 transition-colors">
             <BellRing className="h-5 w-5 text-primary" />
             <div className="font-bold text-sm">Nifanye nini?</div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Subiri mfumo ufunguke — ukurasa huu utajisasisha mwenyewe mara tu ufunguzi utakapofanyika. Huhitaji kufanya chochote.
+              Subiri mfumo ufunguke — ukurasa huu utajisasisha mwenyewe mara tu ufunguzi
+              utakapofanyika. Huhitaji kufanya chochote.
             </p>
           </div>
           <div className="rounded-2xl border bg-card/70 backdrop-blur p-4 space-y-2 hover:border-primary/40 transition-colors">

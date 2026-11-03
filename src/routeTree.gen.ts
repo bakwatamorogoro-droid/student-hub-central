@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AttendanceRouteImport } from './routes/attendance'
+import { Route as CrRouteImport } from './routes/cr'
 import { Route as ExamsRouteImport } from './routes/exams'
 import { Route as NewsRouteImport } from './routes/news'
 import { Route as PdfQuizRouteImport } from './routes/pdf-quiz'
@@ -53,6 +54,11 @@ const AdminRoute = AdminRouteImport.update({
 const AttendanceRoute = AttendanceRouteImport.update({
   id: '/attendance',
   path: '/attendance',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CrRoute = CrRouteImport.update({
+  id: '/cr',
+  path: '/cr',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ExamsRoute = ExamsRouteImport.update({
@@ -166,6 +172,7 @@ export interface FileRoutesByFullPath {
   '/account': typeof AccountRoute
   '/admin': typeof AdminRouteWithChildren
   '/attendance': typeof AttendanceRoute
+  '/cr': typeof CrRoute
   '/exams': typeof ExamsRoute
   '/news': typeof NewsRoute
   '/pdf-quiz': typeof PdfQuizRoute
@@ -192,6 +199,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/attendance': typeof AttendanceRoute
+  '/cr': typeof CrRoute
   '/exams': typeof ExamsRoute
   '/news': typeof NewsRoute
   '/pdf-quiz': typeof PdfQuizRoute
@@ -220,6 +228,7 @@ export interface FileRoutesById {
   '/account': typeof AccountRoute
   '/admin': typeof AdminRouteWithChildren
   '/attendance': typeof AttendanceRoute
+  '/cr': typeof CrRoute
   '/exams': typeof ExamsRoute
   '/news': typeof NewsRoute
   '/pdf-quiz': typeof PdfQuizRoute
@@ -249,6 +258,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/admin'
     | '/attendance'
+    | '/cr'
     | '/exams'
     | '/news'
     | '/pdf-quiz'
@@ -275,6 +285,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/attendance'
+    | '/cr'
     | '/exams'
     | '/news'
     | '/pdf-quiz'
@@ -302,6 +313,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/admin'
     | '/attendance'
+    | '/cr'
     | '/exams'
     | '/news'
     | '/pdf-quiz'
@@ -330,6 +342,7 @@ export interface RootRouteChildren {
   AccountRoute: typeof AccountRoute
   AdminRoute: typeof AdminRouteWithChildren
   AttendanceRoute: typeof AttendanceRoute
+  CrRoute: typeof CrRoute
   ExamsRoute: typeof ExamsRoute
   NewsRoute: typeof NewsRoute
   PdfQuizRoute: typeof PdfQuizRoute
@@ -370,6 +383,13 @@ declare module '@tanstack/react-router' {
       path: '/attendance'
       fullPath: '/attendance'
       preLoaderRoute: typeof AttendanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cr': {
+      id: '/cr'
+      path: '/cr'
+      fullPath: '/cr'
+      preLoaderRoute: typeof CrRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/exams': {
@@ -557,6 +577,7 @@ const rootRouteChildren: RootRouteChildren = {
   AccountRoute: AccountRoute,
   AdminRoute: AdminRouteWithChildren,
   AttendanceRoute: AttendanceRoute,
+  CrRoute: CrRoute,
   ExamsRoute: ExamsRoute,
   NewsRoute: NewsRoute,
   PdfQuizRoute: PdfQuizRoute,

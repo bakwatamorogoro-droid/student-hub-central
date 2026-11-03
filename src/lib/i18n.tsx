@@ -158,6 +158,7 @@ const dict: Record<string, { sw: string; en: string }> = {
   },
   nav_student: { sw: "Update Taarifa", en: "Update details" },
   nav_account: { sw: "Akaunti", en: "My account" },
+  nav_cr: { sw: "CR", en: "CR" },
   nav_semester_qs: { sw: "Maswali ya Semester", en: "Semester Questions" },
   nav_attendance: { sw: "Mahudhurio", en: "Attendance" },
   nav_group: { sw: "Group Yangu", en: "My group" },
