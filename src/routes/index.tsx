@@ -11,7 +11,6 @@ import {
   ClipboardCheck,
   Eye,
   ArrowRight,
-  Brain,
   CalendarCheck,
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
@@ -24,6 +23,7 @@ import { RealPhotoHero } from "@/components/RealPhotoHero";
 import { UpdateTaarifaCard } from "@/components/UpdateTaarifaCard";
 import { AnnouncementBanner } from "@/components/AnnouncementBanner";
 import { Odometer } from "@/components/Odometer";
+import { testCategory, TEST_NUMBERS } from "@/lib/examCatalog";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -48,14 +48,6 @@ type TestStat = { key: string; labelKey: string; count: number };
 
 /** Read by the home stats so the admin can hide a counter without a rebuild. */
 type StatVisibility = { showSubmissions: boolean; showTest1: boolean; hiddenSince: string | null };
-
-function categorize(title: string): string {
-  const t = (title || "").toLowerCase();
-  if (/\btest\s*0*1\b/.test(t) || /\bmtihani\s*0*1\b/.test(t)) return "test1";
-  if (/\btest\s*0*2\b/.test(t) || /\bmtihani\s*0*2\b/.test(t)) return "test2";
-  if (/\btest\s*0*3\b/.test(t) || /\bmtihani\s*0*3\b/.test(t)) return "test3";
-  return "others";
-}
 
 function Index() {
   const { t } = useI18n();
@@ -111,22 +103,22 @@ function Index() {
           .from("daily_visits")
           .select("id", { count: "exact", head: true })
           .eq("visit_date", localDate),
-        supabase.from("exams").select("id,title"),
+        supabase.from("exams").select("id,title,test_number"),
       ]);
       setStats({ students: s.count || 0, submissions: sub.count || 0, visitsToday: v.count || 0 });
 
-      const exams = (ex.data || []) as { id: string; title: string }[];
+      const exams = (ex.data || []) as { id: string; title: string; test_number: number | null }[];
       // Only keys are stored here: translating inside this one-shot effect would
       // freeze the label to whichever language was active on first paint.
       const groups: { key: string; labelKey: string }[] = [
-        { key: "test1", labelKey: "test_1" },
-        { key: "test2", labelKey: "test_2" },
-        { key: "test3", labelKey: "test_3" },
+        ...TEST_NUMBERS.map((n) => ({ key: `test${n}`, labelKey: `test_${n}` })),
         { key: "others", labelKey: "test_other" },
       ];
       const results = await Promise.all(
         groups.map(async (g) => {
-          const ids = exams.filter((e) => categorize(e.title) === g.key).map((e) => e.id);
+          // Filed by the admin's `test_number`, with the title only as a fallback,
+          // so a Test 1 named "MAJARIO" counts as Test 1 here too.
+          const ids = exams.filter((e) => testCategory(e) === g.key).map((e) => e.id);
           if (ids.length === 0) return { ...g, count: 0 };
           let q = supabase
             .from("submissions")
@@ -211,18 +203,24 @@ function Index() {
           </Link>
 
           <Link to="/quiz" className="group animate-fade-in" style={{ animationDelay: "80ms" }}>
-            <Card className="h-full min-h-[190px] border-2 hover:border-emerald-500 hover:shadow-2xl transition-all hover:-translate-y-1 bg-gradient-to-br from-emerald-500/20 via-card to-primary/10 overflow-hidden relative">
-              <div className="absolute -right-6 -top-6 w-32 h-32 rounded-full bg-emerald-500/10 blur-2xl" />
-              <CardContent className="p-6 h-full flex flex-col justify-between relative">
+            <Card className="relative h-full min-h-[190px] overflow-hidden border-2 border-transparent bg-gradient-to-br from-violet-600 via-fuchsia-600 to-indigo-600 text-white shadow-xl shadow-violet-500/20 transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-fuchsia-500/30">
+              <div className="absolute -right-10 -bottom-12 h-48 w-48 rounded-full bg-white/15 blur-2xl" />
+              <div className="absolute -left-8 -top-10 h-36 w-36 rounded-full bg-fuchsia-300/20 blur-2xl" />
+              <CardContent className="relative flex h-full flex-col justify-between p-6">
                 <div>
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-primary flex items-center justify-center shadow-lg mb-3">
-                    <Brain className="h-6 w-6 text-white" />
+                  <div className="mb-3 flex items-center gap-3">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20 shadow-lg backdrop-blur">
+                      <Users className="h-6 w-6" />
+                    </span>
+                    <span className="rounded-full border border-white/30 bg-white/15 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest backdrop-blur">
+                      {t("quiz_badge")}
+                    </span>
                   </div>
-                  <div className="font-extrabold text-2xl tracking-tight">{t("quiz")}</div>
-                  <p className="text-sm text-muted-foreground mt-1">{t("quiz_sub")}</p>
+                  <h2 className="text-2xl font-extrabold tracking-tight">{t("quiz")}</h2>
+                  <p className="mt-1 text-sm text-white/85">{t("quiz_sub")}</p>
                 </div>
-                <div className="flex items-center gap-2 text-sm font-bold text-emerald-600 group-hover:translate-x-1 transition-transform">
-                  {t("enter")} <ArrowRight className="h-4 w-4" />
+                <div className="flex items-center gap-2 text-sm font-bold transition-transform group-hover:translate-x-1">
+                  {t("quiz_cta")} <ArrowRight className="h-4 w-4" />
                 </div>
               </CardContent>
             </Card>

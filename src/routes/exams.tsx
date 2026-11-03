@@ -15,7 +15,13 @@ import { ExamVideoHero, BigSystemTitle } from "@/components/ExamVideoHero";
 
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
-import { matchesAcademicTarget } from "@/lib/academicTargeting";
+import {
+  categoryCounts,
+  examsInCategory,
+  testLabel,
+  TEST_CATEGORIES,
+  type TestCategory,
+} from "@/lib/examCatalog";
 import { storageGet, storageSet } from "@/lib/safe-storage";
 
 export const Route = createFileRoute("/exams")({
@@ -36,7 +42,7 @@ function ExamsPage() {
   const [student, setStudent] = useState<any>(null);
   const [matches, setMatches] = useState<any[]>([]);
   const [checking, setChecking] = useState(false);
-  const [category, setCategory] = useState<string>("all");
+  const [category, setCategory] = useState<TestCategory | "all">("all");
 
   useEffect(() => {
     const r = storageGet("student_reg");
@@ -44,27 +50,14 @@ function ExamsPage() {
       setRegInput(r);
       lookup(r);
     }
+    // Only published exams are shown, and every signed-in student sees all of
+    // them — see `examCatalog` for why the academic filter was removed.
     supabase.from("exams").select("*").eq("published", true).order("created_at", { ascending: false })
       .then(({ data }: { data: any }) => setExams(data || []));
   }, []);
 
-  const categorize = (title: string): string => {
-    const t = (title || "").toLowerCase();
-    if (/\btest\s*0*1\b/.test(t) || /\bmtihani\s*0*1\b/.test(t)) return "test1";
-    if (/\btest\s*0*2\b/.test(t) || /\bmtihani\s*0*2\b/.test(t)) return "test2";
-    if (/\btest\s*0*3\b/.test(t) || /\bmtihani\s*0*3\b/.test(t)) return "test3";
-    return "others";
-  };
-
-  const eligibleExams = student ? exams.filter((e) => matchesAcademicTarget(e, student)) : [];
-  const filteredExams = eligibleExams.filter((e) => category === "all" ? true : categorize(e.title) === category);
-  const counts = {
-    all: eligibleExams.length,
-    test1: eligibleExams.filter((e) => categorize(e.title) === "test1").length,
-    test2: eligibleExams.filter((e) => categorize(e.title) === "test2").length,
-    test3: eligibleExams.filter((e) => categorize(e.title) === "test3").length,
-    others: eligibleExams.filter((e) => categorize(e.title) === "others").length,
-  };
+  const counts = categoryCounts(exams);
+  const filteredExams = examsInCategory(exams, category);
 
   const confirmStudent = (s: any) => {
     setStudent(s);
@@ -147,22 +140,25 @@ function ExamsPage() {
 
         <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
           <h2 className="text-xl font-bold">Mitihani Iliyopangwa</h2>
-          <Select value={category} onValueChange={setCategory}>
+          <Select value={category} onValueChange={(v) => setCategory(v as TestCategory | "all")}>
             <SelectTrigger className="w-44"><SelectValue placeholder="Aina ya mtihani" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Zote ({counts.all})</SelectItem>
-              <SelectItem value="test1">Test 1 ({counts.test1})</SelectItem>
-              <SelectItem value="test2">Test 2 ({counts.test2})</SelectItem>
-              <SelectItem value="test3">Test 3 ({counts.test3})</SelectItem>
+              {TEST_CATEGORIES.map((c) => (
+                <SelectItem key={c} value={c}>
+                  Test {c.slice(4)} ({counts[c]})
+                </SelectItem>
+              ))}
               <SelectItem value="others">Others ({counts.others})</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          {!student && <p className="text-muted-foreground">Thibitisha taarifa zako ili kuona mitihani ya mwaka wako.</p>}
-          {student && filteredExams.length === 0 && <p className="text-muted-foreground">Hakuna mtihani wa mwaka wako katika aina hii.</p>}
+          {!student && <p className="text-muted-foreground">Thibitisha taarifa zako ili kuona mitihani na kuanza.</p>}
+          {student && filteredExams.length === 0 && <p className="text-muted-foreground">Hakuna mtihani katika aina hii kwa sasa.</p>}
           {filteredExams.map((e) => {
             const st = status(e);
+            const label = testLabel(e);
             return (
               <Card
                 key={e.id}
@@ -174,6 +170,11 @@ function ExamsPage() {
                     <span className="font-extrabold tracking-tight">{e.title}</span>
                     <span className={`text-[10px] uppercase tracking-wide font-bold px-2 py-1 rounded-full whitespace-nowrap ${st.can ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>{st.label}</span>
                   </CardTitle>
+                  {label && (
+                    <span className="mt-1 inline-flex w-fit items-center rounded-full bg-blue-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+                      {label}
+                    </span>
+                  )}
                 </CardHeader>
                 <CardContent className="relative">
                   {e.description && <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{e.description}</p>}

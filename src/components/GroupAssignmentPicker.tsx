@@ -72,6 +72,10 @@ function GenderIcon({ gender }: { gender: string }) {
  * The gender is part of the choice because the same "GROUP 5" exists for men and
  * for women inside one seminar; without it the members list would mix the two.
  * It is a dropdown rather than a free choice so a group cannot be invented.
+ *
+ * `view` lets the assignment wizard show one half at a time — the picker on step
+ * 1, the members list on step 2 — instead of stacking both cards on one screen.
+ * The default, `all`, is the original single-page behaviour.
  */
 export function GroupPicker({
   roster,
@@ -88,6 +92,7 @@ export function GroupPicker({
   selected,
   onToggle,
   readOnly,
+  view = "all",
 }: {
   roster: RosterPerson[];
   loadingRoster: boolean;
@@ -103,100 +108,106 @@ export function GroupPicker({
   selected: Set<string>;
   onToggle: (id: string) => void;
   readOnly: boolean;
+  view?: "all" | "pick" | "members";
 }) {
   const { t } = useI18n();
   const seminars = useMemo(() => seminarOptions(roster), [roster]);
   const groups = useMemo(() => groupOptions(roster), [roster]);
   const ready = !!semina && !!group && !!gender;
+  const showPick = view !== "members";
+  const showMembers = view !== "pick";
 
   return (
     <div className="space-y-4">
-      <Card className="overflow-hidden border-2 border-primary/25 shadow-lg">
-        <CardHeader className="bg-gradient-to-r from-primary/10 via-card to-secondary/10 pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <GraduationCap className="h-4 w-4 text-primary" /> {t("ga_pick_title")}
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">{t("ga_sub")}</p>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-4">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                {t("ga_semina")}
-              </Label>
-              <Select value={semina} onValueChange={onSemina} disabled={confirmed || readOnly}>
-                <SelectTrigger className="font-semibold">
-                  <SelectValue placeholder={t("ga_choose_placeholder")} />
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {seminars.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+      {showPick && (
+        <Card className="overflow-hidden border-2 border-primary/25 shadow-lg">
+          <CardHeader className="bg-gradient-to-r from-primary/10 via-card to-secondary/10 pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <GraduationCap className="h-4 w-4 text-primary" /> {t("ga_pick_title")}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">{t("ga_sub")}</p>
+          </CardHeader>
+          <CardContent className="space-y-4 pt-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  {t("ga_semina")}
+                </Label>
+                <Select value={semina} onValueChange={onSemina} disabled={confirmed || readOnly}>
+                  <SelectTrigger className="font-semibold">
+                    <SelectValue placeholder={t("ga_choose_placeholder")} />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {seminars.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  {t("ga_group")}
+                </Label>
+                <Select value={group} onValueChange={onGroup} disabled={confirmed || readOnly}>
+                  <SelectTrigger className="font-semibold">
+                    <SelectValue placeholder={t("ga_choose_placeholder")} />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {groups.map((g) => (
+                      <SelectItem key={g} value={g}>
+                        {g}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  Jinsia
+                </Label>
+                <Select value={gender} onValueChange={onGender} disabled={confirmed || readOnly}>
+                  <SelectTrigger className="font-semibold">
+                    <SelectValue placeholder={t("ga_choose_placeholder")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Mwanaume">Wanaume</SelectItem>
+                    <SelectItem value="Mwanamke">Wanawake</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                {t("ga_group")}
-              </Label>
-              <Select value={group} onValueChange={onGroup} disabled={confirmed || readOnly}>
-                <SelectTrigger className="font-semibold">
-                  <SelectValue placeholder={t("ga_choose_placeholder")} />
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {groups.map((g) => (
-                    <SelectItem key={g} value={g}>
-                      {g}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                Jinsia
-              </Label>
-              <Select value={gender} onValueChange={onGender} disabled={confirmed || readOnly}>
-                <SelectTrigger className="font-semibold">
-                  <SelectValue placeholder={t("ga_choose_placeholder")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Mwanaume">Wanaume</SelectItem>
-                  <SelectItem value="Mwanamke">Wanawake</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
 
-          {!confirmed && (
-            <Button
-              className="w-full font-bold"
-              disabled={!ready || loadingRoster}
-              onClick={onConfirm}
-            >
-              {loadingRoster ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <CheckCircle2 className="mr-2 h-4 w-4" />
-              )}
-              {t("ga_confirm")}
-            </Button>
-          )}
+            {!confirmed && (
+              <Button
+                className="w-full font-bold"
+                disabled={!ready || loadingRoster}
+                onClick={onConfirm}
+              >
+                {loadingRoster ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                )}
+                {t("ga_confirm")}
+              </Button>
+            )}
 
-          {confirmed && (
-            <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm">
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              <span className="font-bold">
-                {semina} · {group} · {normalizeGender(gender) === "female" ? "Wanawake" : "Wanaume"}
-              </span>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            {confirmed && (
+              <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                <span className="font-bold">
+                  {semina} · {group} ·{" "}
+                  {normalizeGender(gender) === "female" ? "Wanawake" : "Wanaume"}
+                </span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
-      {confirmed && (
+      {showMembers && confirmed && (
         <Card className="border-primary/25">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center justify-between gap-2 text-base">
