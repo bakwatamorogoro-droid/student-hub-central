@@ -1692,6 +1692,13 @@ legacy build still renders.
 A Word file has no pages to click, so its marks attach to the whole document
 (page 0); `page: 0` means "the whole work" everywhere in the code.
 
+Both viewers zoom, and `ZoomControls` is shared so they cannot drift apart. The
+PDF zoom is a canvas scale (60–300%); the Word zoom is a font-size multiplier
+(70–250%), because the browser lays text out itself and it stays sharp at any
+size. The `.word-preview` rules must stay in `em`, not `rem`: `rem` is relative
+to the root and ignores the preview's own font size, so headings and tables
+would stay put while the body text grew.
+
 `parseAnnotations` re-validates a stored list on the way in: it drops entries
 that are not a real kind or carry no words, and clamps a negative page to 0. A
 damaged row must not be able to put a stray mark on a page. `saveAdminAnswer`
