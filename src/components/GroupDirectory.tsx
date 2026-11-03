@@ -28,7 +28,7 @@ import {
 /**
  * Every group, as a card: who sits in it, the number each member registered, and
  * whether they have confirmed. This is the list the admin reads after the students
- * work through step 3, so it is built around the two questions the admin actually
+ * save their details, so it is built around the two questions the admin actually
  * has — "who is in this group?" and "who has confirmed?".
  *
  * A confirmed seat cannot be moved by the student, so the admin is the only one who

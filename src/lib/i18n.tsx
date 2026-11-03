@@ -241,8 +241,8 @@ const dict: Record<string, { sw: string; en: string }> = {
   // --- update taarifa -----------------------------------------------------
   update_title: { sw: "Update Taarifa", en: "Update your details" },
   update_sub: {
-    sw: "Weka Reg Namba yako, uone taarifa zako, kisha urekebishe jina, kozi, namba ya simu au semester yako. Mwaka wa masomo unajipanga wenyewe kutoka Reg Namba yako.",
-    en: "Enter your Reg number, review your details, then correct your name, course, phone number or semester. Your study year is worked out from your Reg number.",
+    sw: "Hatua mbili: weka Reg Namba yako ili kuipata taarifa yako, kisha rekebishe taarifa zako pamoja na semina na group lako, na uhakiki. Ukishahakiki hutaweza kubadilisha tena.",
+    en: "Two steps: enter your Reg number to find your details, then edit your details together with your seminar and group, and confirm. Once confirmed you cannot change again.",
   },
   update_cta: { sw: "Anza Update Taarifa", en: "Start updating" },
   reg_number: { sw: "Reg Namba", en: "Reg number" },
@@ -286,15 +286,10 @@ const dict: Record<string, { sw: string; en: string }> = {
   choose_year: { sw: "Chagua mwaka", en: "Choose a year" },
   step_reg: { sw: "Reg Namba", en: "Reg number" },
   step_details: { sw: "Taarifa Zako", en: "Your details" },
-  step_group: { sw: "Semina na Group", en: "Semina and group" },
   step_issue: { sw: "Changamoto", en: "Report a problem" },
   step_reg_help: {
     sw: "Andika Reg Namba yako kisha gusa Tafuta. Ukikuta majina mengi, chagua lako.",
     en: "Enter your Reg number and tap Search. If several names come back, pick yours.",
-  },
-  step_group_help: {
-    sw: "Chagua semina na group lako, kisha hakiki. Ukishahakiki hutaweza kubadilisha tena.",
-    en: "Pick your seminar and group, then confirm. Once confirmed you cannot change it again.",
   },
   step_issue_help: {
     sw: "Kwa wasiofanya Test 1 / Test 2 au wenye matatizo yoyote — andika hapa, admin atapokea.",
@@ -328,6 +323,15 @@ const dict: Record<string, { sw: string; en: string }> = {
   },
   confirm_yes: { sw: "Ndiyo, hifadhi", en: "Yes, save" },
   confirm_cancel: { sw: "Sitaki bado", en: "Not yet" },
+  save_details: { sw: "Hifadhi Taarifa", en: "Save details" },
+  save_details_title: {
+    sw: "Hifadhi mabadiliko ya taarifa zako?",
+    en: "Save your details?",
+  },
+  save_details_warning: {
+    sw: "Taarifa zako zitahifadhiwa. Semina na group lako zimefungwa — hutaweza kuzibadilisha. Mwone admin kama kuna kosa.",
+    en: "Your details will be saved. Your seminar and group are locked — you cannot change them. See an admin if something is wrong.",
+  },
   group_confirmed_title: { sw: "Group lako limehakikiwa", en: "Your group is confirmed" },
   group_confirmed_body: {
     sw: "Semina na group lako vimehifadhiwa na kufungwa. Hutaweza kubadilisha tena. Mwone admin kama kuna kosa.",
@@ -386,7 +390,7 @@ const dict: Record<string, { sw: string; en: string }> = {
   confirm_reg_first: { sw: "Thibitisha Reg Namba kwanza.", en: "Confirm your Reg number first." },
   tab_edit: { sw: "Update Taarifa", en: "Update details" },
   tab_issue: { sw: "Changamoto", en: "Report an issue" },
-  edit_card_title: { sw: "Omba Marekebisho", en: "Request a correction" },
+  edit_card_title: { sw: "Rekebisha Taarifa Zako", en: "Edit your details" },
   issue_card_title: { sw: "Wasilisha Changamoto", en: "Report a problem" },
   issue_type: { sw: "Aina ya Changamoto", en: "Type of problem" },
   issue_message: { sw: "Eleza Changamoto Yako", en: "Describe the problem" },
@@ -426,8 +430,8 @@ const dict: Record<string, { sw: string; en: string }> = {
   taarifa_kicker: { sw: "Update Taarifa", en: "Update your details" },
   taarifa_card_title: { sw: "Update Taarifa Zako", en: "Update your details" },
   taarifa_card_sub: {
-    sw: "Badilisha jina, kozi, mwaka wa masomo au semester yako. Semina na group unapewa na mfumo.",
-    en: "Change your name, course, study year or semester. Semina and group are assigned by the system.",
+    sw: "Hatua mbili: weka Reg Namba, kisha rekebisha taarifa zako, semina na group lako, na uhakiki.",
+    en: "Two steps: enter your Reg number, then edit your details, seminar and group, and confirm.",
   },
 };
 

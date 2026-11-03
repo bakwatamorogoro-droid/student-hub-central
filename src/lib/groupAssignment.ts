@@ -237,10 +237,10 @@ export type PlannedMove = { semina: string; student_group: string };
 /**
  * The rows a write would move, keyed by student id.
  *
- * A confirmed seat is skipped. The student locked it at step 3, and the point of the
- * lock is that nothing — not a later save, not re-planning around a newcomer — walks
- * them out of it. Only a difference between the stored value and the plan is a move,
- * so an unchanged student never appears here.
+ * A confirmed seat is skipped. The student locked it when they saved their details, and
+ * the point of the lock is that nothing — not a later save, not re-planning around a
+ * newcomer — walks them out of it. Only a difference between the stored value and the
+ * plan is a move, so an unchanged student never appears here.
  *
  * `onlySemina` narrows the write to one seminar, which is what the CR's per-seminar
  * save does.

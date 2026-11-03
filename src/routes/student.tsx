@@ -17,11 +17,8 @@ import { toast } from "@/lib/toast";
 import { alertSuccess, alertWarning } from "@/lib/alerts";
 import {
   UserCog,
-  CheckCircle2,
   Clock,
-  Wand2,
   Search,
-  Users,
   ArrowLeft,
   ArrowRight,
   Loader2,
@@ -32,13 +29,7 @@ import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 import { updateStudentProfile } from "@/lib/studentProfile";
 import { retryWithoutMissingColumns } from "@/lib/schema-retry";
-import {
-  CURRENT_ACADEMIC_YEAR,
-  SEMESTERS,
-  formatAcademicSummary,
-  isSemesterActive,
-  studyYearsFor,
-} from "@/lib/academicTargeting";
+import { CURRENT_ACADEMIC_YEAR, SEMESTERS, isSemesterActive } from "@/lib/academicTargeting";
 import { DEFAULT_PROGRAM_YEARS, studyYearFromReg } from "@/lib/studyYear";
 import { useI18n } from "@/lib/i18n";
 import { loadDirectory } from "@/lib/directory";
@@ -75,17 +66,16 @@ function Page() {
   const { t } = useI18n();
   const [settings, setSettings] = useState<any>(null);
   const [courseList, setCourseList] = useState<string[]>([]);
-  const [studyYears, setStudyYears] = useState<number[]>(studyYearsFor(2));
   // The programme length, so a derived study year is clamped to it rather than reading
   // as year 12 for a student admitted years ago.
   const [programYears, setProgramYears] = useState<number>(DEFAULT_PROGRAM_YEARS);
   const [reg, setReg] = useState("");
   const [student, setStudent] = useState<any>(null);
   const [matches, setMatches] = useState<any[]>([]);
-  // edit form. Semina, group and study year are deliberately absent: the group system
-  // owns the first two, and the study year is derived from the Reg Namba, so there is
-  // nothing for the student to choose. Carrying seeded copies here is what let the form
-  // submit the student's own values as though they were corrections.
+  // edit form. Semina and group live in their own state (editSemina/editGroup), and the
+  // study year is derived from the Reg Namba, so there is nothing for the student to
+  // choose here. Carrying seeded copies in this object is what once let the form submit
+  // the student's own values as though they were corrections.
   const [edit, setEdit] = useState({
     new_reg_no: "",
     new_full_name: "",
@@ -95,7 +85,7 @@ function Page() {
     new_phone: "",
   });
   const [wrongReg, setWrongReg] = useState(false);
-  // 1 = Reg Namba, 2 = correct your details, 3 = your seminar and group.
+  // 1 = Reg Namba, 2 = edit your details, your seminar and your group.
   const [step, setStep] = useState(1);
   const [editStatus, setEditStatus] = useState<any[]>([]);
   // The student picks their own seminar and group. Seeded from their row on lookup.
@@ -104,7 +94,6 @@ function Page() {
   // Bumped after a save to remount the group card against the fresh roster.
   const [rosterEpoch, setRosterEpoch] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [askConfirm, setAskConfirm] = useState(false);
 
   useEffect(() => {
@@ -119,7 +108,6 @@ function Page() {
         loadDirectory(data).then((dir) => {
           if (dir.courses.length) setCourseList(dir.courses);
         });
-        setStudyYears(studyYearsFor(data?.program_years ?? DEFAULT_PROGRAM_YEARS));
         setProgramYears(Number(data?.program_years) || DEFAULT_PROGRAM_YEARS);
       });
     const saved = localStorage.getItem("student_reg");
@@ -129,11 +117,11 @@ function Page() {
     }
   }, []);
 
-  // The header links to /student#group-yangu. Land on the group step rather than
-  // making the student walk the wizard again.
+  // The header links to /student#group-yangu. With the group folded into the edit
+  // step, that link lands on step 2 rather than making the student walk the wizard.
   useEffect(() => {
     const openGroup = () => {
-      if (window.location.hash === "#group-yangu") setStep(3);
+      if (window.location.hash === "#group-yangu") setStep(2);
     };
     openGroup();
     window.addEventListener("hashchange", openGroup);
@@ -191,6 +179,9 @@ function Page() {
         );
         setEditSemina((prev) => outcome.me.semina ?? prev);
         setEditGroup((prev) => outcome.me.student_group ?? prev);
+        // The roster is rendered inside this same step, so remount it to pick up the
+        // seat the student was just filed into.
+        setRosterEpoch((n) => n + 1);
       }
     } catch {
       // A placement failure must not block the student from correcting their details.
@@ -198,32 +189,38 @@ function Page() {
   };
 
   /**
-   * Confirms the seat. This is the save that locks step 3: the database stamps
-   * `group_confirmed_at` and refuses to move the seat afterwards, so the form's
-   * disabled dropdowns are a convenience rather than the guard.
+   * What the confirmation dialog lists. The student sees the seat they picked against the
+   * one the row holds, so "Hifadhi" is never a blind press. An empty list still saves —
+   * the point of the dialog is to confirm the seat, not to require a change.
    */
-  const confirmGroup = async () => {
-    if (!student) return;
+  const seatChanges = [
+    { label: t("semina"), from: student?.semina || "—", to: editSemina || "—" },
+    { label: t("group"), from: student?.student_group || "—", to: editGroup || "—" },
+  ].filter((c) => c.from !== c.to);
+
+  /**
+   * Confirms the seat, which freezes it. The database stamps `group_confirmed_at` and
+   * refuses to move the seat afterwards, so the disabled dropdowns are a convenience
+   * rather than the guard. Called by the one save on step 2, whether or not the student
+   * changed anything: the press is the agreement.
+   */
+  const lockSeat = async (): Promise<boolean> => {
+    if (!student) return false;
     if (!editSemina || !editGroup) {
       toast.error(t("group_edit_help"));
-      return;
+      return false;
     }
-    setAskConfirm(false);
-    setConfirming(true);
     const outcome = await confirmStudentGroup(student.id, editSemina, editGroup);
-    setConfirming(false);
-
     if (outcome.needsMigration) {
       toast.error(
         "Uthibitisho haujawashwa kwenye mfumo bado. Admin aendeshe migrations zilizo kwenye supabase/migrations/.",
       );
-      return;
+      return false;
     }
     if (outcome.error && !outcome.alreadyConfirmed) {
-      toast.error(outcome.error.message || "Imeshindikana kuhakiki. Jaribu tena.");
-      return;
+      toast.error(outcome.error.message || "Imeshindikana kuhifadhi. Jaribu tena.");
+      return false;
     }
-
     const stamp = new Date().toISOString();
     setStudent((prev: any) =>
       prev
@@ -232,18 +229,8 @@ function Page() {
     );
     invalidateRosterCache();
     setRosterEpoch((n) => n + 1);
-    await alertSuccess(t("group_confirmed_title"), t("group_confirmed_body"));
+    return true;
   };
-
-  /**
-   * What the save dialog lists. The student sees the seat they picked against the one the
-   * row holds, so "Hifadhi" is never a blind press. An empty list still saves — the point
-   * of the dialog is to confirm the seat, not to require a change.
-   */
-  const seatChanges = [
-    { label: t("semina"), from: student?.semina || "—", to: editSemina || "—" },
-    { label: t("group"), from: student?.student_group || "—", to: editGroup || "—" },
-  ].filter((c) => c.from !== c.to);
 
   const lookup = async (r: string) => {
     if (!r) return;
@@ -273,12 +260,13 @@ function Page() {
   );
 
   /**
-   * Writes the student's own corrections straight to their row. There is no approval
-   * step: the student is the only one who knows their own name and phone number, and an
-   * admin queue in front of every typo fix was pure friction. The request row is still
-   * written, as `approved`, so there is a record of who changed what and when.
+   * The one save on step 2. It writes the student's own corrections straight to their
+   * row, then confirms the seat, which locks it. There is no approval step: the student
+   * is the only one who knows their own name and phone number, and an admin queue in
+   * front of every typo fix was pure friction. The request row is still written, as
+   * `approved`, so there is a record of who changed what and when.
    */
-  const saveProfile = async (goToStep?: number): Promise<boolean> => {
+  const saveAndConfirm = async (): Promise<boolean> => {
     if (!student) return false;
     if (!settings?.profile_edits_enabled) {
       toast.error(t("edits_disabled"));
@@ -288,6 +276,9 @@ function Page() {
       toast.error(t("semester_inactive"));
       return false;
     }
+    // A student who already confirmed is only fixing their details: the seat is locked,
+    // so this press neither moves nor re-stamps it.
+    const alreadyConfirmed = !!student.group_confirmed_at;
 
     const newRegUp = edit.new_reg_no?.toUpperCase() || null;
     const newSemina = editSemina || null;
@@ -315,13 +306,23 @@ function Page() {
     if (derivedYear != null && String(derivedYear) !== yearNow) changed.push("study_year");
     const has = (k: string) => changed.includes(k);
 
+    setSubmitting(true);
+
+    // Nothing to write: for a first-time student the seat is the only thing left to
+    // confirm, and confirming an unchanged seat still locks it, which is the whole point
+    // of the press. A student already confirmed has nothing left to do.
     if (changed.length === 0) {
-      toast.info(t("nothing_changed"));
-      if (goToStep) setStep(goToStep);
-      return true;
+      if (alreadyConfirmed) {
+        setSubmitting(false);
+        toast.info(t("nothing_changed"));
+        return true;
+      }
+      const locked = await lockSeat();
+      setSubmitting(false);
+      if (locked) await alertSuccess(t("group_confirmed_title"), t("group_confirmed_body"));
+      return locked;
     }
 
-    setSubmitting(true);
     const reasonPrefix = wrongReg
       ? "[NILIKOSEA REG KABISA] Matokeo yangu ya awali yahamishwe kwa Reg mpya. "
       : "";
@@ -400,11 +401,13 @@ function Page() {
 
     const newRef = newRegUp || student.reg_no;
     localStorage.setItem("student_reg", newRef);
-    // The roster cache still holds the old seat, so drop it and remount the group card.
-    invalidateRosterCache();
-    setRosterEpoch((n) => n + 1);
-    setSubmitting(false);
     setWrongReg(false);
+
+    // The details are in. For a first-time student, confirming is the second half of the
+    // same press: it stamps the seat, so they are left looking at their group with no
+    // step left to walk. A student already confirmed has nothing left to stamp.
+    const locked = alreadyConfirmed || (await lockSeat());
+    setSubmitting(false);
 
     if (acadErr) {
       await alertWarning(
@@ -416,12 +419,15 @@ function Page() {
         "Imehifadhiwa",
         `${acadDropped.join(", ")} bado haijawashwa kwenye mfumo (admin aendeshe migrations zilizo kwenye supabase/migrations/).`,
       );
+    } else if (locked && !alreadyConfirmed) {
+      // The seat was confirmed by this press, so say so rather than just "saved".
+      await alertSuccess(t("group_confirmed_title"), t("group_confirmed_body"));
     } else {
       await alertSuccess(t("saved_title"), t("saved_body"));
     }
 
-    // Re-read the row so the form shows what was actually stored, but do not go through
-    // `confirmStudent`: that resets the wizard to step 2 and would undo "Save & Continue".
+    // Re-read the row so the form shows what was actually stored, without resetting the
+    // step the way `confirmStudent` would.
     const { data: refreshed } = await (supabase as any)
       .from("students")
       .select("*")
@@ -429,7 +435,6 @@ function Page() {
       .limit(1)
       .maybeSingle();
     if (refreshed) await fillForm(refreshed);
-    if (goToStep) setStep(goToStep);
     return true;
   };
 
@@ -452,14 +457,13 @@ function Page() {
           </div>
         </div>
 
-        {/* Three steps, Back and Next. The student always knows where they are and
-              what comes next, and the group only appears once the Reg Namba has
-              resolved to a real student. */}
+        {/* Two steps, Back and one save. The student always knows where they are, and
+              the details, seminar and group all appear once the Reg Namba has resolved
+              to a real student. */}
         <div className="flex items-center justify-center gap-2">
           {[
             { n: 1, label: t("step_reg") },
             { n: 2, label: t("step_details") },
-            { n: 3, label: t("step_group") },
           ].map((s, i, all) => (
             <div key={s.n} className="flex items-center gap-2">
               <button
@@ -525,7 +529,7 @@ function Page() {
         )}
 
         {step === 2 && (
-          <Card className="border-2 border-primary/25 shadow-lg">
+          <Card id="group-yangu" className="scroll-mt-20 border-2 border-primary/25 shadow-lg">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <UserCog className="h-4 w-4 text-primary" /> {t("edit_card_title")}
@@ -539,34 +543,91 @@ function Page() {
             <CardContent className="space-y-3">
               {student && (
                 <>
-                  <div className="rounded-xl border border-primary/25 bg-primary/5 p-3">
-                    <div className="flex items-center gap-2 text-sm font-bold">
-                      <Wand2 className="h-4 w-4 text-primary" /> Semina na Group
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Unabadilisha semina na group lako kwenye hatua inayofuata. Ukibadilisha mwaka
-                      wa masomo au kozi, mfumo unakuweka kwenye semina na group lako la jinsia yako,
-                      wanafunzi 8 kwa group.
-                    </p>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      <div className="rounded-lg border border-border bg-card p-2">
-                        <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                          {t("semina")}
-                        </div>
-                        <div className="truncate text-sm font-semibold">
-                          {student.semina || "—"}
-                        </div>
-                      </div>
-                      <div className="rounded-lg border border-border bg-card p-2">
-                        <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                          {t("group")}
-                        </div>
-                        <div className="truncate text-sm font-semibold">
-                          {student.student_group || "—"}
+                  {/* The student picks their own seminar and group here, then the single
+                      save confirms and locks the seat. An already-confirmed seat is shown
+                      as a locked summary instead of pickers. */}
+                  {student.group_confirmed_at ? (
+                    <div className="rounded-xl border-2 border-emerald-500/40 bg-emerald-500/10 p-3">
+                      <div className="flex items-start gap-3">
+                        <Lock className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                        <div className="text-sm">
+                          <div className="font-bold text-emerald-700 dark:text-emerald-300">
+                            {t("group_confirmed_title")}
+                          </div>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {t("group_confirmed_body")}
+                          </p>
+                          <p className="mt-1 text-[11px] font-mono text-muted-foreground">
+                            {t("group_confirmed_at")}:{" "}
+                            {new Date(student.group_confirmed_at).toLocaleString("sw-TZ")}
+                          </p>
                         </div>
                       </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <div className="rounded-lg border border-border bg-card p-2">
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                            {t("semina")}
+                          </div>
+                          <div className="truncate text-sm font-semibold">
+                            {student.semina || editSemina || "—"}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-border bg-card p-2">
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                            {t("group")}
+                          </div>
+                          <div className="truncate text-sm font-semibold">
+                            {student.student_group || editGroup || "—"}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <Label>{t("semina")}</Label>
+                          <Select value={editSemina} onValueChange={setEditSemina}>
+                            <SelectTrigger>
+                              <SelectValue placeholder={t("choose_semina")} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {SEMINARS.map((sm) => (
+                                <SelectItem key={sm} value={sm}>
+                                  {sm}
+                                </SelectItem>
+                              ))}
+                              {editSemina && !SEMINARS.includes(editSemina) && (
+                                <SelectItem value={editSemina}>{editSemina}</SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>{t("group")}</Label>
+                          <Select value={editGroup} onValueChange={setEditGroup}>
+                            <SelectTrigger>
+                              <SelectValue placeholder={t("choose_group")} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {GROUP_NAMES.map((g) => (
+                                <SelectItem key={g} value={g}>
+                                  {g}
+                                </SelectItem>
+                              ))}
+                              {editGroup && !GROUP_NAMES.includes(editGroup) && (
+                                <SelectItem value={editGroup}>{editGroup}</SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <p className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                        {t("group_edit_help")}
+                      </p>
+                    </>
+                  )}
                   <div className="grid sm:grid-cols-2 gap-3">
                     <div>
                       <Label>{t("new_reg")}</Label>
@@ -704,143 +765,30 @@ function Page() {
                   ))}
                 </div>
               )}
+              <div className="border-t pt-3">
+                <GroupRosterView key={rosterEpoch} reg={student?.reg_no || reg} />
+              </div>
             </CardContent>
             <CardFooter className="flex justify-between gap-2">
               <Button variant="outline" onClick={() => setStep(1)} disabled={submitting}>
                 <ArrowLeft className="h-4 w-4" /> {t("back")}
               </Button>
               <Button
-                onClick={() => void saveProfile(3)}
+                onClick={() => setAskConfirm(true)}
                 disabled={submitting || !settings?.profile_edits_enabled}
                 className="font-bold"
               >
-                {submitting ? t("saving") : t("save_continue")}
-                <ArrowRight className="h-4 w-4" />
+                {submitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Lock className="h-4 w-4" />
+                )}
+                {submitting
+                  ? t("saving")
+                  : student?.group_confirmed_at
+                    ? t("save_details")
+                    : t("confirm_group")}
               </Button>
-            </CardFooter>
-          </Card>
-        )}
-
-        {step === 3 && (
-          <Card id="group-yangu" className="scroll-mt-20 border-2 border-primary/25 shadow-lg">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Users className="h-4 w-4 text-primary" /> {t("step_group")}
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">{t("step_group_help")}</p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {student?.group_confirmed_at ? (
-                /* Confirmed: the seat is frozen, so the pickers are replaced by a
-                   locked summary rather than left visible but disabled. */
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3 rounded-xl border-2 border-emerald-500/40 bg-emerald-500/10 p-3">
-                    <Lock className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
-                    <div className="text-sm">
-                      <div className="font-bold text-emerald-700 dark:text-emerald-300">
-                        {t("group_confirmed_title")}
-                      </div>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {t("group_confirmed_body")}
-                      </p>
-                      <p className="mt-1 text-[11px] font-mono text-muted-foreground">
-                        {t("group_confirmed_at")}:{" "}
-                        {new Date(student.group_confirmed_at).toLocaleString("sw-TZ")}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="rounded-xl border border-primary/15 bg-primary/5 p-3">
-                      <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                        {t("semina")}
-                      </div>
-                      <div className="truncate text-sm font-semibold">
-                        {student.semina || editSemina || "—"}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-primary/15 bg-primary/5 p-3">
-                      <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                        {t("group")}
-                      </div>
-                      <div className="truncate text-sm font-semibold">
-                        {student.student_group || editGroup || "—"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {/* The student chooses their own seminar and group, then confirms.
-                      Confirming is what freezes the seat. */}
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <Label>{t("semina")}</Label>
-                      <Select value={editSemina} onValueChange={setEditSemina}>
-                        <SelectTrigger>
-                          <SelectValue placeholder={t("choose_semina")} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {SEMINARS.map((sm) => (
-                            <SelectItem key={sm} value={sm}>
-                              {sm}
-                            </SelectItem>
-                          ))}
-                          {editSemina && !SEMINARS.includes(editSemina) && (
-                            <SelectItem value={editSemina}>{editSemina}</SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label>{t("group")}</Label>
-                      <Select value={editGroup} onValueChange={setEditGroup}>
-                        <SelectTrigger>
-                          <SelectValue placeholder={t("choose_group")} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {GROUP_NAMES.map((g) => (
-                            <SelectItem key={g} value={g}>
-                              {g}
-                            </SelectItem>
-                          ))}
-                          {editGroup && !GROUP_NAMES.includes(editGroup) && (
-                            <SelectItem value={editGroup}>{editGroup}</SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <p className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground">
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-                    {t("group_edit_help")}
-                  </p>
-                </>
-              )}
-
-              <GroupRosterView key={rosterEpoch} reg={student?.reg_no || reg} />
-            </CardContent>
-            <CardFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between">
-              <Button
-                variant="outline"
-                onClick={() => setStep(2)}
-                disabled={submitting || confirming}
-              >
-                <ArrowLeft className="h-4 w-4" /> {t("back")}
-              </Button>
-              {!student?.group_confirmed_at && (
-                <Button
-                  onClick={() => setAskConfirm(true)}
-                  disabled={submitting || confirming || !editSemina || !editGroup}
-                  className="w-full font-bold sm:w-auto"
-                >
-                  {confirming ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Lock className="h-4 w-4" />
-                  )}
-                  {confirming ? t("confirming") : t("confirm_group")}
-                </Button>
-              )}
             </CardFooter>
           </Card>
         )}
@@ -848,40 +796,48 @@ function Page() {
         <AlertDialog open={askConfirm} onOpenChange={setAskConfirm}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>{t("confirm_group_title")}</AlertDialogTitle>
-              <AlertDialogDescription>{t("confirm_group_warning")}</AlertDialogDescription>
-              <div className="mt-3 space-y-2 text-sm">
-                {seatChanges.length > 0 ? (
-                  <>
-                    <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                      {t("confirm_changes")}
-                    </div>
-                    {seatChanges.map((c) => (
-                      <div
-                        key={c.label}
-                        className="flex items-center justify-between gap-2 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2"
-                      >
-                        <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                          {c.label}
-                        </span>
-                        <span className="flex items-center gap-2 text-sm font-semibold">
-                          <span className="text-muted-foreground line-through">{c.from}</span>
-                          <ArrowRight className="h-3.5 w-3.5 text-primary" />
-                          <span className="text-primary">{c.to}</span>
-                        </span>
+              <AlertDialogTitle>
+                {student?.group_confirmed_at ? t("save_details_title") : t("confirm_group_title")}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {student?.group_confirmed_at
+                  ? t("save_details_warning")
+                  : t("confirm_group_warning")}
+              </AlertDialogDescription>
+              {!student?.group_confirmed_at && (
+                <div className="mt-3 space-y-2 text-sm">
+                  {seatChanges.length > 0 ? (
+                    <>
+                      <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                        {t("confirm_changes")}
                       </div>
-                    ))}
-                  </>
-                ) : (
-                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground">
-                    {t("confirm_no_seat_change")}
-                  </div>
-                )}
-              </div>
+                      {seatChanges.map((c) => (
+                        <div
+                          key={c.label}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2"
+                        >
+                          <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                            {c.label}
+                          </span>
+                          <span className="flex items-center gap-2 text-sm font-semibold">
+                            <span className="text-muted-foreground line-through">{c.from}</span>
+                            <ArrowRight className="h-3.5 w-3.5 text-primary" />
+                            <span className="text-primary">{c.to}</span>
+                          </span>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground">
+                      {t("confirm_no_seat_change")}
+                    </div>
+                  )}
+                </div>
+              )}
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>{t("confirm_cancel")}</AlertDialogCancel>
-              <AlertDialogAction onClick={() => void confirmGroup()}>
+              <AlertDialogAction onClick={() => void saveAndConfirm()}>
                 {t("confirm_yes")}
               </AlertDialogAction>
             </AlertDialogFooter>
