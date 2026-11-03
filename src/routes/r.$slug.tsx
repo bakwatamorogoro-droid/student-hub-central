@@ -8,6 +8,7 @@ import { Trophy, User, GraduationCap, Lock } from "lucide-react";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 import { toast } from "@/lib/toast";
+import { storageGet, storageSet } from "@/lib/safe-storage";
 
 export const Route = createFileRoute("/r/$slug")({ component: SecretResults });
 
@@ -25,14 +26,14 @@ function SecretResults() {
       const { data } = await supabase.from("app_settings").select("results_secret_slug").eq("id", 1).single();
       setAllowed((data?.results_secret_slug || "siri-alama") === slug);
     })();
-    const r = localStorage.getItem("student_reg");
+    const r = storageGet("student_reg");
     if (r) setRegNo(r);
   }, [slug]);
 
   const loadResults = async (s: any) => {
     setStudent(s);
     setRegNo(s.reg_no);
-    localStorage.setItem("student_reg", s.reg_no);
+    storageSet("student_reg", s.reg_no);
     const r = s.reg_no.toUpperCase();
     const { data } = await supabase
       .from("submissions")

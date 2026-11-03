@@ -1,3 +1,5 @@
+import { storageGet, storageSet, storageRemove } from "@/lib/safe-storage";
+
 /**
  * Holds the sign-in token minted by student_login().
  *
@@ -9,15 +11,15 @@ const KEY = "student_session_token";
 
 export function getStudentToken(): string | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(KEY);
+  return storageGet(KEY);
 }
 
 export function setStudentToken(token: string): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(KEY, token);
+  storageSet(KEY, token);
 }
 
 export function clearStudentToken(): void {
   if (typeof window === "undefined") return;
-  window.localStorage.removeItem(KEY);
+  storageRemove(KEY);
 }

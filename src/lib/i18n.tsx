@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { storageGet, storageSet } from "@/lib/safe-storage";
 
 export type Lang = "sw" | "en";
 
@@ -241,8 +242,8 @@ const dict: Record<string, { sw: string; en: string }> = {
   // --- update taarifa -----------------------------------------------------
   update_title: { sw: "Update Taarifa", en: "Update your details" },
   update_sub: {
-    sw: "Hatua mbili: weka Reg Namba yako ili kuipata taarifa yako, kisha rekebishe taarifa zako pamoja na semina na group lako, na uhakiki. Ukishahakiki hutaweza kubadilisha tena.",
-    en: "Two steps: enter your Reg number to find your details, then edit your details together with your seminar and group, and confirm. Once confirmed you cannot change again.",
+    sw: "Hatua mbili: weka Reg Namba yako ili kuipata taarifa yako, kisha rekebishe taarifa zako, semina na group lako, kisha thibitisha mabadiliko. Ukithibitisha una saa moja ya kurekebisha; baada ya hapo mabadiliko yanafungwa.",
+    en: "Two steps: enter your Reg number to find your details, then edit your details, seminar and group, and confirm the changes. Once confirmed you have one hour to fix anything; after that the changes lock.",
   },
   update_cta: { sw: "Anza Update Taarifa", en: "Start updating" },
   reg_number: { sw: "Reg Namba", en: "Reg number" },
@@ -301,41 +302,55 @@ const dict: Record<string, { sw: string; en: string }> = {
   save_continue: { sw: "Hifadhi & Endelea", en: "Save & Continue" },
   nothing_changed: { sw: "Hakuna ulichobadilisha.", en: "Nothing changed." },
   group_edit_help: {
-    sw: "Chagua semina na group lako, kisha hakiki. Ukishahakiki group lako linafungwa — hutaweza kulibadilisha tena.",
-    en: "Pick your seminar and group, then confirm. Once confirmed your group locks and cannot be changed again.",
+    sw: "Chagua semina na group lako, kisha gusa Thibitisha Mabadiliko. Ukithibitisha unapata saa moja ya kurekebisha; baada ya saa moja semina na group lako linafungwa kabisa.",
+    en: "Pick your seminar and group, then tap Confirm changes. Confirming gives you one hour to fix anything; after that hour your seminar and group lock for good.",
   },
-  confirm_group: { sw: "Hifadhi", en: "Save" },
-  confirm_group_short: { sw: "Hifadhi", en: "Save" },
-  confirming: { sw: "Inahifadhi...", en: "Saving..." },
+  confirm_group: { sw: "Thibitisha Mabadiliko", en: "Confirm changes" },
+  confirm_group_short: { sw: "Thibitisha", en: "Confirm" },
+  confirming: { sw: "Inathibitisha...", en: "Confirming..." },
   confirm_group_title: {
-    sw: "Hifadhi semina na group lako?",
-    en: "Save your seminar and group?",
+    sw: "Thibitisha mabadiliko yako?",
+    en: "Confirm your changes?",
   },
   confirm_group_warning: {
-    sw: "Kuhifadhi hapa ndiyo kuhakiki group lako. Ukihifadhi hutaweza kubadilisha semina wala group tena. Mwone admin kama umekosea.",
-    en: "Saving here is what confirms your group. Once saved you cannot change your seminar or group again. See an admin if you picked wrongly.",
+    sw: "Ukithibitisha hapa, mabadiliko yako yanahifadhiwa na unaanza kupata saa moja ya kurekebisha. Ukishapita saa moja hutaweza kubadilisha semina wala group lako tena. Mwone admin kama umekosea.",
+    en: "Confirming saves your changes and starts your one-hour window to fix anything. After that hour you cannot change your seminar or group again. See an admin if you picked wrongly.",
   },
-  confirm_changes: { sw: "Mabadiliko yatakayohifadhiwa", en: "Changes to save" },
-  confirm_unchanged: { sw: "Hakuna mabadiliko", en: "No change" },
+  confirm_changes: { sw: "Mabadiliko yako", en: "Your changes" },
+  confirm_nothing: {
+    sw: "Hukubadilisha kitu. Kuthibitisha kutahifadhi taarifa zako kama zilivyo.",
+    en: "You changed nothing. Confirming saves your details as they stand.",
+  },
   confirm_no_seat_change: {
-    sw: "Semina na group zipo zile zile. Kuhifadhi kutahakiki seat yako.",
-    en: "Seminar and group are unchanged. Saving will confirm your seat.",
+    sw: "Semina na group zipo zile zile. Kuthibitisha kutaanza saa yako ya kurekebisha.",
+    en: "Seminar and group are unchanged. Confirming starts your one-hour window.",
   },
-  confirm_yes: { sw: "Ndiyo, hifadhi", en: "Yes, save" },
+  confirm_yes: { sw: "Ndiyo, thibitisha", en: "Yes, confirm" },
   confirm_cancel: { sw: "Sitaki bado", en: "Not yet" },
-  save_details: { sw: "Hifadhi Taarifa", en: "Save details" },
+  save_details: { sw: "Hifadhi Marekebisho", en: "Save changes" },
   save_details_title: {
-    sw: "Hifadhi mabadiliko ya taarifa zako?",
-    en: "Save your details?",
+    sw: "Hifadhi marekebisho yako?",
+    en: "Save your changes?",
   },
   save_details_warning: {
-    sw: "Taarifa zako zitahifadhiwa. Semina na group lako zimefungwa — hutaweza kuzibadilisha. Mwone admin kama kuna kosa.",
-    en: "Your details will be saved. Your seminar and group are locked — you cannot change them. See an admin if something is wrong.",
+    sw: "Umehakiki. Bado una muda wa kurekebisha — baada ya saa moja semina na group lako linafungwa. Mwone admin kama kuna kosa.",
+    en: "You already confirmed. You still have time to fix things — after one hour your seminar and group lock. See an admin if something is wrong.",
   },
-  group_confirmed_title: { sw: "Group lako limehakikiwa", en: "Your group is confirmed" },
+  grace_left: {
+    sw: "Una saa {time} iliyobaki ya kurekebisha semina na group lako.",
+    en: "You have {time} left to change your seminar and group.",
+  },
+  grace_expired: {
+    sw: "Saa yako ya kurekebisha imeisha. Semina na group lako limefungwa — mwone admin kama kuna kosa.",
+    en: "Your one-hour window has closed. Your seminar and group are locked — see an admin if something is wrong.",
+  },
+  group_confirmed_title: {
+    sw: "Mabadiliko yako yamethibitishwa",
+    en: "Your changes are confirmed",
+  },
   group_confirmed_body: {
-    sw: "Semina na group lako vimehifadhiwa na kufungwa. Hutaweza kubadilisha tena. Mwone admin kama kuna kosa.",
-    en: "Your seminar and group are saved and locked. You cannot change them again. See an admin if something is wrong.",
+    sw: "Taarifa, semina na group lako vimehifadhiwa. Una saa moja ya kurekebisha; baada ya saa moja mabadiliko yanafungwa. Mwone admin kama kuna kosa.",
+    en: "Your details, seminar and group are saved. You have one hour to fix anything; after that the changes lock. See an admin if something is wrong.",
   },
   group_confirmed_at: { sw: "Ilihakikiwa", en: "Confirmed" },
   group_not_confirmed: { sw: "Bado haijahakikiwa", en: "Not confirmed yet" },
@@ -352,15 +367,15 @@ const dict: Record<string, { sw: string; en: string }> = {
   },
   choose_semester: { sw: "Chagua semester", en: "Choose a semester" },
   academic_placeholder: { sw: "Mfano 2026/2027", en: "e.g. 2026/2027" },
-  submit_request: { sw: "Tuma Ombi", en: "Submit request" },
+  submit_request: { sw: "Thibitisha", en: "Confirm" },
   sending: { sw: "Inatuma...", en: "Sending..." },
   request_sent: {
-    sw: "Ombi lako limetumwa. Admin atathibitisha.",
-    en: "Your request was sent. An admin will confirm.",
+    sw: "Mabadiliko yako yamehifadhiwa.",
+    en: "Your changes are saved.",
   },
   auto_approved: {
-    sw: "Marekebisho yako yamehifadhiwa na yameanza kutumika mara moja.",
-    en: "Your corrections are saved and already in effect.",
+    sw: "Mabadiliko yako yamehifadhiwa na yameanza kutumika mara moja.",
+    en: "Your changes are saved and already in effect.",
   },
   saved_title: { sw: "Imefanikiwa!", en: "Success!" },
   saved_body: {
@@ -375,11 +390,11 @@ const dict: Record<string, { sw: string; en: string }> = {
     sw: "Changamoto imezimwa na admin kwa sasa.",
     en: "Report an issue is switched off by the admin right now.",
   },
-  my_requests: { sw: "Maombi yako", en: "Your requests" },
+  my_requests: { sw: "Mabadiliko uliyofanya", en: "Changes you made" },
   wrong_reg: { sw: "⚠ Nilikosea Reg Namba kabisa", en: "⚠ I used the wrong Reg number entirely" },
   wrong_reg_help: {
-    sw: "Kagua ikiwa ulijiandikisha kwa Reg isiyo sahihi na unataka matokeo yako ya awali yahamishwe kwa Reg mpya. Admin atathibitisha kabla ya kuhamisha.",
-    en: "Tick this if you registered under the wrong Reg number and want your earlier results moved to the new one. An admin confirms before anything is moved.",
+    sw: "Kagua ikiwa ulijiandikisha kwa Reg isiyo sahihi na unataka matokeo yako ya awali yahamishwe kwa Reg mpya. Mabadiliko yanakwenda moja kwa moja kwenye matokeo yako.",
+    en: "Tick this if you registered under the wrong Reg number and want your earlier results moved to the new one. The change goes straight to your results.",
   },
   new_reg: { sw: "Reg Namba Mpya", en: "New Reg number" },
   new_name: { sw: "Jina Kamili Jipya", en: "New full name" },
@@ -449,7 +464,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>("sw");
 
   useEffect(() => {
-    const saved = (typeof window !== "undefined" && localStorage.getItem("lang")) as Lang | null;
+    const saved = storageGet("lang") as Lang | null;
     if (saved === "en" || saved === "sw") setLangState(saved);
   }, []);
 
@@ -458,11 +473,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, [lang]);
 
   const setLang = (l: Lang) => {
-    try {
-      localStorage.setItem("lang", l);
-    } catch {
-      /* private mode */
-    }
+    storageSet("lang", l);
     setLangState(l);
   };
 

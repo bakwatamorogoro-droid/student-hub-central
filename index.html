@@ -19,20 +19,120 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="description" content="Islamic Studies Test Online — fanya mitihani mtandaoni, angalia maswali ya semester, na fuatilia matokeo yako." />
+    <meta
+      name="description"
+      content="Islamic Studies Test Online — fanya mitihani mtandaoni, angalia maswali ya semester, na fuatilia matokeo yako."
+    />
     <meta name="author" content="Islamic Studies Test" />
     <meta property="og:site_name" content="Islamic Studies Test" />
     <meta property="og:title" content="Islamic Studies Test Online" />
-    <meta property="og:description" content="Islamic Studies Test Online — fanya mitihani mtandaoni, angalia maswali ya semester, na fuatilia matokeo yako." />
+    <meta
+      property="og:description"
+      content="Islamic Studies Test Online — fanya mitihani mtandaoni, angalia maswali ya semester, na fuatilia matokeo yako."
+    />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/df737baf-c609-4852-9944-3fae9b2f25f3/id-preview-7188edae--48e34b63-dc11-4068-9abf-5ca62a673f88.lovable.app-1779422477900.png" />
+    <meta
+      property="og:image"
+      content="https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/df737baf-c609-4852-9944-3fae9b2f25f3/id-preview-7188edae--48e34b63-dc11-4068-9abf-5ca62a673f88.lovable.app-1779422477900.png"
+    />
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="Islamic Studies Test Online" />
-    <meta name="twitter:description" content="Islamic Studies Test Online — fanya mitihani mtandaoni, angalia maswali ya semester, na fuatilia matokeo yako." />
-    <meta name="twitter:image" content="https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/df737baf-c609-4852-9944-3fae9b2f25f3/id-preview-7188edae--48e34b63-dc11-4068-9abf-5ca62a673f88.lovable.app-1779422477900.png" />
+    <meta
+      name="twitter:description"
+      content="Islamic Studies Test Online — fanya mitihani mtandaoni, angalia maswali ya semester, na fuatilia matokeo yako."
+    />
+    <meta
+      name="twitter:image"
+      content="https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/df737baf-c609-4852-9944-3fae9b2f25f3/id-preview-7188edae--48e34b63-dc11-4068-9abf-5ca62a673f88.lovable.app-1779422477900.png"
+    />
+    <style>
+      /* Shown only when the bundle cannot run. See the script at the end of body. */
+      #unsupported {
+        display: none;
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        line-height: 1.6;
+        margin: 0 auto;
+        max-width: 34rem;
+        padding: 2rem 1.25rem;
+        color: #0b2233;
+      }
+      html[data-unsupported] #unsupported {
+        display: block;
+      }
+      html[data-unsupported] #root {
+        display: none;
+      }
+      #unsupported h1 {
+        font-size: 1.25rem;
+        margin: 0 0 0.5rem;
+      }
+      #unsupported p {
+        margin: 0 0 0.75rem;
+        font-size: 0.95rem;
+      }
+      #unsupported ul {
+        margin: 0;
+        padding-left: 1.25rem;
+        font-size: 0.95rem;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+
+    <!--
+      The bundle is an ES module. Opera Mini (extreme mode), Android WebView below
+      Chrome 61, and IE never execute it, so the page used to arrive completely blank
+      with no explanation. The inline check below is classic JavaScript on purpose:
+      it runs on engines that cannot parse a module, and reveals the notice. `<noscript>`
+      covers the same case when scripting is off entirely.
+    -->
+    <div id="unsupported" role="alert">
+      <h1>Kivinjari hiki hakitumiki</h1>
+      <p>
+        Mfumo wa Islamic Studies Test unahitaji kivinjari cha kisasa. Kivinjari unachotumia sasa
+        hakiwezi kuendesha mfumo.
+      </p>
+      <p>Tafadhali fungua kiungo hiki kwa kivinjari kimoja cha haya:</p>
+      <ul>
+        <li>Google Chrome</li>
+        <li>Mozilla Firefox</li>
+        <li>Safari</li>
+        <li>Microsoft Edge</li>
+      </ul>
+      <p>Kama uko kwenye Opera Mini, tafadhali tumia Google Chrome badala yake.</p>
+    </div>
+    <noscript>
+      <div
+        style="
+          font-family: system-ui, sans-serif;
+          line-height: 1.6;
+          margin: 0 auto;
+          max-width: 34rem;
+          padding: 2rem 1.25rem;
+          color: #0b2233;
+        "
+      >
+        <h1 style="font-size: 1.25rem; margin: 0 0 0.5rem">JavaScript imezimwa</h1>
+        <p style="margin: 0 0 0.75rem; font-size: 0.95rem">
+          Mfumo wa Islamic Studies Test unahitaji JavaScript. Tafadhali washa JavaScript kwenye
+          kivinjari chako kisha ujaribu tena.
+        </p>
+      </div>
+    </noscript>
+
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Runs before the module in engines that support modules, and runs *instead* of
+      // it in engines that do not. `noModule` in HTMLScriptElement is the one feature
+      // that separates "can run an ES module" from "cannot".
+      if (!("noModule" in HTMLScriptElement.prototype)) {
+        document.documentElement.setAttribute("data-unsupported", "");
+      }
+    </script>
   </body>
 </html>

@@ -11,6 +11,7 @@ import { Upload, FileText, CheckCircle2, Clock, Sparkles, AlertCircle, ArrowLeft
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 import { matchesAcademicTarget } from "@/lib/academicTargeting";
+import { storageGet, storageSet } from "@/lib/safe-storage";
 
 type Search = { a?: string };
 
@@ -51,7 +52,7 @@ function Page() {
           if (found) setActive(found);
         }
       });
-    const saved = localStorage.getItem("student_reg");
+    const saved = storageGet("student_reg");
     if (saved) setReg(saved);
   }, [aParam]);
 
@@ -59,7 +60,7 @@ function Page() {
     setStudent(data);
     setMatches([]);
     setReg(data.reg_no);
-    localStorage.setItem("student_reg", data.reg_no);
+    storageSet("student_reg", data.reg_no);
     const { data: subs } = await supabase.from("pdf_submissions" as any).select("*").eq("reg_no", data.reg_no).order("created_at", { ascending: false });
     setMySubs((subs as any[]) || []);
     if (active && !matchesAcademicTarget(active, data)) setActive(null);

@@ -257,7 +257,7 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
 - **Pin the Node version, or Vercel resolves a new major on every deploy.** The project setting
   said `24.x` while `.nvmrc` said `22` and `package.json` asked for `>=22.12.0` — three signals
   and no agreement. The live log showed the cost: `Skipping build cache since Node.js version
-  changed from "24.x" to "26.x"`, so each deploy installed from scratch and a toolchain change
+changed from "24.x" to "26.x"`, so each deploy installed from scratch and a toolchain change
   could break the build with no commit behind it. `engines.node` is `24.x` and `.nvmrc` says
   `24`, matching the Vercel setting; CI reads the same file via `actions/setup-node`. Keep the
   three in step when the runtime moves.
@@ -1190,7 +1190,7 @@ to step 1, and the step chips allow jumping anywhere the student is allowed to g
 attendance card is gone; `/attendance` is reachable from the menu and nowhere else.
 
 Step 2 holds everything: name, Reg Namba, course, study year (read-only), semester, phone,
-seminar and group, then the roster. The single **Hifadhi** press saves the details *and*
+seminar and group, then the roster. The single **Hifadhi** press saves the details _and_
 confirms the seat, so there is no separate group step to walk. A student who already
 confirmed sees a locked summary instead of the pickers, and the button reads
 **Hifadhi Taarifa** and saves their details without touching the seat.
@@ -1214,19 +1214,35 @@ deduplicate on `upper(trim(reg_no))`, keeping the row that carries the results a
 Do not "fix" this in `findMyGroup` by de-duplicating by Reg Namba — two real students can share
 a Reg Namba only through the data error, and hiding it in the view makes the cleanup harder.
 
-## Confirming a group locks it, and the lock lives in the database
+## Confirming a group opens a one-hour window, then locks it
 
-Step 2 of `Update Taarifa` confirms the seat rather than merely saving it. The browser holds the
-**publishable key**, so a disabled dropdown proves nothing: `apply_profile_update` is a Postgres
-function reachable straight from PostgREST, and it used to rewrite `semina` and `student_group`
-on any row it was handed. The lock has to be a database rule.
+Step 2 of `Update Taarifa` confirms the seat rather than merely saving it, and the button says
+**Thibitisha Mabadiliko**. There is no approval step anywhere on this page: the student is the
+only one who knows their own name and phone number, and the request row is written straight to
+`status: approved` as an audit trail, never as a queue. The "Maombi yako" list shows the field
+names the student changed, not an `approved`/`rejected` status, because every row in it is
+already in effect.
+
+Confirming is not final on the instant. `supabase/migrations/20261103120000_group_edit_grace_window.sql`
+keeps the seat editable for **one hour** after `group_confirmed_at`, so a student who notices the
+wrong group on the next screen can fix it without an admin. After the hour the seat is frozen.
+The deadline is derived from the stamp rather than stored separately, so a save inside the window
+does not push it out — one confirmation, one hour, then locked, and the window cannot be extended
+by saving again. `src/lib/groupLock.ts` holds the rule (`seatState` / `canEditSeat`) and the
+database applies the same boundary (`confirmed_at <= now() - interval '1 hour'`), so the form
+never offers a dropdown the write then refuses. The three states share one card: open pickers, a
+countdown badge, or a locked summary.
+
+The browser holds the **publishable key**, so a disabled dropdown proves nothing:
+`apply_profile_update` is a Postgres function reachable straight from PostgREST, and it used to
+rewrite `semina` and `student_group` on any row it was handed. The lock has to be a database rule.
 
 `supabase/migrations/20261102140000_group_confirmation.sql` adds `students.group_confirmed_at`
-and rewrites `apply_profile_update` so that once the stamp is set the incoming seminar and group
-are **ignored, not rejected** — a name or Reg Namba correction on a confirmed student still
+and rewrites `apply_profile_update` so that once the hour has run out the incoming seminar and
+group are **ignored, not rejected** — a name or Reg Namba correction on a locked student still
 works. `confirm_student_group(id, semina, group)` takes `FOR UPDATE`, returns `true` when this
-call was the one that confirmed, and `false` when the seat was already confirmed, in which case
-it leaves the row untouched. `unlock_student_group(id)` clears the stamp. All three are
+call opened or moved the seat, and `false` when the window has closed, in which case it leaves
+the row untouched. `unlock_student_group(id)` clears the stamp. All three are
 `SECURITY DEFINER` and `GRANT EXECUTE` is issued to `anon`/`authenticated`/`service_role`,
 because RLS does not grant function access and the call is refused before it runs without it.
 
@@ -1283,25 +1299,54 @@ This is why "the OK/Cancel text does not show" is a CSS bug and not a missing bu
 `showConfirmButton` was never false. Check the computed `background-color` before
 touching the SweetAlert2 options.
 
-## The single save on step 2 saves and confirms in one press
+## The single save on step 2 confirms, then leaves an hour to fix things
 
 There is no separate "Hakiki" button, and no separate group step. The step-2 button reads
-**Hifadhi**, and that one press writes the details and stamps `group_confirmed_at` — the
-student asked for the word "Hifadhi" to stay and to be the thing that confirms. The dialog
-lists the seat change (old value struck through, new value in primary) so the press is never
-blind, and falls back to `confirm_no_seat_change` when the pickers already match the row. An
-unchanged seat still confirms: the dialog's job is to confirm the seat, not to require an
-edit.
+**Thibitisha Mabadiliko**, and that one press writes the details and stamps `group_confirmed_at`,
+opening the one-hour window described above. The dialog lists every field the student changed —
+old value struck through, new value in primary, seat fields first — so the press is never blind.
+An unchanged seat still confirms: the dialog's job is to confirm, not to require an edit.
 
-A student whose seat is already confirmed is not offered the pickers again. Their button
-reads **Hifadhi Taarifa**, and `saveAndConfirm` skips `lockSeat` for them: the seat is
-frozen, so re-stamping it would be a no-op at best and a stale-seat write at worst.
+The button label tracks the window, not just whether a stamp exists. `seat === "open"` reads
+**Thibitisha Mabadiliko**; a seat inside the hour or already locked reads **Hifadhi Marekebisho**.
+A locked seat is not offered the pickers at all — it renders the read-only summary, and
+`saveAndConfirm` skips `lockSeat` for it, because re-stamping would be a no-op at best and a
+stale-seat write at worst. A seat inside the hour keeps its pickers and shows the countdown badge.
+
+## The page must survive a browser that blocks storage
+
+"Haifanyi kazi kwenye Opera Mini" is not a CSS or a network problem. `window.localStorage`
+is a **throwing getter** in more places than people expect: Opera Mini's extreme mode, Chrome
+running inside an in-app webview, a browser with cookies blocked, and Safari's "Block All
+Cookies". A bare `localStorage.getItem(...)` on any of those raises a `SecurityError`, and
+because that ran during `I18nProvider`'s first effect — before React had mounted anything —
+the whole bundle aborted and the visitor got the error boundary, or a blank page, on a site
+that is otherwise perfectly healthy in desktop Chrome.
+
+`src/lib/safe-storage.ts` is the only place that touches the browser store now. It probes once,
+returns `null` when the probe throws, and falls back to an in-memory `Map` for the life of the
+tab, so the app is merely forgetful rather than broken. **Every** `localStorage` call goes
+through it, including `brokeredPreviewStorage()` in `src/integrations/supabase/previewAuthStorage.ts`,
+which is the one that bites hardest: supabase-js reads `auth.storage` during client
+construction, so an unguarded `return localStorage` there throws before any component runs.
+
+The other half of the fix is `index.html`. The bundle is an ES module, and Opera Mini never
+executes one, so the page used to arrive completely blank with no explanation. An inline
+classic script now tests `"noModule" in HTMLScriptElement.prototype` — the one feature that
+separates "can run a module" from "cannot" — and sets `data-unsupported` on `<html>`, which
+reveals a Swahili notice naming Chrome/Firefox/Safari/Edge. A `<noscript>` block covers the
+same case when scripting is off entirely. This does not make Opera Mini work; it stops it
+failing silently, which is the most a site built on ES modules can honestly do.
+
+To reproduce the original failure locally, build with real `VITE_SUPABASE_*` values, then load
+the entry chunk from a page that defines a throwing `localStorage` getter. Before the fix the
+DOM ends at the error boundary; after it, the header and hero render.
 
 ## The browser floor is Chrome 87 / Safari 14, and the CSS floor is lower
 
 Tailwind 4 emits `oklch()` and `color-mix()`. `color-mix()` is the newest thing on
 the page: Chrome 111+, Safari 16.4+, Firefox 113+. On anything older the declaration
-is dropped, and a custom property that holds it does *not* fall back — the same
+is dropped, and a custom property that holds it does _not_ fall back — the same
 failure mode as `hsl(var(--primary))` below. The page still renders; it just paints
 with no colour in the theme tokens.
 
@@ -1332,4 +1377,3 @@ Three other things that were fixed at the same time, all worth keeping:
   because Safari only learned SVG favicons in 16.4. `index.html` also carries a
   `preconnect` to the Supabase origin; without it the first query waited for DNS
   and TLS to finish.
-
