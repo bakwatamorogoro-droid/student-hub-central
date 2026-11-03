@@ -10,10 +10,10 @@
  *    chose is `test_number`; the title is only a fallback for older rows.
  * 2. **Most students were silently excluded.** `matchesAcademicTarget` hid an
  *    exam from any student whose `study_year` or `academic_year` was missing —
- *    and 959 of 1623 students have no `study_year`, so a published exam reached
- *    56 of them. A published exam is now visible to everyone who is signed in.
- *    The targeting columns still record who an exam was written for; they no
- *    longer hide it from the rest.
+ *    and 945 of 1623 students have no `study_year`, so a published exam aimed at
+ *    year 2 reached only the 675 who had it. A published exam is now visible to
+ *    everyone who is signed in. The targeting columns still record who an exam
+ *    was written for; they no longer hide it from the rest.
  */
 
 export type ExamLike = {

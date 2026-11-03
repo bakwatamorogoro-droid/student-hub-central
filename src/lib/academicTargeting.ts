@@ -1,4 +1,4 @@
-import { CURRENT_ACADEMIC_YEAR, admissionYearFromReg, studyYearFromReg } from "@/lib/studyYear";
+import { CURRENT_ACADEMIC_YEAR, admissionYearFromReg, studyYearFromReg } from "./studyYear.ts";
 export const STUDY_YEARS = [1, 2, 3, 4] as const;
 
 /**
@@ -13,7 +13,7 @@ export {
   GROUPS_PER_SEMINAR,
   GROUP_SIZE,
   SEMINARS,
-} from "@/lib/groupAssignment";
+} from "./groupAssignment.ts";
 
 /**
  * Only SEMESTER 1 is active. SEMESTER 2 is still listed so the owner can see
@@ -43,7 +43,9 @@ export function studyYearsFor(programYears: number | string | null | undefined):
 export const ACADEMIC_YEARS: string[] = [CURRENT_ACADEMIC_YEAR];
 
 type AcademicProfile = {
-  study_year?: number | null;
+  // `study_year` arrives as a number from Postgres but the student type used by
+  // the pickers allows a string, so both are accepted and compared numerically.
+  study_year?: number | string | null;
   academic_year?: string | null;
 };
 
@@ -52,12 +54,30 @@ type AcademicTarget = {
   target_academic_year?: string | null;
 };
 
+/**
+ * Whether an exam or paper aimed at `target` should be shown to `student`.
+ *
+ * A field that is *missing* on the student's profile is not evidence of a
+ * mismatch. 945 of 1623 students have no `study_year` and 1562 have no
+ * `academic_year`, so requiring them to equal the target hid a published exam
+ * from most of the cohort. Only a value that is present *and* different
+ * excludes; an absent one defers to the admin, who is the only party that knows
+ * who the work was written for.
+ */
 export function matchesAcademicTarget(target: AcademicTarget, student: AcademicProfile | null) {
   if (!target.target_study_year && !target.target_academic_year) return true;
   if (!student) return false;
-  if (target.target_study_year && Number(target.target_study_year) !== Number(student.study_year))
+  if (
+    target.target_study_year &&
+    student.study_year != null &&
+    Number(target.target_study_year) !== Number(student.study_year)
+  )
     return false;
-  if (target.target_academic_year && target.target_academic_year !== student.academic_year)
+  if (
+    target.target_academic_year &&
+    student.academic_year != null &&
+    target.target_academic_year !== student.academic_year
+  )
     return false;
   return true;
 }
