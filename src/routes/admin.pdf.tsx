@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { FilePreview } from "@/components/FilePreview";
 import { toast } from "@/lib/toast";
 import { confirmAction } from "@/lib/alerts";
-import { FileText, ExternalLink, Trash2, Upload, Sparkles } from "lucide-react";
+import {
+  FileText,
+  ExternalLink,
+  Trash2,
+  Upload,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -28,6 +36,22 @@ function Page() {
   const [subs, setSubs] = useState<any[]>([]);
   const [exams, setExams] = useState<any[]>([]);
   const [grading, setGrading] = useState<any | null>(null);
+  /**
+   * The submission whose work is shown inline, in the list itself.
+   *
+   * One at a time on purpose: every open preview is a live pdfjs document with
+   * its own canvases, and expanding a whole page of submissions at once would
+   * be the memory blow-up the lazy page drawing exists to avoid. The admin
+   * still gets the work on the page, without a dialog or a new tab.
+   */
+  const [openId, setOpenId] = useState<string | null>(null);
+  /**
+   * Whether the first work has been opened on its own yet.
+   *
+   * Only the first load may auto-open: a later `load()` (after saving a grade)
+   * must not reopen a preview the admin deliberately closed.
+   */
+  const autoOpenedRef = useRef(false);
   const [uploadFor, setUploadFor] = useState<string>("");
   const [pdfTitle, setPdfTitle] = useState("");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -63,7 +87,17 @@ function Page() {
     // A group's work is a `pdf_submissions` row too, but it belongs to the whole
     // group and is reviewed on /admin/group-assignments. Keeping it out of this
     // list stops one group's file appearing as if one student sent it.
-    setSubs(((s as any[]) || []).filter((r) => r.status !== GROUP_SUBMISSION_STATUS));
+    const rows = ((s as any[]) || []).filter((r) => r.status !== GROUP_SUBMISSION_STATUS);
+    setSubs(rows);
+    // Open the first work straight away: the owner asked for the file to be
+    // there when the page opens, not one click later. Only the first, because
+    // each open preview is a live pdfjs document with its own canvases, and
+    // only on the first load, so a save does not reopen a closed preview.
+    if (!autoOpenedRef.current) {
+      autoOpenedRef.current = true;
+      const first = rows.find((r) => r.file_url);
+      if (first) setOpenId(first.id);
+    }
     setExams(e || []);
     setExamPdfs((ep as any[]) || []);
   };
@@ -480,6 +514,24 @@ function Page() {
                           <ExternalLink className="h-3 w-3 mr-1" /> Fungua
                         </Button>
                       </a>
+                      {s.file_url && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          aria-expanded={openId === s.id}
+                          onClick={() => setOpenId((cur) => (cur === s.id ? null : s.id))}
+                        >
+                          {openId === s.id ? (
+                            <>
+                              <ChevronUp className="h-3 w-3 mr-1" /> Ficha
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown className="h-3 w-3 mr-1" /> Onyesha hapa
+                            </>
+                          )}
+                        </Button>
+                      )}
                       {s.ai_suggested_score != null && !s.teacher_confirmed && (
                         <Button size="sm" variant="secondary" onClick={() => confirmAi(s)}>
                           <Sparkles className="h-3 w-3 mr-1" /> Thibitisha AI
@@ -502,6 +554,12 @@ function Page() {
                         <Trash2 className="h-3 w-3" />
                       </Button>
                     </div>
+
+                    {openId === s.id && s.file_url && (
+                      <div className="w-full pt-1">
+                        <FilePreview src={s.file_url} fileName={s.file_name} height={480} />
+                      </div>
+                    )}
                   </li>
                 );
               })}
