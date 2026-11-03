@@ -41,7 +41,7 @@ import { GROUP_NAMES, SEMINARS } from "@/lib/groupAssignment";
 import { invalidateRosterCache } from "@/lib/useRoster";
 import { GroupRosterView } from "@/components/GroupRosterView";
 import { formatGrace, graceRemainingMs, seatState } from "@/lib/groupLock";
-import { canEdit, hasGrant } from "@/lib/editPermission";
+import { canEdit, hasGrant, requestHistory, unlockedAtFromRows } from "@/lib/editPermission";
 import { FIELD_LABELS } from "@/lib/requestDiff";
 import {
   AlertDialog,
@@ -95,6 +95,9 @@ function Page() {
   // 3 = see the group you landed in and finish.
   const [step, setStep] = useState(1);
   const [editStatus, setEditStatus] = useState<any[]>([]);
+  // The request history the student reads. `editStatus` is the same rows plus any grant the
+  // admin left, which is what the unlock check reads.
+  const [editHistory, setEditHistory] = useState<any[]>([]);
   // The student picks their own seminar and group. Seeded from their row on lookup.
   const [editSemina, setEditSemina] = useState("");
   const [editGroup, setEditGroup] = useState("");
@@ -141,16 +144,17 @@ function Page() {
   // needs. It stops once the window closes rather than running for the life of the page.
   const seat = seatState(student?.group_confirmed_at, now);
 
-  // The admin can open one student's form while Update Taarifa is off for everyone else
-  // (`grant_student_edit`). A grant is spent by the save, so `editUnlocked` is read off
-  // the row and re-read after every write.
+  // The admin can open one student's form while Update Taarifa is off for everyone else.
+  // The grant is a row in `profile_update_requests`, which `editStatus` already holds, so
+  // it is read from the same fetch the request history comes from. A grant is spent by the
+  // save, so this re-derives every time the student's rows are re-read.
   const editUnlocked = hasGrant({
     globallyEnabled: !!settings?.profile_edits_enabled,
-    unlockedAt: student?.edit_unlocked_at,
+    unlockedAt: unlockedAtFromRows(editStatus, student?.id),
   });
   const editable = canEdit({
     globallyEnabled: !!settings?.profile_edits_enabled,
-    unlockedAt: student?.edit_unlocked_at,
+    unlockedAt: unlockedAtFromRows(editStatus, student?.id),
   });
   // A grant releases the seat in the database, but the row in hand still carries the old
   // stamp. Treat the seat as open so the pickers are offered in the same render.
@@ -182,7 +186,11 @@ function Page() {
       .select("*")
       .eq("student_id", data.id)
       .order("created_at", { ascending: false });
+    // A grant is an admin instruction, not a correction the student made, so it is kept out
+    // of the history they read. It is still in `editStatus`'s source, which is what the
+    // unlock check above reads.
     setEditStatus(reqs || []);
+    setEditHistory(requestHistory(reqs || []));
   };
 
   const confirmStudent = async (data: any) => {
@@ -305,10 +313,6 @@ function Page() {
             group_confirmed_at: editUnlocked
               ? new Date().toISOString()
               : (prev.group_confirmed_at ?? new Date().toISOString()),
-            // The grant was just spent, so the row in hand must stop claiming it is open.
-            // Otherwise the banner would stay up and the form would look editable until the
-            // student happened to reload.
-            edit_unlocked_at: null,
           }
         : prev,
     );
@@ -407,7 +411,9 @@ function Page() {
       // the re-read below sees the closed door.
       if (editUnlocked) {
         await consumeStudentEdit(student.id);
-        setStudent((prev: any) => (prev ? { ...prev, edit_unlocked_at: null } : prev));
+        // Drop the grant row locally too, so the banner and the editable form go away on this
+        // render rather than waiting for a reload.
+        setEditStatus((prev) => requestHistory(prev));
       }
       if (student.group_confirmed_at && !editUnlocked) {
         setSubmitting(false);
@@ -498,7 +504,7 @@ function Page() {
 
     // Spend the admin's grant, if there was one. One grant buys one correction, so the
     // door the admin opened closes as soon as the student has walked through it. The
-    // database is the record, so the local row is re-read below rather than trusted.
+    // database is the record, so the local rows are re-read below rather than trusted.
     if (editUnlocked) await consumeStudentEdit(student.id);
 
     // The details are in. For a student whose seat is still open or inside the hour,
@@ -929,12 +935,12 @@ function Page() {
                   the seat is written, not while it is still being chosen. */}
               <GroupRosterView key={rosterEpoch} reg={student.reg_no || reg} />
 
-              {editStatus.length > 0 && (
+              {editHistory.length > 0 && (
                 <div className="border-t pt-3 space-y-2">
                   <div className="text-xs font-semibold text-muted-foreground">
                     {t("my_requests")}:
                   </div>
-                  {editStatus.map((r) => (
+                  {editHistory.map((r) => (
                     <div key={r.id} className="text-xs p-2 rounded bg-muted space-y-0.5">
                       <div className="font-semibold">
                         {r.new_full_name || r.current_full_name} /{" "}
