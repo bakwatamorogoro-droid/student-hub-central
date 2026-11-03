@@ -1570,3 +1570,38 @@ hide who is still outstanding.
 `SignaturePad` signs in red (`#dc2626`) by default, with black, blue and green
 swatches. Red is the requested default, but a red tick can be lost against red
 text, so the choice is kept.
+
+## Marks on a page, and the submit spinner (Kazi za Kufanya)
+
+The teacher's tick, note or error is stored as plain data in
+`src/lib/assignmentAnnotations.ts`, and the one decision that matters is that a
+mark's spot is a **fraction of the page** (0..1), never pixels. Pixels would put
+the mark on the right word on the admin's wide screen and the wrong word on a
+student's phone; a fraction survives every zoom and screen size.
+
+`src/components/PdfPageView.tsx` is what makes per-page marks possible at all.
+The browser's own `<iframe>` PDF viewer cannot say which page is on screen, nor
+where a click inside the document landed, which is why the old marks could only
+ever be document-wide. Drawing one page to a canvas with `pdfjs-dist` gives both
+the page number and a click point. It loads the worker through
+`pdfjs-dist/build/pdf.worker.min.mjs?url` so Vite bundles it — without the worker
+a large PDF freezes the tab.
+
+A Word file has no pages to click, so its marks attach to the whole document
+(page 0); `page: 0` means "the whole work" everywhere in the code.
+
+`parseAnnotations` re-validates a stored list on the way in: it drops entries
+that are not a real kind or carry no words, and clamps a negative page to 0. A
+damaged row must not be able to put a stray mark on a page. `saveAdminAnswer`
+refuses to rebuild a row whose envelope will not parse, rather than silently
+discarding the group's presenters and question.
+
+The submit buttons are guarded because a bare `await` in an event handler leaves
+the spinner on forever when it throws. `send()` in `src/routes/quiz.tsx` and the
+admin's save both `try`/`catch`, clear the spinner, and tell the user what
+happened — a network drop, a storage rejection or a quota error must end in a
+message, not a spinner that never stops.
+
+CI installs with `bun install --frozen-lockfile`, so a dependency added to
+`package.json` must also be recorded in `bun.lock` or the install step fails
+before the build ever runs.

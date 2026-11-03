@@ -17,6 +17,9 @@ import { toast } from "@/lib/toast";
 import { useI18n } from "@/lib/i18n";
 import { useRoster } from "@/lib/useRoster";
 import { loadGroupSubmission, submitGroupAssignment } from "@/lib/groupAssignmentApi";
+import { PdfPageView } from "@/components/PdfPageView";
+import { AnnotationList, AnnotationTally } from "@/components/AssignmentAnnotator";
+import { ANNOTATION_META, firstAnnotatedPage } from "@/lib/assignmentAnnotations";
 import {
   GROUP_FILE_ACCEPT,
   MAX_GROUP_FILE_BYTES,
@@ -260,16 +263,30 @@ function Page() {
       return;
     }
     setSending(true);
-    const res = await submitGroupAssignment({
-      key: confirmedKey,
-      question,
-      presenters,
-      file,
-      submittedBy: student
-        ? { reg_no: String(student.reg_no ?? ""), full_name: String(student.full_name ?? "") }
-        : null,
-      studentId: student?.id ?? null,
-    });
+    let res: Awaited<ReturnType<typeof submitGroupAssignment>>;
+    try {
+      res = await submitGroupAssignment({
+        key: confirmedKey,
+        question,
+        presenters,
+        file,
+        submittedBy: student
+          ? { reg_no: String(student.reg_no ?? ""), full_name: String(student.full_name ?? "") }
+          : null,
+        studentId: student?.id ?? null,
+      });
+    } catch (e) {
+      // Without this the upload spinner never stops: a network drop, a storage
+      // rejection or a quota error throws, and the button spins forever with no
+      // word to the student about what went wrong.
+      setSending(false);
+      toast.error(
+        e instanceof Error && e.message
+          ? `Imeshindikana kutuma: ${e.message}`
+          : "Imeshindikana kutuma kazi. Angalia intaneti yako kisha ujaribu tena.",
+      );
+      return;
+    }
     setSending(false);
     if (!res.ok) {
       if (res.error === "already_submitted") {
@@ -629,6 +646,53 @@ function SentCard({ row, onChangeGroup }: { row: GroupSubmissionRow; onChangeGro
             <p className="mt-1.5 text-xs text-muted-foreground">{t("ga_waiting_answer")}</p>
           )}
         </div>
+
+        {sub.annotations.length > 0 && (
+          <div className="space-y-2 rounded-xl border-2 border-rose-500/30 bg-rose-500/5 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-bold uppercase tracking-wide text-rose-700 dark:text-rose-300">
+                {t("ga_marks_on_work")}
+              </span>
+              <AnnotationTally items={sub.annotations} />
+            </div>
+            <AnnotationList items={sub.annotations} />
+            {row.file_url && /\.pdf$/i.test(String(row.file_name ?? "")) && (
+              <div className="rounded-lg bg-background p-1.5">
+                <p className="mb-1 text-[11px] text-muted-foreground">{t("ga_see_marks_hint")}</p>
+                <PdfPageView
+                  src={row.file_url}
+                  page={firstAnnotatedPage(sub.annotations)}
+                  overlay={(p) => (
+                    <div className="pointer-events-none absolute inset-0">
+                      {sub.annotations
+                        .filter((a) => a.page === p)
+                        .map((a) => (
+                          <div
+                            key={a.id}
+                            className="absolute -translate-x-1/2 -translate-y-1/2"
+                            style={{ left: `${a.x * 100}%`, top: `${a.y * 100}%` }}
+                          >
+                            <span
+                              className={`flex max-w-[14rem] items-start gap-1 rounded-lg border-2 bg-white/95 px-1.5 py-1 text-[11px] leading-tight shadow-md ${
+                                a.kind === "tick"
+                                  ? "border-emerald-600 text-emerald-700"
+                                  : a.kind === "note"
+                                    ? "border-sky-600 text-sky-700"
+                                    : "border-rose-600 text-rose-700"
+                              }`}
+                            >
+                              <span className="font-black">{ANNOTATION_META[a.kind].glyph}</span>
+                              {a.text && <span className="text-slate-900">{a.text}</span>}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                />
+              </div>
+            )}
+          </div>
+        )}
         <Button variant="outline" className="gap-1" onClick={onChangeGroup}>
           <ArrowLeft className="h-4 w-4" /> {t("ga_back")}
         </Button>
