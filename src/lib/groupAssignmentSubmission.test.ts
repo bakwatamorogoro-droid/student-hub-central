@@ -291,3 +291,80 @@ test("byte sizes read the way a student expects", () => {
   assert.equal(formatBytes(500 * 1024), "500KB");
   assert.equal(formatBytes(2 * 1024 * 1024), "2.0MB");
 });
+
+test("ticks travel in the envelope and come back on the same page", () => {
+  const env = {
+    kind: "group_assignment" as const,
+    semina: "SEMINA 10",
+    gender: "Mwanaume",
+    group: "GROUP 5",
+    presenters: ["A"],
+    question: "Swali",
+    annotations: [
+      { id: "t1", page: 2, kind: "tick" as const, text: "", x: 0.3, y: 0.4 },
+      { id: "n1", page: 5, kind: "note" as const, text: "Pitia hapa", x: 0.6, y: 0.2 },
+    ],
+  };
+  const round = parseEnvelope(serializeEnvelope(env));
+  assert.deepEqual(round?.annotations, env.annotations);
+  assert.equal(round?.annotations?.[1].page, 5);
+});
+
+test("a damaged tick list is repaired, and the unfixable parts dropped", () => {
+  const raw = JSON.stringify({
+    kind: "group_assignment",
+    semina: "S",
+    gender: "Mwanaume",
+    group: "G",
+    presenters: [],
+    question: "",
+    annotations: [
+      { id: "ok", page: 1, kind: "tick", x: 0.1, y: 0.1 },
+      { id: "bad", page: -3, kind: "tick", x: 5, y: 5 },
+      { id: "worse", page: 1, kind: "scribble", x: 0.1, y: 0.1 },
+    ],
+  });
+  const env = parseEnvelope(raw);
+  // The unknown kind is dropped; the rest is clamped into a real page and spot.
+  assert.deepEqual(
+    env?.annotations?.map((a) => ({ id: a.id, page: a.page, x: a.x, y: a.y })),
+    [
+      { id: "ok", page: 1, x: 0.1, y: 0.1 },
+      { id: "bad", page: 0, x: 1, y: 1 },
+    ],
+  );
+});
+
+test("a note without words is refused; a tick needs none", () => {
+  const raw = JSON.stringify({
+    kind: "group_assignment",
+    semina: "S",
+    gender: "Mwanaume",
+    group: "G",
+    presenters: [],
+    question: "",
+    annotations: [
+      { id: "t", page: 1, kind: "tick", x: 0.1, y: 0.1 },
+      { id: "n", page: 1, kind: "note", text: "   ", x: 0.1, y: 0.1 },
+    ],
+  });
+  const env = parseEnvelope(raw);
+  assert.deepEqual(
+    env?.annotations?.map((a) => a.id),
+    ["t"],
+  );
+});
+
+test("an envelope with no ticks stays free of an empty list", () => {
+  const env = parseEnvelope(
+    JSON.stringify({
+      kind: "group_assignment",
+      semina: "S",
+      gender: "Mwanaume",
+      group: "G",
+      presenters: [],
+      question: "",
+    }),
+  );
+  assert.equal(env?.annotations, undefined);
+});

@@ -144,6 +144,14 @@ const dict: Record<string, { sw: string; en: string }> = {
   ga_question_summary: { sw: "Swali letu", en: "Our question" },
   ga_answer_from_admin: { sw: "Jibu la mwalimu", en: "Teacher's answer" },
   ga_mark_label: { sw: "Alama", en: "Mark" },
+  ga_marks_on_work: {
+    sw: "Alama za mwalimu kwenye kazi yenu",
+    en: "Your teacher's marks on the work",
+  },
+  ga_see_marks_hint: {
+    sw: "Alama zinaonekana kwenye ukurasa zilipowekwa — tembea kurasa.",
+    en: "Marks appear on the page they were placed on — browse the pages.",
+  },
   ga_waiting_answer: {
     sw: "Mwalimu bado hajatuma jibu. Subirini.",
     en: "The teacher has not sent an answer yet. Please wait.",

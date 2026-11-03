@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import type { Mark } from "@/lib/assignmentMarks";
+import type { Annotation } from "@/lib/assignmentAnnotations";
 import {
   GROUP_MAX_SCORE,
   GROUP_SUBMISSION_STATUS,
@@ -128,6 +129,12 @@ export type SaveAnswerInput = {
   signature: string | null;
   /** The mark the admin typed, e.g. "7/24". Absent means no mark was given. */
   mark?: Mark | null;
+  /**
+   * The teacher's marks on the group's own work — ticks, notes and errors, each
+   * on its page. Replaced wholesale, because the annotator is the source of
+   * truth for the list it is showing.
+   */
+  annotations?: Annotation[] | null;
 };
 
 /**
@@ -143,8 +150,18 @@ export type SaveAnswerInput = {
  * visible to anything that reads the table without knowing the envelope.
  */
 export async function saveAdminAnswer(input: SaveAnswerInput): Promise<Error | null> {
+  const raw = String(input.row.ai_extracted_text ?? "").trim();
+  const parsed = parseEnvelope(raw);
+  // A row that carries an envelope which will not parse is not a row to rebuild
+  // from scratch: overwriting it would silently throw away the group's
+  // presenters, their question and who submitted it. Refuse, and say so.
+  if (!parsed && raw) {
+    return new Error(
+      "Kazi hii ina data ya zamani isiyosomeka. Tuma tena baada ya kuhakikisha faili, au wasiliana na msimamizi.",
+    );
+  }
   const env =
-    parseEnvelope(input.row.ai_extracted_text) ??
+    parsed ??
     ({
       kind: "group_assignment",
       semina: String(input.row.semina ?? ""),
@@ -161,6 +178,7 @@ export async function saveAdminAnswer(input: SaveAnswerInput): Promise<Error | n
   };
   if (input.signature) next.answer_signature = input.signature;
   if (input.mark) next.mark = input.mark;
+  if (input.annotations) next.annotations = input.annotations;
 
   const update: Database["public"]["Tables"]["pdf_submissions"]["Update"] = {
     feedback: input.answer,
