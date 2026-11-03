@@ -1662,6 +1662,22 @@ the page number and a click point. It loads the worker through
 `pdfjs-dist/build/pdf.worker.min.mjs?url` so Vite bundles it — without the worker
 a large PDF freezes the tab.
 
+**Never show a PDF through an `<iframe>`.** It is the failure the owner reported
+on `/admin/pdf`: the frame depends on the browser having a built-in viewer, and
+a phone's WebView has none, so the panel stays blank, `onError` never fires, and
+there is nothing on screen to distinguish a broken upload from an unhelpful
+browser. `FilePreview` renders every PDF with `PdfDocumentView` (also in
+`PdfPageView.tsx`), which is the same pdfjs path as the annotation view. Both
+viewers share `usePdfDocument`, so the worker setup and the error panel exist
+once. A genuinely unreadable document says so; it does not go quiet.
+
+The all-pages viewer paints a page only when it comes near the viewport
+(`IntersectionObserver`, 400px margin) and reserves each page's box first, since
+drawing 40 pages eagerly is ~390 MB of canvas on a phone. It also labels a file
+by URL when `file_name` is empty — `previewKindFor(name, src)` — because a row
+can carry a `file_url` with no name, and without the fallback such a PDF was
+declared "cannot be shown here" while being perfectly readable.
+
 A Word file has no pages to click, so its marks attach to the whole document
 (page 0); `page: 0` means "the whole work" everywhere in the code.
 
