@@ -1403,10 +1403,23 @@ progress bar.
 wizard shows the picker on step 1 and the members list on step 2 instead of stacking
 both cards on one screen. The default, `all`, is the original single-page behaviour.
 
-`/attendance` defers the check-in. A scan or a typed code records *which* session
+`/attendance` defers the check-in. A scan or a typed code records _which_ session
 and advances to a confirm step; the actual `checkIn` only fires on the second tap.
 Do not move the check-in back into the scan handler — a poster QR read by accident
 would mark attendance on the spot.
+
+`/attendance` walks three steps, not two: **Jitambulishe → Kipindi → Thibitisha**.
+Identity is its own step because a session cannot be joined without it, and a
+scanned poster link already carries the code, so the pick step has nothing left to
+ask once the student is signed in. A returning student skips straight to the pick
+step; a scanned link skips to confirm. The step index is seeded in the `useState`
+initialiser from `getStudentToken()`, so a signed-in student never flashes the
+identity form on the way in.
+
+The rail itself is horizontal on every screen size. It used to collapse to
+"Hatua 2 kati ya 3" on a phone, which meant the student could not see the steps at
+all on the device most of them use. The counter line is now `sr-only`; the visible
+rail carries the meaning. Do not bring back the `sm:hidden`/`hidden sm:flex` pair.
 
 ## One student's form can be opened while the switch is off
 

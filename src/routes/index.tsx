@@ -11,7 +11,6 @@ import {
   ClipboardCheck,
   Eye,
   ArrowRight,
-  Brain,
   CalendarCheck,
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
@@ -204,18 +203,24 @@ function Index() {
           </Link>
 
           <Link to="/quiz" className="group animate-fade-in" style={{ animationDelay: "80ms" }}>
-            <Card className="h-full min-h-[190px] border-2 hover:border-emerald-500 hover:shadow-2xl transition-all hover:-translate-y-1 bg-gradient-to-br from-emerald-500/20 via-card to-primary/10 overflow-hidden relative">
-              <div className="absolute -right-6 -top-6 w-32 h-32 rounded-full bg-emerald-500/10 blur-2xl" />
-              <CardContent className="p-6 h-full flex flex-col justify-between relative">
+            <Card className="relative h-full min-h-[190px] overflow-hidden border-2 border-transparent bg-gradient-to-br from-violet-600 via-fuchsia-600 to-indigo-600 text-white shadow-xl shadow-violet-500/20 transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-fuchsia-500/30">
+              <div className="absolute -right-10 -bottom-12 h-48 w-48 rounded-full bg-white/15 blur-2xl" />
+              <div className="absolute -left-8 -top-10 h-36 w-36 rounded-full bg-fuchsia-300/20 blur-2xl" />
+              <CardContent className="relative flex h-full flex-col justify-between p-6">
                 <div>
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-primary flex items-center justify-center shadow-lg mb-3">
-                    <Brain className="h-6 w-6 text-white" />
+                  <div className="mb-3 flex items-center gap-3">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20 shadow-lg backdrop-blur">
+                      <Users className="h-6 w-6" />
+                    </span>
+                    <span className="rounded-full border border-white/30 bg-white/15 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest backdrop-blur">
+                      {t("quiz_badge")}
+                    </span>
                   </div>
-                  <div className="font-extrabold text-2xl tracking-tight">{t("quiz")}</div>
-                  <p className="text-sm text-muted-foreground mt-1">{t("quiz_sub")}</p>
+                  <h2 className="text-2xl font-extrabold tracking-tight">{t("quiz")}</h2>
+                  <p className="mt-1 text-sm text-white/85">{t("quiz_sub")}</p>
                 </div>
-                <div className="flex items-center gap-2 text-sm font-bold text-emerald-600 group-hover:translate-x-1 transition-transform">
-                  {t("enter")} <ArrowRight className="h-4 w-4" />
+                <div className="flex items-center gap-2 text-sm font-bold transition-transform group-hover:translate-x-1">
+                  {t("quiz_cta")} <ArrowRight className="h-4 w-4" />
                 </div>
               </CardContent>
             </Card>

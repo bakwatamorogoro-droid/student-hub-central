@@ -64,13 +64,6 @@ export function QrAttendanceCheckIn({
   const [code, setCode] = useState(initialJoinCode ?? "");
   const [sessions, setSessions] = useState<OpenSession[]>([]);
   const [studentToken, setTokenState] = useState<string | null>(() => getStudentToken());
-  const [step, setStep] = useState(0);
-
-  // Sign-in happens on this page rather than sending the student to /account and
-  // back: a scanned link arrives with a session to join, and a detour loses it.
-  const [regNo, setRegNo] = useState("");
-  const [pin, setPin] = useState("");
-  const [signingIn, setSigningIn] = useState(false);
 
   // A scan that arrived before sign-in waits here until the student is signed in.
   const pendingRef = useRef<ScannedAttendance | null>(
@@ -80,18 +73,38 @@ export function QrAttendanceCheckIn({
         ? { kind: "join", joinCode: initialJoinCode }
         : null,
   );
-  // The session the student picked on step 1 and is about to confirm on step 2.
+
+  // Identity is skipped when the student is already signed in — a returning
+  // student, or one arriving from a scanned poster link.
+  const [step, setStep] = useState(() => {
+    if (!getStudentToken()) return 0;
+    return pendingRef.current ? 2 : 1;
+  });
+
+  // Sign-in happens on this page rather than sending the student to /account and
+  // back: a scanned link arrives with a session to join, and a detour loses it.
+  const [regNo, setRegNo] = useState("");
+  const [pin, setPin] = useState("");
+  const [signingIn, setSigningIn] = useState(false);
+
+  // The session the student picked on the pick step and is about to confirm.
   const [chosen, setChosen] = useState<ScannedAttendance | null>(pendingRef.current);
 
+  /** Whether the student has settled who they are; the rail's first step. */
+  const identified = !!studentToken;
+
   /**
-   * The two steps a student walks: say which session, then confirm it.
+   * The three steps a student walks: say who they are, say which session, then
+   * confirm it.
    *
-   * Signing in is part of step 1 because identity has to be settled before a
-   * session can be joined, and the scanned poster link already carries the code —
-   * so step 1 is "who and which", step 2 is "yes, check me in".
+   * Identity is its own step because a session cannot be joined without it — and
+   * a scanned poster link already carries the code, so once the student is signed
+   * in the pick step has nothing left to ask. Splitting it out also means the rail
+   * shows why the scan button is not live yet.
    */
   const steps: WizardStep[] = [
-    { key: "pick", title: "Kipindi", hint: "Jitambulishe na chagua kipindi" },
+    { key: "who", title: "Jitambulishe", hint: "Thibitisha ni wewe kwa Reg Namba na PIN" },
+    { key: "pick", title: "Kipindi", hint: "Skani QR au andika msimbo wa kipindi" },
     { key: "confirm", title: "Thibitisha", hint: "Ruhusu GPS na hudhuria" },
   ];
 
@@ -170,15 +183,15 @@ export function QrAttendanceCheckIn({
   );
 
   /**
-   * Step 1 → step 2. A scan or a typed code no longer checks the student in on
-   * the spot; it records which session they mean and moves them to the confirm
-   * step, so the check-in is always a deliberate second tap.
+   * Pick step → confirm step. A scan or a typed code no longer checks the student
+   * in on the spot; it records which session they mean and moves them on, so the
+   * check-in is always a deliberate second tap.
    */
   const chooseSession = useCallback((scanned: ScannedAttendance) => {
     setChosen(scanned);
     setFailure(null);
     setScanning(false);
-    setStep(1);
+    setStep(2);
   }, []);
 
   const handleToken = useCallback(
@@ -195,6 +208,7 @@ export function QrAttendanceCheckIn({
       if (!st) {
         pendingRef.current = scanned;
         if (scanned.kind === "join") setCode(scanned.joinCode);
+        setStep(0);
         toast.error("Weka Reg Namba na PIN yako, kisha mahudhurio yataendelea.");
         return;
       }
@@ -203,12 +217,17 @@ export function QrAttendanceCheckIn({
     [chooseSession],
   );
 
-  // Finishes a scan that was waiting on sign-in.
+  // Signing in completes the identity step: a scan that was waiting on sign-in
+  // goes straight to confirm, and otherwise the student lands on the pick step.
   useEffect(() => {
-    if (!studentToken || !pendingRef.current) return;
+    if (!studentToken) return;
     const scanned = pendingRef.current;
-    pendingRef.current = null;
-    chooseSession(scanned);
+    if (scanned) {
+      pendingRef.current = null;
+      chooseSession(scanned);
+    } else {
+      setStep((s) => (s === 0 ? 1 : s));
+    }
   }, [studentToken, chooseSession]);
 
   const signIn = useCallback(async () => {
@@ -251,7 +270,7 @@ export function QrAttendanceCheckIn({
     chooseSession({ kind: "join", joinCode: code.trim() });
   }, [code, chooseSession]);
 
-  /** Step 2: the deliberate tap that actually records the attendance. */
+  /** Confirm step: the deliberate tap that actually records the attendance. */
   const confirmCheckIn = useCallback(async () => {
     const st = getStudentToken();
     if (!st) {
@@ -260,23 +279,20 @@ export function QrAttendanceCheckIn({
       return;
     }
     if (!chosen) {
-      setStep(0);
+      setStep(1);
       return;
     }
     await runScan(chosen, st);
   }, [chosen, runScan]);
 
+  /** Back to the pick step, or to identity if that is still unsettled. */
   const backToPick = useCallback(() => {
     setFailure(null);
-    setStep(0);
+    setStep(getStudentToken() ? 1 : 0);
   }, []);
 
   /** The words for the session waiting to be confirmed, so step 2 can name it. */
-  const chosenLabel = chosen
-    ? chosen.kind === "join"
-      ? chosen.joinCode
-      : "QR ya kipindi"
-    : "";
+  const chosenLabel = chosen ? (chosen.kind === "join" ? chosen.joinCode : "QR ya kipindi") : "";
 
   if (done) {
     return (
@@ -298,7 +314,7 @@ export function QrAttendanceCheckIn({
             onClick={() => {
               setDone(null);
               setChosen(null);
-              setStep(0);
+              setStep(getStudentToken() ? 1 : 0);
             }}
           >
             Sajili kipindi kingine
@@ -315,11 +331,20 @@ export function QrAttendanceCheckIn({
           <QrCode className="h-4 w-4" /> Hudhuria kwa QR Code
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Hatua mbili tu: chagua kipindi, kisha thibitisha. Umbali unaotakiwa unawekwa na mwalimu.
+          Hatua tatu: jitambulishe, chagua kipindi, kisha thibitisha. Umbali unaotakiwa unawekwa na
+          mwalimu.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
-        <WizardProgress steps={steps} current={step} onJump={(i) => i === 0 && backToPick()} />
+        <WizardProgress
+          steps={steps}
+          current={step}
+          onJump={(i) => {
+            // Only a step already unlocked can be jumped to, and identity has to
+            // be settled before the pick step exists.
+            if (i < step && (i === 0 || identified)) setStep(i);
+          }}
+        />
 
         {failure && (
           <div className="flex gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
@@ -341,7 +366,7 @@ export function QrAttendanceCheckIn({
           </div>
         )}
 
-        {step === 0 && !studentToken && (
+        {step === 0 && (
           <div className="space-y-3 rounded-xl border border-primary/30 bg-primary/5 p-3">
             <div className="flex gap-2">
               <ShieldAlert className="h-5 w-5 shrink-0 text-primary" />
@@ -349,7 +374,7 @@ export function QrAttendanceCheckIn({
                 <p className="font-medium">Jitambulishe kwa Reg Namba na PIN</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   Mahudhurio huhifadhiwa kwa jina lako, kwa hiyo tunahitaji kuthibitisha ni wewe.
-                  Ukishajitambulisha hapa, skani yako itaendelea moja kwa moja.
+                  Ukishajitambulisha, utaendelea kuchagua kipindi.
                 </p>
               </div>
             </div>
@@ -393,7 +418,7 @@ export function QrAttendanceCheckIn({
           </div>
         )}
 
-        {step === 0 && sessions.length > 0 && (
+        {step === 1 && sessions.length > 0 && (
           <div className="space-y-1.5">
             <p className="text-xs font-medium text-muted-foreground">Vipindi vinavyoendelea sasa</p>
             {sessions.map((s) => (
@@ -410,7 +435,7 @@ export function QrAttendanceCheckIn({
           </div>
         )}
 
-        {step === 0 ? (
+        {step === 1 ? (
           busy ? (
             <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
               <Loader2 className="h-8 w-8 animate-spin" />
@@ -458,13 +483,13 @@ export function QrAttendanceCheckIn({
               <div className="flex gap-2 rounded-lg border border-border bg-muted/40 p-3">
                 <ShieldAlert className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <p className="text-[11px] text-muted-foreground">
-                  Mahudhurio yanarekodiwa mara moja tu kwa kipindi. QR inabadilika mara kwa mara, kwa
-                  hiyo picha iliyotumwa kwa mwenzako haitafanya kazi.
+                  Mahudhurio yanarekodiwa mara moja tu kwa kipindi. QR inabadilika mara kwa mara,
+                  kwa hiyo picha iliyotumwa kwa mwenzako haitafanya kazi.
                 </p>
               </div>
             </>
           )
-        ) : (
+        ) : step === 2 ? (
           <div className="space-y-3 rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-3">
             <div className="flex items-start gap-2">
               <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
@@ -491,7 +516,7 @@ export function QrAttendanceCheckIn({
               />
             )}
           </div>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );

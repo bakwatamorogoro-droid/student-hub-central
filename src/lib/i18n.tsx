@@ -94,7 +94,10 @@ const dict: Record<string, { sw: string; en: string }> = {
   ga_wizard_step2: { sw: "Mliopresent", en: "Who presented" },
   ga_wizard_step2_hint: { sw: "Chagua walioandaa", en: "Pick who prepared" },
   ga_wizard_step3: { sw: "Swali na Faili", en: "Question and file" },
-  ga_wizard_step3_hint: { sw: "Andika swali, pakia kazi, tuma", en: "Write the question, upload, send" },
+  ga_wizard_step3_hint: {
+    sw: "Andika swali, pakia kazi, tuma",
+    en: "Write the question, upload, send",
+  },
   ga_wizard_chosen: { sw: "wamechaguliwa", en: "chosen" },
   ga_need_presenter: {
     sw: "Chagua angalau mwanachama mmoja aliyepresent.",
@@ -287,11 +290,13 @@ const dict: Record<string, { sw: string; en: string }> = {
   do_exam: { sw: "Fanya Mtihani", en: "Take Exam" },
   do_exam_sub: { sw: "Fanya mtihani rasmi — mtu mmoja", en: "Sit a formal exam — individually" },
   start_now: { sw: "Anza sasa", en: "Start now" },
-  quiz: { sw: "Quiz", en: "Quiz" },
+  quiz: { sw: "Assignment Group", en: "Group Assignment" },
   quiz_sub: {
-    sw: "Group au Individual — utachagua ndani",
-    en: "Group or individual — choose inside",
+    sw: "Kazi ya group — chagua wanachama, andika swali, pakia faili",
+    en: "Group work — pick your members, write the question, upload the file",
   },
+  quiz_badge: { sw: "GROUP", en: "GROUP" },
+  quiz_cta: { sw: "Anza kazi", en: "Start assignment" },
   enter: { sw: "Ingia", en: "Enter" },
   gps_recorded: { sw: "GPS itarekodiwa", en: "GPS will be recorded" },
 
