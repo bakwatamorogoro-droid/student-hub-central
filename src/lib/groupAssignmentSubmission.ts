@@ -21,6 +21,8 @@
  * app, so it is the one free text column on that table.
  */
 
+import { formatMark } from "./assignmentMarks.ts";
+
 export const GROUP_SUBMISSION_STATUS = "group_submitted";
 
 /** 2MB, as the owner asked. */
@@ -55,6 +57,15 @@ export type GroupEnvelope = {
   /** The system pen's PNG data URL. */
   answer_signature?: string;
   answered_at?: string;
+  /**
+   * The mark, as the admin typed it: the score and the total it is out of.
+   *
+   * Kept in the envelope as two numbers so "7/24" survives a round-trip without
+   * having to re-parse a string, and mirrored onto the row's own `score` and
+   * `max_score` columns so a reader that does not know the envelope still sees
+   * the mark.
+   */
+  mark?: { score: number; max: number };
 };
 
 /**
@@ -126,6 +137,9 @@ export function parseEnvelope(raw: string | null | undefined): GroupEnvelope | n
     if (parsed.answer != null) env.answer = String(parsed.answer);
     if (parsed.answer_signature != null) env.answer_signature = String(parsed.answer_signature);
     if (parsed.answered_at != null) env.answered_at = String(parsed.answered_at);
+    if (parsed.mark && Number.isFinite(Number(parsed.mark.score))) {
+      env.mark = { score: Number(parsed.mark.score), max: Number(parsed.mark.max) };
+    }
     return env;
   } catch {
     return null;
@@ -249,6 +263,8 @@ export type GroupSubmissionRow = {
   created_at?: string | null;
   ai_extracted_text?: string | null;
   student_id?: string | null;
+  score?: number | null;
+  max_score?: number | null;
 };
 
 export type GroupSubmission = {
@@ -262,6 +278,10 @@ export type GroupSubmission = {
   answeredAt: string | null;
   submittedAt: string | null;
   answered: boolean;
+  /** "7/24" as the admin typed it, or null when no mark was given. */
+  mark: string | null;
+  markScore: number | null;
+  markMax: number | null;
 };
 
 /** Reads one row back into the shape the screens use. */
@@ -272,6 +292,10 @@ export function toGroupSubmission(row: GroupSubmissionRow): GroupSubmission {
     gender: env?.gender || "",
     group: env?.group || String(row.student_group ?? ""),
   };
+  // The envelope is the source of truth, but a row written before the mark lived
+  // there still carries it in `score`/`max_score`, so those are the fallback.
+  const score = env?.mark?.score ?? numberOrNull(row.score);
+  const max = env?.mark?.max ?? numberOrNull(row.max_score);
   return {
     row,
     key,
@@ -283,7 +307,16 @@ export function toGroupSubmission(row: GroupSubmissionRow): GroupSubmission {
     answeredAt: env?.answered_at ?? null,
     submittedAt: row.created_at ?? null,
     answered: isAnswered(row),
+    mark: formatMark(score, max),
+    markScore: score,
+    markMax: max,
   };
+}
+
+function numberOrNull(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 /** All group rows, in the order the admin reads them. */
