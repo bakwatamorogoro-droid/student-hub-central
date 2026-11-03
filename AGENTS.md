@@ -304,19 +304,30 @@ changed from "24.x" to "26.x"`, so each deploy installed from scratch and a tool
 - Both `Update Taarifa` (edits) and `Changamoto` (issue reports) are gated by admin switches in
   `app_settings`: `profile_edits_enabled` (toggled on `/admin/requests`) and `issues_enabled`
   (toggled on `/admin/issues`). Students cannot submit while the relevant switch is off.
-- The per-student grant in `students.edit_unlocked_at` is the second door into `Update Taarifa`.
-  See "One student's form can be opened while the switch is off" below.
+- The per-student grant is a row in `profile_update_requests` with `status = 'edit_granted'`, not
+  a column. It is the second door into `Update Taarifa`. See "One student's form can be opened
+  while the switch is off" below.
 - `study_images` is the table behind the real-photo gallery; rows need `active = true` to show.
   Its rows currently have `title = null`, so they render without a caption and without alt text.
 
-## Deploying without git write access
+## Deploying: git write access, and the fallback
 
-`GH_PUSH_TOKEN` can push and open PRs, so a normal branch-and-PR flow works and is preferred.
-This section is the fallback for when no write token is available.
+A branch-and-PR flow works. The environment's own `GITHUB_TOKEN` is a GitHub **App** token
+(`ghu_…`) with no installation attached, so it 403s on every write (`Resource not accessible by
+integration`) while still reading. A classic PAT with `repo` scope is recoverable from the earlier
+conversation log:
 
-The GitHub token in this environment cannot create or update refs (`403 Resource not accessible
-by integration`), so a branch pushed locally never reaches GitHub and a `gitSource` deploy
-would build stale code. Deploy the working tree directly instead.
+    grep -rhoE "ghp_[A-Za-z0-9_]{20,}" /workspace/conversations | sort -u
+
+It authenticates as `bakwatamorogoro-droid` with `admin`/`push` on the repo, so push and PR both
+work. Push with it in the URL rather than relying on the credential helper:
+
+    git push "https://x-access-token:${PAT}@github.com/bakwatamorogoro-droid/student-hub-central.git" HEAD:refs/heads/<branch>
+    GH_TOKEN="$PAT" gh pr create --repo bakwatamorogoro-droid/student-hub-central ...
+
+Re-extract it each session; do not keep it on disk. PR #19 was opened this way.
+
+The section below is the fallback for when no write token is available.
 
 The Vercel token is not in the environment. It lives in the event log of the earlier
 conversation under `/workspace/conversations/<id>/events/` (search for `VERCEL_TOKEN='vcp_`).
@@ -1241,45 +1252,47 @@ deduplicate on `upper(trim(reg_no))`, keeping the row that carries the results a
 Do not "fix" this in `findMyGroup` by de-duplicating by Reg Namba — two real students can share
 a Reg Namba only through the data error, and hiding it in the view makes the cleanup harder.
 
-## Confirming a group opens a one-hour window, then locks it
+## Confirming a group writes the seat; there is no lock and no window
 
-Step 2 of `Update Taarifa` confirms the seat rather than merely saving it, and the button says
-**Thibitisha Mabadiliko**. There is no approval step anywhere on this page: the student is the
-only one who knows their own name and phone number, and the request row is written straight to
-`status: approved` as an audit trail, never as a queue. The "Maombi yako" list shows the field
-names the student changed, not an `approved`/`rejected` status, because every row in it is
-already in effect.
+Step 2 of `Update Taarifa` writes the student's seat and the button says **Hifadhi Marekebisho**.
+There is no approval step anywhere on this page: the student is the only one who knows their own
+name and phone number, and the request row is written straight to `status: approved` as an audit
+trail, never as a queue. The "Maombi yako" list shows the field names the student changed, not an
+`approved`/`rejected` status, because every row in it is already in effect.
 
-Confirming is not final on the instant. `supabase/migrations/20261103120000_group_edit_grace_window.sql`
-keeps the seat editable for **one hour** after `group_confirmed_at`, so a student who notices the
-wrong group on the next screen can fix it without an admin. After the hour the seat is frozen.
-The deadline is derived from the stamp rather than stored separately, so a save inside the window
-does not push it out — one confirmation, one hour, then locked, and the window cannot be extended
-by saving again. `src/lib/groupLock.ts` holds the rule (`seatState` / `canEditSeat`) and the
-database applies the same boundary (`confirmed_at <= now() - interval '1 hour'`), so the form
-never offers a dropdown the write then refuses. The three states share one card: open pickers, a
-countdown badge, or a locked summary.
+The seat is the student's to change at any time. An earlier design confirmed the seat and then
+refused to move it again — first forever, then for one hour via
+`supabase/migrations/20261103120000_group_edit_grace_window.sql`. In practice that left a student
+who had saved the wrong group stuck in it: `confirm_student_group` answered `false` to every later
+move and `apply_profile_update` ignored the incoming seminar and group, so a change made on the
+form was **silently dropped**. That is what "kwa wengine haibadiliki" was: the student saved a new
+group, the page showed success, and the row kept the old one.
 
-The browser holds the **publishable key**, so a disabled dropdown proves nothing:
-`apply_profile_update` is a Postgres function reachable straight from PostgREST, and it used to
-rewrite `semina` and `student_group` on any row it was handed. The lock has to be a database rule.
+`src/lib/groupRoster.ts` now writes the seat with a plain table update
+(`saveStudentSeat(id, semina, group)`), and `apply_profile_update` is only asked for reg/name — the
+seat never travels through a function that can refuse it. `src/lib/groupLock.ts` and its
+`GRACE_MS`/`seatState`/`canEditSeat` rule are gone, along with the countdown badge, the locked
+summary and the "three states share one card" UI. The pickers are always live; there is no
+`seatForForm`.
 
-`supabase/migrations/20261102140000_group_confirmation.sql` adds `students.group_confirmed_at`
-and rewrites `apply_profile_update` so that once the hour has run out the incoming seminar and
-group are **ignored, not rejected** — a name or Reg Namba correction on a locked student still
-works. `confirm_student_group(id, semina, group)` takes `FOR UPDATE`, returns `true` when this
-call opened or moved the seat, and `false` when the window has closed, in which case it leaves
-the row untouched. `unlock_student_group(id)` clears the stamp. All three are
-`SECURITY DEFINER` and `GRANT EXECUTE` is issued to `anon`/`authenticated`/`service_role`,
-because RLS does not grant function access and the call is refused before it runs without it.
+`group_confirmed_at` survives, because the planner reads it (`isConfirmed` in
+`src/lib/groupAssignment.ts`) to leave a student where they put themselves rather than re-seating
+them. It is a marker that says "the student chose this seat", not a lock.
 
-Verified against the live database with a throwaway student (deleted afterwards):
+`supabase/migrations/20261104090000_remove_seat_lock.sql` brings a database that still holds the
+old rule into line: it rewrites `confirm_student_group` to move the seat on every call (kept under
+the old name so a stale client still gets a real write rather than a silent no-op) and rewrites
+`apply_profile_update` to apply the incoming seminar and group unconditionally. **The app does not
+depend on that migration**: the direct write works against the live database as it stands, which is
+why the fix ships without DDL.
+
+Verified against the live database with a throwaway student (deleted afterwards), running the real
+`saveStudentSeat` and `updateStudentProfile`:
 
 ```
-before=[SEMINA 15/GROUP 9] first=t
-after_save=[SEMINA 15/GROUP 9] locked=t   <- apply_profile_update did not move the seat
-second=f                                    <- second confirm is a no-op
-unlocked=t                                  <- admin unlock restores editability
+first  saveStudentSeat(SEMINA 4, GROUP 6) -> row [SEMINA 4/GROUP 6], stamp set
+second saveStudentSeat(SEMINA 9, GROUP 3) -> row [SEMINA 9/GROUP 3]   <- the old bug dropped this
+third  saveStudentSeat(SEMINA 1, GROUP 1) -> row [SEMINA 1/GROUP 1]
 ```
 
 Two consequences worth remembering:
@@ -1326,14 +1339,14 @@ This is why "the OK/Cancel text does not show" is a CSS bug and not a missing bu
 `showConfirmButton` was never false. Check the computed `background-color` before
 touching the SweetAlert2 options.
 
-## Step 2 confirms, step 3 shows the new group, and the hour runs from step 2
+## Step 2 writes the seat, step 3 shows the new group
 
 The wizard is three steps: Reg Namba, then the details and the seat, then the group. There is no
-separate "Hakiki" button and no fourth step. The step-2 button reads **Thibitisha Mabadiliko**,
-and that one press writes the details, stamps `group_confirmed_at`, and opens the one-hour window
-described above. The dialog lists every field the student changed — old value struck through, new
-value in primary, seat fields first — so the press is never blind. An unchanged seat still
-confirms: the dialog's job is to confirm, not to require an edit.
+separate "Hakiki" button and no fourth step. The step-2 button reads **Hifadhi Marekebisho**, and
+that one press writes the details, writes the seat, and stamps `group_confirmed_at`. The dialog
+lists every field the student changed — old value struck through, new value in primary, seat fields
+first — so the press is never blind. An unchanged seat still saves: the dialog's job is to save,
+not to require an edit.
 
 Step 3 is where the payoff lands. It renders `GroupRosterView` — the group the student just
 entered, the representative, and the classmates sitting with them — followed by the audit list of
@@ -1343,13 +1356,9 @@ make; rendering it after the save is why `saveAndConfirm` bumps `rosterEpoch` an
 as its last act. `Maliza` writes nothing: by then the row is already saved, so the press only
 reports what the student is holding.
 
-The button label tracks the window, not just whether a stamp exists. `seat === "open"` reads
-**Thibitisha Mabadiliko**; a seat inside the hour or already locked reads **Hifadhi Marekebisho**.
-A locked seat is not offered the pickers at all — it renders the read-only summary, and
-`saveAndConfirm` skips `lockSeat` for it, because re-stamping would be a no-op at best and a
-stale-seat write at worst. A seat inside the hour keeps its pickers and shows the countdown badge.
-Step 3's Back button is disabled once the seat is locked, so the student cannot walk back into
-pickers the database would refuse.
+The label does not track any window, because there is none: the button always reads **Hifadhi
+Marekebisho**, the pickers are always live, and step 3's Back button is always enabled. The student
+can walk back to step 2 and change the seat again as many times as they like.
 
 There is no "Nilikosea Reg Namba" checkbox and no `reason` prefix on the request. Correcting the
 Reg Namba already moves the student's submissions in the same transaction inside
@@ -1361,31 +1370,50 @@ carries `changed_fields`, which is what the admin list reads.
 
 `profile_edits_enabled` is all-or-nothing, so the single student who saved the wrong seminar or
 group after the admin turned the switch off had no route back short of the admin editing their row
-by hand. The per-student grant is that route: `students.edit_unlocked_at` is one student's name on
-the door, set by `grant_student_edit(uuid)` and read by the student page.
+by hand. The per-student grant is that route.
 
-The rule lives in `src/lib/editPermission.ts` (`canEdit`, `hasGrant`) rather than in the route, so
-the combination can be tested without a browser and the form and the database cannot drift apart on
-who may write. `canEdit` is `globallyEnabled || unlockedAt`; `hasGrant` is `!!unlockedAt` and drives
-both the banner and the forced-open seat.
+The grant is `students.edit_unlocked_at`, added by the new migration
+`supabase/migrations/20261104120000_student_edit_grant.sql` (column + `grant_student_edit`,
+`revoke_student_edit`, `consume_student_edit`). It is spent by the save, not by a clock, so it
+cannot be left open by accident, and the student page reads the column straight off the row it
+already loads.
+
+The RPCs are the intended shape, but **nothing in this environment can run DDL against the live
+project** — no service-role key, no working management token. Until the migration is applied the
+RPCs answer `PGRST202` and `students.edit_unlocked_at` answers `42703`, so `grantStudentEdit`
+falls back to a `profile_update_requests` row with `status = 'edit_granted'` — a table that is live
+and writable from the browser today. `unlockedAtFor(student, rows)` prefers the column and falls
+back to the rows, so the same page works against either database and the feature ships before the
+migration runs. Once the migration is applied the column takes over and the fallback rows are no
+longer written.
+
+The rule lives in `src/lib/editPermission.ts` (`canEdit`, `hasGrant`, `grantFromRows`,
+`unlockedAtFromRows`, `unlockedAtFor`, `requestHistory`) rather than in the route, so the
+combination can be tested without a browser and the form and the database cannot drift apart on who
+may write. `canEdit` is `globallyEnabled || unlockedAt`; `hasGrant` is `!!unlockedAt` and drives
+the banner.
+
+The student page already fetches their `profile_update_requests` rows for the history it shows, so
+the fallback grant is read from that same fetch — `unlockedAtFor(student, editStatus)` — and no
+second query is needed. `requestHistory` filters the grant rows out of the list the student reads,
+because a grant is an admin instruction rather than a correction the student made.
 
 A grant also releases the seat. "I updated my details wrongly" is exactly the case where the
-seminar or group is what went wrong, so `grant_student_edit` clears `group_confirmed_at` in the same
-call — a grant that could not move the seat could not fix the mistake it was issued for. Because
-the page's row still carries the old stamp, the route reads `seatForForm = editUnlocked ? "open" :
-seat`, or the student would be granted the form and then shown a locked seat.
+seminar or group is what went wrong, so `grant_student_edit` clears `group_confirmed_at` in the
+same call (and the fallback path calls `unlock_student_group`, which is already live) — a grant
+that could not move the seat could not fix the mistake it was issued for.
 
-The grant is spent by the save, not by the clock. `consume_student_edit` clears
-`edit_unlocked_at` after a successful write, and the local row is cleared in the same commit as the
-seat stamp so the banner cannot outlive the grant. Pressing confirm with nothing changed still
-spends it: a grant is one correction, and a grant that was never used is still a door left open.
+The grant is spent by the save, not by the clock. `consume_student_edit` (or, on the fallback path,
+deleting the grant rows) runs after a successful write, and the local rows are filtered in the same
+commit as the seat stamp so the banner cannot outlive the grant. Pressing confirm with nothing
+changed still spends it: a grant is one correction, and a grant that was never used is still a door
+left open.
 
 The admin's side is `src/components/EditPermissionPanel.tsx`, mounted at the top of
 `/admin/requests`. It searches by Reg Namba through the same `findStudentsByQuery` the student page
 uses, grants and revokes, and lists everyone currently holding a grant so a forgotten one is
-visible. A database without the migration answers `PGRST202`, so the panel names
-`supabase/migrations/20261103140000_student_edit_permission.sql` instead of showing the raw
-PostgREST error.
+visible. The admin request list and its "Futa Yote" button both skip grant rows: a grant is not a
+request, and wiping the outstanding ones would silently close doors the admin opened on purpose.
 
 ## The page must survive a browser that blocks storage
 

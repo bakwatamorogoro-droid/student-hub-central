@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useRoster } from "@/lib/useRoster";
 import { findMyGroup, formatGroupLabel, representativesFor } from "@/lib/groupAssignment";
 import { useI18n } from "@/lib/i18n";
-import { Loader2, Mars, Venus, CheckCircle2, AlertTriangle, Star, Phone, Lock } from "lucide-react";
+import { Loader2, Mars, Venus, CheckCircle2, AlertTriangle, Star, Phone } from "lucide-react";
 
 /**
  * The group a Reg Namba belongs to: its badges, its representative, and every
@@ -71,7 +71,7 @@ export function GroupRosterView({ reg, className = "" }: { reg: string; classNam
         )}
         {mine.confirmed && (
           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">
-            <Lock className="h-3 w-3" /> {t("group_confirmed_badge")}
+            <CheckCircle2 className="h-3 w-3" /> {t("group_confirmed_badge")}
           </span>
         )}
         {mine.complete ? (

@@ -36,12 +36,11 @@ import { CURRENT_ACADEMIC_YEAR, SEMESTERS, isSemesterActive } from "@/lib/academ
 import { DEFAULT_PROGRAM_YEARS, studyYearFromReg } from "@/lib/studyYear";
 import { useI18n } from "@/lib/i18n";
 import { loadDirectory } from "@/lib/directory";
-import { assignStudentGroup, confirmStudentGroup, consumeStudentEdit } from "@/lib/groupRoster";
+import { assignStudentGroup, consumeStudentEdit, saveStudentSeat } from "@/lib/groupRoster";
 import { GROUP_NAMES, SEMINARS } from "@/lib/groupAssignment";
 import { invalidateRosterCache } from "@/lib/useRoster";
 import { GroupRosterView } from "@/components/GroupRosterView";
-import { formatGrace, graceRemainingMs, seatState } from "@/lib/groupLock";
-import { canEdit, hasGrant } from "@/lib/editPermission";
+import { canEdit, hasGrant, requestHistory, unlockedAtFor } from "@/lib/editPermission";
 import { FIELD_LABELS } from "@/lib/requestDiff";
 import {
   AlertDialog,
@@ -95,6 +94,9 @@ function Page() {
   // 3 = see the group you landed in and finish.
   const [step, setStep] = useState(1);
   const [editStatus, setEditStatus] = useState<any[]>([]);
+  // The request history the student reads. `editStatus` is the same rows plus any grant the
+  // admin left, which is what the unlock check reads.
+  const [editHistory, setEditHistory] = useState<any[]>([]);
   // The student picks their own seminar and group. Seeded from their row on lookup.
   const [editSemina, setEditSemina] = useState("");
   const [editGroup, setEditGroup] = useState("");
@@ -102,8 +104,6 @@ function Page() {
   const [rosterEpoch, setRosterEpoch] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [askConfirm, setAskConfirm] = useState(false);
-  // Ticks while the confirmation window is open so the countdown moves without a reload.
-  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     supabase
@@ -137,29 +137,21 @@ function Page() {
     return () => window.removeEventListener("hashchange", openGroup);
   }, []);
 
-  // The seat state is derived from `group_confirmed_at`, so a tick is all the countdown
-  // needs. It stops once the window closes rather than running for the life of the page.
-  const seat = seatState(student?.group_confirmed_at, now);
-
-  // The admin can open one student's form while Update Taarifa is off for everyone else
-  // (`grant_student_edit`). A grant is spent by the save, so `editUnlocked` is read off
-  // the row and re-read after every write.
+  // The admin can open one student's form while Update Taarifa is off for everyone else.
+  // The grant is `students.edit_unlocked_at`, read straight off the row the page already
+  // loads; before `20261104120000_student_edit_grant.sql` is applied it is a
+  // `profile_update_requests` row instead. `unlockedAtFor` reads whichever is present. A
+  // grant is spent by the save, so this re-derives every time the student's rows are
+  // re-read.
+  const grantAt = unlockedAtFor(student, editStatus);
   const editUnlocked = hasGrant({
     globallyEnabled: !!settings?.profile_edits_enabled,
-    unlockedAt: student?.edit_unlocked_at,
+    unlockedAt: grantAt,
   });
   const editable = canEdit({
     globallyEnabled: !!settings?.profile_edits_enabled,
-    unlockedAt: student?.edit_unlocked_at,
+    unlockedAt: grantAt,
   });
-  // A grant releases the seat in the database, but the row in hand still carries the old
-  // stamp. Treat the seat as open so the pickers are offered in the same render.
-  const seatForForm: ReturnType<typeof seatState> = editUnlocked ? "open" : seat;
-  useEffect(() => {
-    if (seat !== "grace") return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [seat]);
 
   /** Loads one student row into the form. Leaves the current step alone. */
   const fillForm = async (data: any) => {
@@ -182,7 +174,11 @@ function Page() {
       .select("*")
       .eq("student_id", data.id)
       .order("created_at", { ascending: false });
+    // A grant is an admin instruction, not a correction the student made, so it is kept out
+    // of the history they read. It is still in `editStatus`'s source, which is what the
+    // unlock check above reads.
     setEditStatus(reqs || []);
+    setEditHistory(requestHistory(reqs || []));
   };
 
   const confirmStudent = async (data: any) => {
@@ -266,36 +262,23 @@ function Page() {
     return rows.filter((r) => r.from !== r.to);
   })();
 
-  /** The seat half of the list, called out separately because it is the locked part. */
-  const seatChanges = changedRows.filter((r) => r.key === "semina" || r.key === "group");
-
   /**
-   * Confirms the seat and starts the one-hour window. The database stamps
-   * `group_confirmed_at` and refuses to move the seat once the hour is up, so the
-   * read-only dropdowns are a convenience rather than the guard. Called by the one save
-   * on step 2, whether or not the student changed anything: the press is the agreement.
+   * Writes the student's seminar and group straight to their row. There is no window and
+   * no lock: the student owns their seat, so a later change always takes effect. The
+   * `group_confirmed_at` stamp is kept only as the marker the planner reads to leave a
+   * student where they put themselves.
    */
-  const lockSeat = async (): Promise<boolean> => {
+  const saveSeat = async (): Promise<boolean> => {
     if (!student) return false;
     if (!editSemina || !editGroup) {
       toast.error(t("group_edit_help"));
       return false;
     }
-    const outcome = await confirmStudentGroup(student.id, editSemina, editGroup);
-    if (outcome.needsMigration) {
-      toast.error(
-        "Uthibitisho haujawashwa kwenye mfumo bado. Admin aendeshe migrations zilizo kwenye supabase/migrations/.",
-      );
+    const err = await saveStudentSeat(student.id, editSemina, editGroup);
+    if (err) {
+      toast.error(err.message || "Imeshindikana kuhifadhi. Jaribu tena.");
       return false;
     }
-    if (outcome.error && !outcome.alreadyConfirmed) {
-      toast.error(outcome.error.message || "Imeshindikana kuhifadhi. Jaribu tena.");
-      return false;
-    }
-    // Keep the original stamp when there was one. The window is measured from the first
-    // confirmation, so re-stamping here would hand the student a fresh hour on every save.
-    // A grant is the exception: the admin released the seat, so the student's next
-    // confirmation is a fresh one and starts a fresh hour.
     setStudent((prev: any) =>
       prev
         ? {
@@ -305,10 +288,6 @@ function Page() {
             group_confirmed_at: editUnlocked
               ? new Date().toISOString()
               : (prev.group_confirmed_at ?? new Date().toISOString()),
-            // The grant was just spent, so the row in hand must stop claiming it is open.
-            // Otherwise the banner would stay up and the form would look editable until the
-            // student happened to reload.
-            edit_unlocked_at: null,
           }
         : prev,
     );
@@ -346,10 +325,10 @@ function Page() {
 
   /**
    * The one save on step 2. It writes the student's own corrections straight to their
-   * row, then confirms the seat and starts the one-hour window. There is no approval
-   * step: the student is the only one who knows their own name and phone number, and an
-   * admin queue in front of every typo fix was pure friction. The request row is still
-   * written, as `approved`, so there is a record of who changed what and when.
+   * row, then writes the seat. There is no approval step and no window: the student is
+   * the only one who knows their own name, phone number and group, and an admin queue in
+   * front of every typo fix was pure friction. The request row is still written, as
+   * `approved`, so there is a record of who changed what and when.
    */
   const saveAndConfirm = async (): Promise<boolean> => {
     if (!student) return false;
@@ -361,12 +340,6 @@ function Page() {
       toast.error(t("semester_inactive"));
       return false;
     }
-    // Inside the hour the seat is still the student's to move; the database refuses the
-    // write once it closes, so `seatLocked` is what the form must not offer. A grant
-    // clears the stamp in the database, but the row in hand may predate that, so a grant
-    // always reads as open here.
-    const seatLocked =
-      !editUnlocked && seatState(student.group_confirmed_at, Date.now()) === "locked";
 
     const newRegUp = edit.new_reg_no?.toUpperCase() || null;
     const newSemina = editSemina || null;
@@ -389,36 +362,34 @@ function Page() {
     if ((edit.new_course || "") !== courseNow) changed.push("course");
     if ((edit.new_semester || "") !== semesterNow) changed.push("semester");
     if ((edit.new_phone || "") !== phoneNow) changed.push("phone");
-    // A locked seat ignores any seat value the form still holds, so it is not a change.
-    if (!seatLocked && newSemina !== seminaNow) changed.push("semina");
-    if (!seatLocked && newGroup !== groupNow) changed.push("group");
+    if (newSemina !== seminaNow) changed.push("semina");
+    if (newGroup !== groupNow) changed.push("group");
     if (derivedYear != null && String(derivedYear) !== yearNow) changed.push("study_year");
     const has = (k: string) => changed.includes(k);
 
     setSubmitting(true);
 
     // Nothing to write. A first-time student still has a seat to open, and opening an
-    // unchanged seat is the whole point of the press. A student whose seat is already
-    // open has nothing left to do, so they go straight to the last step.
+    // unchanged seat is the whole point of the press. A student who already has a seat has
+    // nothing left to do, so they go straight to the last step. Either way the marker is
+    // stamped, so a row that predates it stops reading as unplaced to the planner.
     if (changed.length === 0) {
       // A grant was issued so the student could correct something. If they press confirm
       // without changing anything, the grant is still spent — otherwise the door the admin
-      // opened would stay open for a correction that was never made. It is cleared first so
-      // the re-read below sees the closed door.
+      // opened would stay open for a correction that was never made.
       if (editUnlocked) {
         await consumeStudentEdit(student.id);
-        setStudent((prev: any) => (prev ? { ...prev, edit_unlocked_at: null } : prev));
+        // Drop the grant row locally too, so the banner and the editable form go away on this
+        // render rather than waiting for a reload.
+        setEditStatus((prev) => requestHistory(prev));
       }
-      if (student.group_confirmed_at && !editUnlocked) {
-        setSubmitting(false);
-        toast.info(t("nothing_changed"));
-        setStep(3);
-        return true;
-      }
-      const locked = await lockSeat();
+      const hadSeat = !!(student.semina && student.student_group);
+      const saved = await saveSeat();
       setSubmitting(false);
-      if (locked) setStep(3);
-      return locked;
+      if (!saved) return false;
+      if (hadSeat) toast.info(t("nothing_changed"));
+      setStep(3);
+      return true;
     }
 
     // The request row is the audit trail. `approved` from the start, because nothing is
@@ -466,14 +437,16 @@ function Page() {
       return false;
     }
 
-    // One RPC for reg/name/semina/group. It moves the student's earlier submissions to
-    // the new Reg Namba in the same transaction, which is why a Reg change needs no admin.
+    // One RPC for reg/name. It moves the student's earlier submissions to the new Reg
+    // Namba in the same transaction, which is why a Reg change needs no admin. Semina and
+    // group are written separately below so a seat change is never gated by the RPC's own
+    // lock rule.
     const { error: rpcErr } = await (supabase as any).rpc("apply_profile_update", {
       p_student_id: student.id,
       p_new_reg_no: has("reg_no") ? newRegUp : null,
       p_new_full_name: has("full_name") ? edit.new_full_name : null,
-      p_new_semina: has("semina") ? newSemina : null,
-      p_new_group: has("group") ? newGroup : null,
+      p_new_semina: null,
+      p_new_group: null,
     });
     if (rpcErr) {
       setSubmitting(false);
@@ -481,30 +454,33 @@ function Page() {
       return false;
     }
 
-    // The RPC covers reg/name/semina/group only, so the academic fields are written
-    // separately, and only the ones the student actually changed.
+    // The RPC covers reg/name only, so the academic fields are written separately, and
+    // only the ones the student actually changed. The seat is written by `saveSeat` below,
+    // which also stamps the marker.
     const acad: Record<string, unknown> = {};
     if (has("course")) acad.course = edit.new_course;
     if (has("study_year")) acad.study_year = derivedYear;
     if (has("semester")) acad.semester = edit.new_semester;
     if (has("phone")) acad.phone = edit.new_phone;
-    const { error: acadErr, dropped: acadDropped } = await updateStudentProfile(
-      student.id,
-      acad as Parameters<typeof updateStudentProfile>[1],
-    );
+    const { error: acadErr, dropped: acadDropped } =
+      Object.keys(acad).length === 0
+        ? { error: null, dropped: [] as string[] }
+        : await updateStudentProfile(
+            student.id,
+            acad as Parameters<typeof updateStudentProfile>[1],
+          );
 
     const newRef = newRegUp || student.reg_no;
     storageSet("student_reg", newRef);
 
     // Spend the admin's grant, if there was one. One grant buys one correction, so the
     // door the admin opened closes as soon as the student has walked through it. The
-    // database is the record, so the local row is re-read below rather than trusted.
+    // database is the record, so the local rows are re-read below rather than trusted.
     if (editUnlocked) await consumeStudentEdit(student.id);
 
-    // The details are in. For a student whose seat is still open or inside the hour,
-    // confirming is the second half of the same press: it stamps (or moves) the seat.
-    // A frozen seat is left exactly as it stands.
-    const seatOpened = !seatLocked && (await lockSeat());
+    // Stamp the seat marker so the planner leaves the student where they put themselves.
+    // A student who already has a stamp keeps it; a fresh seat gets one now.
+    const seatSaved = await saveSeat();
     setSubmitting(false);
 
     // Re-read the row so the next step shows what was actually stored.
@@ -528,7 +504,7 @@ function Page() {
         "Imehifadhiwa",
         `${acadDropped.join(", ")} bado haijawashwa kwenye mfumo (admin aendeshe migrations zilizo kwenye supabase/migrations/).`,
       );
-    } else if (seatOpened) {
+    } else if (seatSaved) {
       toast.success(t("group_confirmed_title"));
     } else {
       toast.success(t("saved_title"));
@@ -542,23 +518,13 @@ function Page() {
 
   /**
    * The last press on step 3. The details and the seat are already written, so this only
-   * reports what the student is left holding — the group, the classmates, and how long
-   * they still have to change their mind.
+   * reports what the student is left holding — the group and the classmates.
    */
   const finish = async () => {
     if (!student) return;
     setSubmitting(true);
     try {
-      if (seatForForm === "grace") {
-        await alertSuccess(
-          t("finish_title"),
-          t("finish_grace_body", {
-            time: formatGrace(graceRemainingMs(student.group_confirmed_at, now)),
-          }),
-        );
-      } else {
-        await alertSuccess(t("finish_title"), t("finish_locked_body"));
-      }
+      await alertSuccess(t("finish_title"), t("finish_body"));
     } finally {
       setSubmitting(false);
     }
@@ -692,110 +658,50 @@ function Page() {
                       </div>
                     </div>
                   )}
-                  {/* The seat is editable until the hour after confirmation runs out, then
-                      frozen for good. The three states share one card: open pickers, pickers
-                      plus a countdown, or a locked summary. */}
-                  {seatForForm === "locked" ? (
-                    <div className="rounded-xl border-2 border-emerald-500/40 bg-emerald-500/10 p-3">
-                      <div className="flex items-start gap-3">
-                        <Lock className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
-                        <div className="text-sm">
-                          <div className="font-bold text-emerald-700 dark:text-emerald-300">
-                            {t("group_confirmed_title")}
-                          </div>
-                          <p className="mt-0.5 text-xs text-muted-foreground">
-                            {t("grace_expired")}
-                          </p>
-                          <p className="mt-1 text-[11px] font-mono text-muted-foreground">
-                            {t("group_confirmed_at")}:{" "}
-                            {new Date(student.group_confirmed_at).toLocaleString("sw-TZ")}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        <div className="rounded-lg border border-border bg-card p-2">
-                          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                            {t("semina")}
-                          </div>
-                          <div className="truncate text-sm font-semibold">
-                            {student.semina || editSemina || "—"}
-                          </div>
-                        </div>
-                        <div className="rounded-lg border border-border bg-card p-2">
-                          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                            {t("group")}
-                          </div>
-                          <div className="truncate text-sm font-semibold">
-                            {student.student_group || editGroup || "—"}
-                          </div>
-                        </div>
-                      </div>
+                  {/* The student owns their seat, so the pickers are always live. There is
+                      no window and no lock: a change saved here always takes effect. */}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <Label>{t("semina")}</Label>
+                      <Select value={editSemina} onValueChange={setEditSemina}>
+                        <SelectTrigger>
+                          <SelectValue placeholder={t("choose_semina")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SEMINARS.map((sm) => (
+                            <SelectItem key={sm} value={sm}>
+                              {sm}
+                            </SelectItem>
+                          ))}
+                          {editSemina && !SEMINARS.includes(editSemina) && (
+                            <SelectItem value={editSemina}>{editSemina}</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
                     </div>
-                  ) : (
-                    <>
-                      {seatForForm === "grace" && (
-                        <div className="flex items-start gap-3 rounded-xl border-2 border-amber-500/40 bg-amber-500/10 p-3">
-                          <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                          <div className="text-sm">
-                            <div className="font-bold text-amber-700 dark:text-amber-400">
-                              {t("grace_left", {
-                                time: formatGrace(
-                                  graceRemainingMs(student.group_confirmed_at, now),
-                                ),
-                              })}
-                            </div>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              {t("group_edit_help")}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div>
-                          <Label>{t("semina")}</Label>
-                          <Select value={editSemina} onValueChange={setEditSemina}>
-                            <SelectTrigger>
-                              <SelectValue placeholder={t("choose_semina")} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {SEMINARS.map((sm) => (
-                                <SelectItem key={sm} value={sm}>
-                                  {sm}
-                                </SelectItem>
-                              ))}
-                              {editSemina && !SEMINARS.includes(editSemina) && (
-                                <SelectItem value={editSemina}>{editSemina}</SelectItem>
-                              )}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label>{t("group")}</Label>
-                          <Select value={editGroup} onValueChange={setEditGroup}>
-                            <SelectTrigger>
-                              <SelectValue placeholder={t("choose_group")} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {GROUP_NAMES.map((g) => (
-                                <SelectItem key={g} value={g}>
-                                  {g}
-                                </SelectItem>
-                              ))}
-                              {editGroup && !GROUP_NAMES.includes(editGroup) && (
-                                <SelectItem value={editGroup}>{editGroup}</SelectItem>
-                              )}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                      {seatForForm === "open" && (
-                        <p className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground">
-                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-                          {t("group_edit_help")}
-                        </p>
-                      )}
-                    </>
-                  )}
+                    <div>
+                      <Label>{t("group")}</Label>
+                      <Select value={editGroup} onValueChange={setEditGroup}>
+                        <SelectTrigger>
+                          <SelectValue placeholder={t("choose_group")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {GROUP_NAMES.map((g) => (
+                            <SelectItem key={g} value={g}>
+                              {g}
+                            </SelectItem>
+                          ))}
+                          {editGroup && !GROUP_NAMES.includes(editGroup) && (
+                            <SelectItem value={editGroup}>{editGroup}</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <p className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                    {t("group_edit_help")}
+                  </p>
                   <div className="grid sm:grid-cols-2 gap-3">
                     <div>
                       <Label>{t("new_reg")}</Label>
@@ -903,11 +809,7 @@ function Page() {
                 ) : (
                   <Lock className="h-4 w-4" />
                 )}
-                {submitting
-                  ? t("saving")
-                  : seatForForm === "open"
-                    ? t("confirm_group")
-                    : t("save_details")}
+                {submitting ? t("saving") : t("save_details")}
               </Button>
             </CardFooter>
           </Card>
@@ -919,9 +821,7 @@ function Page() {
               <CardTitle className="flex items-center gap-2 text-base">
                 <Users className="h-4 w-4 text-primary" /> {t("step_finish")}
               </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {seatForForm === "locked" ? t("finish_locked_help") : t("finish_help")}
-              </p>
+              <p className="text-sm text-muted-foreground">{t("finish_help")}</p>
             </CardHeader>
             <CardContent className="space-y-3">
               {/* The group the student just landed in, and the classmates sitting with
@@ -929,12 +829,12 @@ function Page() {
                   the seat is written, not while it is still being chosen. */}
               <GroupRosterView key={rosterEpoch} reg={student.reg_no || reg} />
 
-              {editStatus.length > 0 && (
+              {editHistory.length > 0 && (
                 <div className="border-t pt-3 space-y-2">
                   <div className="text-xs font-semibold text-muted-foreground">
                     {t("my_requests")}:
                   </div>
-                  {editStatus.map((r) => (
+                  {editHistory.map((r) => (
                     <div key={r.id} className="text-xs p-2 rounded bg-muted space-y-0.5">
                       <div className="font-semibold">
                         {r.new_full_name || r.current_full_name} /{" "}
@@ -960,11 +860,7 @@ function Page() {
               )}
             </CardContent>
             <CardFooter className="flex justify-between gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setStep(2)}
-                disabled={submitting || seatForForm === "locked"}
-              >
+              <Button variant="outline" onClick={() => setStep(2)} disabled={submitting}>
                 <ArrowLeft className="h-4 w-4" /> {t("back")}
               </Button>
               <Button
@@ -986,16 +882,8 @@ function Page() {
         <AlertDialog open={askConfirm} onOpenChange={setAskConfirm}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>
-                {seatForForm === "open" ? t("confirm_group_title") : t("save_details_title")}
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {seatForForm === "open"
-                  ? t("confirm_group_warning")
-                  : seatForForm === "grace"
-                    ? t("save_details_warning")
-                    : t("grace_expired")}
-              </AlertDialogDescription>
+              <AlertDialogTitle>{t("save_details_title")}</AlertDialogTitle>
+              <AlertDialogDescription>{t("confirm_group_warning")}</AlertDialogDescription>
               <div className="mt-3 space-y-2 text-sm">
                 {changedRows.length > 0 ? (
                   <>
@@ -1025,12 +913,7 @@ function Page() {
                   </>
                 ) : (
                   <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground">
-                    {seatForForm === "open" ? t("confirm_nothing") : t("nothing_changed")}
-                  </div>
-                )}
-                {seatForForm === "open" && changedRows.length > 0 && seatChanges.length === 0 && (
-                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground">
-                    {t("confirm_no_seat_change")}
+                    {t("nothing_changed")}
                   </div>
                 )}
               </div>

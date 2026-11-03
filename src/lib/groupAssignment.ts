@@ -34,7 +34,8 @@ export type RosterEntry = {
   gender?: string | null;
   student_group?: string | null;
   phone?: string | null;
-  /** Set once the student confirms their seat; a confirmed seat is frozen. */
+  /** Set once the student saves a seat. The planner skips these rows, so the marker is
+   *  "the student chose this seat", not a lock — a later save always moves it. */
   group_confirmed_at?: string | null;
 };
 
@@ -237,10 +238,10 @@ export type PlannedMove = { semina: string; student_group: string };
 /**
  * The rows a write would move, keyed by student id.
  *
- * A confirmed seat is skipped. The student locked it when they saved their details, and
- * the point of the lock is that nothing — not a later save, not re-planning around a
- * newcomer — walks them out of it. Only a difference between the stored value and the
- * plan is a move, so an unchanged student never appears here.
+ * A stamped seat is skipped. The student picked it themselves, and re-planning — say
+ * around a newcomer — must not walk them out of a group they chose. Only a difference
+ * between the stored value and the plan is a move, so an unchanged student never appears
+ * here.
  *
  * `onlySemina` narrows the write to one seminar, which is what the CR's per-seminar
  * save does.
@@ -376,7 +377,7 @@ export type MyGroup = {
   members: GroupMember[];
   complete: boolean;
   free: number;
-  /** The student's own seat is confirmed, so it can no longer be moved. */
+  /** The student picked this seat themselves, so re-planning leaves it alone. */
   confirmed: boolean;
   note: string | null;
 };
