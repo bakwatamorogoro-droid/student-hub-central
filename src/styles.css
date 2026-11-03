@@ -343,7 +343,7 @@
  */
 .word-preview {
   color: var(--foreground);
-  font-size: 0.95rem;
+  font-size: 1rem;
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
@@ -361,17 +361,17 @@
 .word-preview h6 {
   font-weight: 700;
   line-height: 1.3;
-  margin: 0.9rem 0 0.45rem;
+  margin: 0.9em 0 0.45rem;
 }
 
 .word-preview h1 {
-  font-size: 1.3rem;
+  font-size: 1.3em;
 }
 .word-preview h2 {
-  font-size: 1.15rem;
+  font-size: 1.15em;
 }
 .word-preview h3 {
-  font-size: 1.05rem;
+  font-size: 1.05em;
 }
 
 .word-preview ul,
@@ -388,7 +388,7 @@
   border-collapse: collapse;
   width: 100%;
   margin: 0.6rem 0;
-  font-size: 0.9rem;
+  font-size: 0.9em;
 }
 
 .word-preview th,

@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Download, FileText, Loader2, ExternalLink, AlertCircle } from "lucide-react";
 import { previewKindFor } from "@/lib/groupAssignmentSubmission";
 import { sanitizeDocumentHtml } from "@/lib/documentText";
-import { PdfDocumentView } from "@/components/PdfPageView";
+import { PdfDocumentView, ZoomControls } from "@/components/PdfPageView";
 
 /**
  * Shows an uploaded PDF or Word file.
@@ -121,6 +121,10 @@ function WordPreview({
   const [html, setHtml] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Word text is laid out by the browser, so zoom is a font-size multiplier
+  // rather than a canvas scale. The range is wider than the PDF's because text
+  // stays sharp at any size.
+  const [scale, setScale] = useState(1);
 
   useEffect(() => {
     let live = true;
@@ -180,13 +184,18 @@ function WordPreview({
           </Button>
         </div>
       ) : (
-        <div
-          className="word-preview overflow-auto px-4 py-3 text-sm leading-relaxed"
-          style={{ maxHeight: height }}
-          // The HTML comes from the uploaded document and is stripped of
-          // scripts, handlers and links by `sanitizeDocumentHtml` first.
-          dangerouslySetInnerHTML={{ __html: html ?? "" }}
-        />
+        <>
+          <div className="flex items-center justify-end border-b border-border bg-muted/20 px-2 py-1">
+            <ZoomControls scale={scale} setScale={setScale} min={0.7} max={2.5} step={0.1} />
+          </div>
+          <div
+            className="word-preview overflow-auto px-4 py-3 leading-relaxed"
+            style={{ maxHeight: height, fontSize: `${scale}rem` }}
+            // The HTML comes from the uploaded document and is stripped of
+            // scripts, handlers and links by `sanitizeDocumentHtml` first.
+            dangerouslySetInnerHTML={{ __html: html ?? "" }}
+          />
+        </>
       )}
     </div>
   );
