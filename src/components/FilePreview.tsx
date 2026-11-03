@@ -1,20 +1,25 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Download, FileText, Loader2, ExternalLink, AlertCircle } from "lucide-react";
 import { previewKindFor } from "@/lib/groupAssignmentSubmission";
 import { sanitizeDocumentHtml } from "@/lib/documentText";
+import { PdfDocumentView } from "@/components/PdfPageView";
 
 /**
  * Shows an uploaded PDF or Word file.
  *
- * A PDF renders inline in the browser's own viewer, which is the "preview" the
- * owner asked for and costs no dependency.
+ * Both kinds are drawn by this app rather than handed to the browser, because
+ * the browser's own handling is what the owner could not rely on. A PDF in an
+ * `<iframe>` is only "previewed" if the browser happens to have a built-in
+ * viewer, and a phone's WebView usually does not: the frame stays blank, no
+ * error fires, and the admin sees nothing with no way to tell why. `PdfPageView`
+ * renders the pages to a canvas with `pdfjs-dist` instead, so the document
+ * appears on every device the app itself supports.
  *
- * A Word file used to be offered only as a download, which meant the admin had
- * to leave the page and open it elsewhere to read a single sentence. `mammoth`
- * turns the document into HTML in the browser instead, so the work is read on
- * the same screen, with every word legible. The download stays as a secondary
- * action for when the formatting itself matters.
+ * A Word file cannot be rendered by a browser at all, so `mammoth` turns it into
+ * HTML in the browser and `sanitizeDocumentHtml` strips anything executable
+ * before it is shown. The download stays as a secondary action for when the
+ * original formatting matters.
  *
  * `src` may be a blob URL (a file the student has not uploaded yet) or a public
  * storage URL (the admin reading a submitted file).
@@ -31,12 +36,7 @@ export function FilePreview({
   /** Fires once the PDF has actually rendered, so a preview gate can trust it. */
   onLoaded?: () => void;
 }) {
-  const kind = previewKindFor(fileName);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    setFailed(false);
-  }, [src]);
+  const kind = previewKindFor(fileName, src);
 
   if (kind === "word") {
     return <WordPreview src={src} fileName={fileName} height={height} />;
@@ -53,33 +53,36 @@ export function FilePreview({
     );
   }
 
-  if (failed) {
-    return (
-      <div className="space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
-        <p className="text-xs text-muted-foreground">
-          Browser hii haiwezi kuonyesha PDF hapa. Unaweza kuifungua kwenye tab mpya.
-        </p>
-        <Button asChild size="sm" variant="outline" className="gap-1">
-          <a href={src} target="_blank" rel="noreferrer">
-            <ExternalLink className="h-3.5 w-3.5" /> Fungua PDF
-          </a>
-        </Button>
-      </div>
-    );
-  }
+  return <PdfPreview src={src} fileName={fileName} height={height} onLoaded={onLoaded} />;
+}
+
+/**
+ * A PDF drawn by this app, with the file name and an open-in-new-tab link.
+ *
+ * The scrollable all-pages view is the reading view an admin grading work
+ * wants. `onLoaded` is routed through a ref so the callback identity stays
+ * stable — the viewer reopens the document when that prop changes, and an
+ * inline arrow from a parent would reopen it on every render.
+ */
+function PdfPreview({
+  src,
+  fileName,
+  height,
+  onLoaded,
+}: {
+  src: string;
+  fileName?: string | null;
+  height: number;
+  onLoaded?: () => void;
+}) {
+  const loadedRef = useRef(onLoaded);
+  loadedRef.current = onLoaded;
+  const handleLoaded = useCallback(() => loadedRef.current?.(), []);
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-border bg-muted/20">
-      <iframe
-        src={src}
-        title={fileName || "Preview"}
-        className="w-full"
-        style={{ height }}
-        onLoad={() => onLoaded?.()}
-        onError={() => setFailed(true)}
-      />
-      <div className="flex items-center justify-between gap-2 border-t border-border bg-card/70 px-3 py-1.5">
-        <span className="inline-flex items-center gap-1 truncate text-[11px] text-muted-foreground">
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-1.5">
+        <span className="inline-flex items-center gap-1 truncate text-[11px] font-semibold text-muted-foreground">
           <FileText className="h-3 w-3 shrink-0" /> {fileName || "PDF"}
         </span>
         <a
@@ -90,6 +93,9 @@ export function FilePreview({
         >
           <ExternalLink className="h-3 w-3" /> Fungua
         </a>
+      </div>
+      <div className="p-2">
+        <PdfDocumentView src={src} onLoaded={handleLoaded} height={height} />
       </div>
     </div>
   );
