@@ -402,6 +402,15 @@ const dict: Record<string, { sw: string; en: string }> = {
     sw: "Update Taarifa imezimwa na admin kwa sasa.",
     en: "Update Taarifa is switched off by the admin right now.",
   },
+  edit_unlocked_title: {
+    sw: "Umefunguliwa marekebisho",
+    en: "Your edits are open",
+  },
+  edit_unlocked_help: {
+    sw: "Admin amekufungulia ili urekebishe taarifa zako. Rekebisha, kisha gusa Thibitisha Mabadiliko. Ruhusa hii inaisha mara tu unapohifadhi.",
+    en: "The admin opened your form so you can correct it. Make your changes, then tap Confirm changes. This permission ends as soon as you save.",
+  },
+  edit_unlocked_banner: { sw: "Umefunguliwa na admin", en: "Opened by the admin" },
   confirm_reg_first: { sw: "Thibitisha Reg Namba kwanza.", en: "Confirm your Reg number first." },
   tab_edit: { sw: "Update Taarifa", en: "Update details" },
   tab_issue: { sw: "Changamoto", en: "Report an issue" },

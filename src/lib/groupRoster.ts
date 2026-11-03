@@ -225,6 +225,48 @@ export async function unlockStudentGroup(studentId: string): Promise<Error | nul
   return (error as unknown as Error) ?? null;
 }
 
+/**
+ * Opens one student's Update Taarifa form, even while the global switch is off, and
+ * releases their seat so a wrong seminar or group can be fixed. The admin panel calls
+ * this. A database without the migration answers PGRST202, so the caller can say which
+ * migration to run rather than showing a raw PostgREST error.
+ */
+export async function grantStudentEdit(
+  studentId: string,
+): Promise<{ error: Error | null; needsMigration: boolean }> {
+  const { error } = await (supabase as any).rpc("grant_student_edit", {
+    p_student_id: studentId,
+  });
+  return { error: (error as unknown as Error) ?? null, needsMigration: isMissingRpc(error) };
+}
+
+/** Takes a grant back, leaving everything the student already saved alone. */
+export async function revokeStudentEdit(
+  studentId: string,
+): Promise<{ error: Error | null; needsMigration: boolean }> {
+  const { error } = await (supabase as any).rpc("revoke_student_edit", {
+    p_student_id: studentId,
+  });
+  return { error: (error as unknown as Error) ?? null, needsMigration: isMissingRpc(error) };
+}
+
+/** Spends the grant after a save lands, so one grant buys one correction. */
+export async function consumeStudentEdit(studentId: string): Promise<Error | null> {
+  const { error } = await (supabase as any).rpc("consume_student_edit", {
+    p_student_id: studentId,
+  });
+  return (error as unknown as Error) ?? null;
+}
+
+/** PostgREST reports a missing function as PGRST202 rather than a missing column. */
+function isMissingRpc(error: unknown): boolean {
+  const e = error as { code?: string; message?: string } | null;
+  if (!e) return false;
+  return (
+    e.code === "PGRST202" || /could not find the function|does not exist/i.test(e.message || "")
+  );
+}
+
 export type GroupReportPayload = {
   semina: string;
   gender: string;

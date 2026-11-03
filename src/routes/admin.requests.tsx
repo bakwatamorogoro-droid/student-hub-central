@@ -14,6 +14,7 @@ import { ACADEMIC_YEARS, STUDY_YEARS, SEMESTERS } from "@/lib/academicTargeting"
 import { isMissingColumnError } from "@/lib/studentProfile";
 import { assignStudentGroup } from "@/lib/groupRoster";
 import { diffRows, placementRows, FIELD_LABELS } from "@/lib/requestDiff";
+import { EditPermissionPanel } from "@/components/EditPermissionPanel";
 
 export const Route = createFileRoute("/admin/requests")({ component: Page });
 
@@ -226,6 +227,8 @@ function Page() {
 
   return (
     <div className="space-y-4">
+      <EditPermissionPanel />
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
