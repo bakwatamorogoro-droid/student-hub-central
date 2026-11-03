@@ -23,6 +23,7 @@ import {
   ArrowRight,
   Loader2,
   Lock,
+  Unlock,
   AlertTriangle,
   CheckCircle2,
   Users,
@@ -35,11 +36,12 @@ import { CURRENT_ACADEMIC_YEAR, SEMESTERS, isSemesterActive } from "@/lib/academ
 import { DEFAULT_PROGRAM_YEARS, studyYearFromReg } from "@/lib/studyYear";
 import { useI18n } from "@/lib/i18n";
 import { loadDirectory } from "@/lib/directory";
-import { assignStudentGroup, confirmStudentGroup } from "@/lib/groupRoster";
+import { assignStudentGroup, confirmStudentGroup, consumeStudentEdit } from "@/lib/groupRoster";
 import { GROUP_NAMES, SEMINARS } from "@/lib/groupAssignment";
 import { invalidateRosterCache } from "@/lib/useRoster";
 import { GroupRosterView } from "@/components/GroupRosterView";
 import { formatGrace, graceRemainingMs, seatState } from "@/lib/groupLock";
+import { canEdit, hasGrant } from "@/lib/editPermission";
 import { FIELD_LABELS } from "@/lib/requestDiff";
 import {
   AlertDialog,
@@ -138,6 +140,21 @@ function Page() {
   // The seat state is derived from `group_confirmed_at`, so a tick is all the countdown
   // needs. It stops once the window closes rather than running for the life of the page.
   const seat = seatState(student?.group_confirmed_at, now);
+
+  // The admin can open one student's form while Update Taarifa is off for everyone else
+  // (`grant_student_edit`). A grant is spent by the save, so `editUnlocked` is read off
+  // the row and re-read after every write.
+  const editUnlocked = hasGrant({
+    globallyEnabled: !!settings?.profile_edits_enabled,
+    unlockedAt: student?.edit_unlocked_at,
+  });
+  const editable = canEdit({
+    globallyEnabled: !!settings?.profile_edits_enabled,
+    unlockedAt: student?.edit_unlocked_at,
+  });
+  // A grant releases the seat in the database, but the row in hand still carries the old
+  // stamp. Treat the seat as open so the pickers are offered in the same render.
+  const seatForForm: ReturnType<typeof seatState> = editUnlocked ? "open" : seat;
   useEffect(() => {
     if (seat !== "grace") return;
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -277,13 +294,21 @@ function Page() {
     }
     // Keep the original stamp when there was one. The window is measured from the first
     // confirmation, so re-stamping here would hand the student a fresh hour on every save.
+    // A grant is the exception: the admin released the seat, so the student's next
+    // confirmation is a fresh one and starts a fresh hour.
     setStudent((prev: any) =>
       prev
         ? {
             ...prev,
             semina: editSemina,
             student_group: editGroup,
-            group_confirmed_at: prev.group_confirmed_at ?? new Date().toISOString(),
+            group_confirmed_at: editUnlocked
+              ? new Date().toISOString()
+              : (prev.group_confirmed_at ?? new Date().toISOString()),
+            // The grant was just spent, so the row in hand must stop claiming it is open.
+            // Otherwise the banner would stay up and the form would look editable until the
+            // student happened to reload.
+            edit_unlocked_at: null,
           }
         : prev,
     );
@@ -328,7 +353,7 @@ function Page() {
    */
   const saveAndConfirm = async (): Promise<boolean> => {
     if (!student) return false;
-    if (!settings?.profile_edits_enabled) {
+    if (!editable) {
       toast.error(t("edits_disabled"));
       return false;
     }
@@ -337,8 +362,11 @@ function Page() {
       return false;
     }
     // Inside the hour the seat is still the student's to move; the database refuses the
-    // write once it closes, so `seatLocked` is what the form must not offer.
-    const seatLocked = seatState(student.group_confirmed_at, Date.now()) === "locked";
+    // write once it closes, so `seatLocked` is what the form must not offer. A grant
+    // clears the stamp in the database, but the row in hand may predate that, so a grant
+    // always reads as open here.
+    const seatLocked =
+      !editUnlocked && seatState(student.group_confirmed_at, Date.now()) === "locked";
 
     const newRegUp = edit.new_reg_no?.toUpperCase() || null;
     const newSemina = editSemina || null;
@@ -373,7 +401,15 @@ function Page() {
     // unchanged seat is the whole point of the press. A student whose seat is already
     // open has nothing left to do, so they go straight to the last step.
     if (changed.length === 0) {
-      if (student.group_confirmed_at) {
+      // A grant was issued so the student could correct something. If they press confirm
+      // without changing anything, the grant is still spent — otherwise the door the admin
+      // opened would stay open for a correction that was never made. It is cleared first so
+      // the re-read below sees the closed door.
+      if (editUnlocked) {
+        await consumeStudentEdit(student.id);
+        setStudent((prev: any) => (prev ? { ...prev, edit_unlocked_at: null } : prev));
+      }
+      if (student.group_confirmed_at && !editUnlocked) {
         setSubmitting(false);
         toast.info(t("nothing_changed"));
         setStep(3);
@@ -460,6 +496,11 @@ function Page() {
     const newRef = newRegUp || student.reg_no;
     storageSet("student_reg", newRef);
 
+    // Spend the admin's grant, if there was one. One grant buys one correction, so the
+    // door the admin opened closes as soon as the student has walked through it. The
+    // database is the record, so the local row is re-read below rather than trusted.
+    if (editUnlocked) await consumeStudentEdit(student.id);
+
     // The details are in. For a student whose seat is still open or inside the hour,
     // confirming is the second half of the same press: it stamps (or moves) the seat.
     // A frozen seat is left exactly as it stands.
@@ -508,7 +549,7 @@ function Page() {
     if (!student) return;
     setSubmitting(true);
     try {
-      if (seat === "grace") {
+      if (seatForForm === "grace") {
         await alertSuccess(
           t("finish_title"),
           t("finish_grace_body", {
@@ -620,19 +661,41 @@ function Page() {
               <CardTitle className="flex items-center gap-2 text-base">
                 <UserCog className="h-4 w-4 text-primary" /> {t("edit_card_title")}
               </CardTitle>
-              {!settings?.profile_edits_enabled && (
-                <p className="flex items-center gap-1 text-xs text-amber-600">
-                  <Clock className="h-3 w-3" /> {t("edits_disabled")}
+              {editUnlocked ? (
+                <p className="flex items-center gap-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                  <Unlock className="h-3 w-3" /> {t("edit_unlocked_banner")}
                 </p>
+              ) : (
+                !settings?.profile_edits_enabled && (
+                  <p className="flex items-center gap-1 text-xs text-amber-600">
+                    <Clock className="h-3 w-3" /> {t("edits_disabled")}
+                  </p>
+                )
               )}
             </CardHeader>
             <CardContent className="space-y-3">
               {student && (
                 <>
+                  {/* The admin can open this one form while Update Taarifa is off for the
+                      whole cohort. The student has to be told, or the form would look like
+                      it is working by accident. */}
+                  {editUnlocked && (
+                    <div className="flex items-start gap-3 rounded-xl border-2 border-emerald-500/40 bg-emerald-500/10 p-3">
+                      <Unlock className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                      <div className="text-sm">
+                        <div className="font-bold text-emerald-700 dark:text-emerald-300">
+                          {t("edit_unlocked_title")}
+                        </div>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {t("edit_unlocked_help")}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   {/* The seat is editable until the hour after confirmation runs out, then
                       frozen for good. The three states share one card: open pickers, pickers
                       plus a countdown, or a locked summary. */}
-                  {seat === "locked" ? (
+                  {seatForForm === "locked" ? (
                     <div className="rounded-xl border-2 border-emerald-500/40 bg-emerald-500/10 p-3">
                       <div className="flex items-start gap-3">
                         <Lock className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
@@ -670,7 +733,7 @@ function Page() {
                     </div>
                   ) : (
                     <>
-                      {seat === "grace" && (
+                      {seatForForm === "grace" && (
                         <div className="flex items-start gap-3 rounded-xl border-2 border-amber-500/40 bg-amber-500/10 p-3">
                           <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                           <div className="text-sm">
@@ -725,7 +788,7 @@ function Page() {
                           </Select>
                         </div>
                       </div>
-                      {seat === "open" && (
+                      {seatForForm === "open" && (
                         <p className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground">
                           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
                           {t("group_edit_help")}
@@ -832,7 +895,7 @@ function Page() {
               </Button>
               <Button
                 onClick={() => setAskConfirm(true)}
-                disabled={submitting || !settings?.profile_edits_enabled}
+                disabled={submitting || !editable}
                 className="font-bold"
               >
                 {submitting ? (
@@ -842,7 +905,7 @@ function Page() {
                 )}
                 {submitting
                   ? t("saving")
-                  : seat === "open"
+                  : seatForForm === "open"
                     ? t("confirm_group")
                     : t("save_details")}
               </Button>
@@ -857,7 +920,7 @@ function Page() {
                 <Users className="h-4 w-4 text-primary" /> {t("step_finish")}
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                {seat === "locked" ? t("finish_locked_help") : t("finish_help")}
+                {seatForForm === "locked" ? t("finish_locked_help") : t("finish_help")}
               </p>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -900,13 +963,13 @@ function Page() {
               <Button
                 variant="outline"
                 onClick={() => setStep(2)}
-                disabled={submitting || seat === "locked"}
+                disabled={submitting || seatForForm === "locked"}
               >
                 <ArrowLeft className="h-4 w-4" /> {t("back")}
               </Button>
               <Button
                 onClick={() => void finish()}
-                disabled={submitting || !settings?.profile_edits_enabled}
+                disabled={submitting || !editable}
                 className="font-bold"
               >
                 {submitting ? (
@@ -924,12 +987,12 @@ function Page() {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
-                {seat === "open" ? t("confirm_group_title") : t("save_details_title")}
+                {seatForForm === "open" ? t("confirm_group_title") : t("save_details_title")}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {seat === "open"
+                {seatForForm === "open"
                   ? t("confirm_group_warning")
-                  : seat === "grace"
+                  : seatForForm === "grace"
                     ? t("save_details_warning")
                     : t("grace_expired")}
               </AlertDialogDescription>
@@ -962,10 +1025,10 @@ function Page() {
                   </>
                 ) : (
                   <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground">
-                    {seat === "open" ? t("confirm_nothing") : t("nothing_changed")}
+                    {seatForForm === "open" ? t("confirm_nothing") : t("nothing_changed")}
                   </div>
                 )}
-                {seat === "open" && changedRows.length > 0 && seatChanges.length === 0 && (
+                {seatForForm === "open" && changedRows.length > 0 && seatChanges.length === 0 && (
                   <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground">
                     {t("confirm_no_seat_change")}
                   </div>
