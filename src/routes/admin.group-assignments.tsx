@@ -642,7 +642,7 @@ function SubmissionCard({
           <div className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
             Swali lao
           </div>
-          <p className="line-clamp-2 text-sm">{sub.question || "—"}</p>
+          <p className="whitespace-pre-wrap text-sm">{sub.question || "—"}</p>
         </div>
         <div>
           <div className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
@@ -655,7 +655,7 @@ function SubmissionCard({
             <div className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
               Jibu lako
             </div>
-            <p className="line-clamp-2 text-sm italic">{sub.answer}</p>
+            <p className="whitespace-pre-wrap text-sm italic">{sub.answer}</p>
           </div>
         )}
         {sub.annotations.length > 0 && (

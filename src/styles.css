@@ -331,3 +331,83 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/*
+ * A Word document read on the page.
+ *
+ * The owner's complaint was that the words were not all legible without a
+ * download. Two things make them so: the text is set in the app's own readable
+ * size and line height rather than whatever the document happened to carry, and
+ * a wide table scrolls sideways instead of being clipped. Nothing here hides
+ * text — no `line-clamp`, no fixed height on a paragraph.
+ */
+.word-preview {
+  color: var(--foreground);
+  font-size: 0.95rem;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.word-preview p,
+.word-preview div {
+  margin: 0 0 0.6rem;
+}
+
+.word-preview h1,
+.word-preview h2,
+.word-preview h3,
+.word-preview h4,
+.word-preview h5,
+.word-preview h6 {
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0.9rem 0 0.45rem;
+}
+
+.word-preview h1 {
+  font-size: 1.3rem;
+}
+.word-preview h2 {
+  font-size: 1.15rem;
+}
+.word-preview h3 {
+  font-size: 1.05rem;
+}
+
+.word-preview ul,
+.word-preview ol {
+  margin: 0 0 0.6rem 1.25rem;
+  list-style: revert;
+}
+
+.word-preview li {
+  margin: 0.15rem 0;
+}
+
+.word-preview table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.6rem 0;
+  font-size: 0.9rem;
+}
+
+.word-preview th,
+.word-preview td {
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.word-preview img {
+  max-width: 100%;
+  height: auto;
+}
+
+.word-preview blockquote {
+  border-left: 3px solid color-mix(in oklch, var(--primary) 55%, transparent);
+  margin: 0.6rem 0;
+  padding-left: 0.75rem;
+  color: var(--muted-foreground);
+}
+
