@@ -287,10 +287,29 @@ const dict: Record<string, { sw: string; en: string }> = {
   choose_year: { sw: "Chagua mwaka", en: "Choose a year" },
   step_reg: { sw: "Reg Namba", en: "Reg number" },
   step_details: { sw: "Taarifa Zako", en: "Your details" },
+  step_finish: { sw: "Group Lako", en: "Your group" },
   step_issue: { sw: "Changamoto", en: "Report a problem" },
   step_reg_help: {
     sw: "Andika Reg Namba yako kisha gusa Tafuta. Ukikuta majina mengi, chagua lako.",
     en: "Enter your Reg number and tap Search. If several names come back, pick yours.",
+  },
+  finish_help: {
+    sw: "Hii ni group uliyoingia. Chini ni wanafunzi wenzako wapya. Gusa Maliza kuhitimisha.",
+    en: "This is the group you landed in. Your new classmates are listed below. Tap Finish to complete.",
+  },
+  finish_locked_help: {
+    sw: "Hii ni group uliyoingia. Chini ni wanafunzi wenzako. Group lako limefungwa.",
+    en: "This is the group you landed in. Your classmates are listed below. Your group is locked.",
+  },
+  finish_button: { sw: "Maliza", en: "Finish" },
+  finish_title: { sw: "Umekamilisha!", en: "All done!" },
+  finish_grace_body: {
+    sw: "Taarifa zako na group lako vimehifadhiwa. Bado una {time} ya kurekebisha semina na group lako; baada ya hapo linafungwa.",
+    en: "Your details and group are saved. You still have {time} to change your seminar and group; after that it locks.",
+  },
+  finish_locked_body: {
+    sw: "Taarifa zako zimehifadhiwa. Semina na group lako limefungwa — mwone admin kama kuna kosa.",
+    en: "Your details are saved. Your seminar and group are locked — see an admin if something is wrong.",
   },
   step_issue_help: {
     sw: "Kwa wasiofanya Test 1 / Test 2 au wenye matatizo yoyote — andika hapa, admin atapokea.",
@@ -367,21 +386,6 @@ const dict: Record<string, { sw: string; en: string }> = {
   },
   choose_semester: { sw: "Chagua semester", en: "Choose a semester" },
   academic_placeholder: { sw: "Mfano 2026/2027", en: "e.g. 2026/2027" },
-  submit_request: { sw: "Thibitisha", en: "Confirm" },
-  sending: { sw: "Inatuma...", en: "Sending..." },
-  request_sent: {
-    sw: "Mabadiliko yako yamehifadhiwa.",
-    en: "Your changes are saved.",
-  },
-  auto_approved: {
-    sw: "Mabadiliko yako yamehifadhiwa na yameanza kutumika mara moja.",
-    en: "Your changes are saved and already in effect.",
-  },
-  saved_title: { sw: "Imefanikiwa!", en: "Success!" },
-  saved_body: {
-    sw: "Marekebisho yako yamehifadhiwa. Taarifa mpya zinaonekana hapa chini.",
-    en: "Your corrections are saved. The updated details are shown below.",
-  },
   semester_inactive: {
     sw: "Semester hiyo bado haijawashwa. Chagua SEMESTER 1.",
     en: "That semester is not active yet. Choose SEMESTER 1.",
@@ -391,11 +395,7 @@ const dict: Record<string, { sw: string; en: string }> = {
     en: "Report an issue is switched off by the admin right now.",
   },
   my_requests: { sw: "Mabadiliko uliyofanya", en: "Changes you made" },
-  wrong_reg: { sw: "⚠ Nilikosea Reg Namba kabisa", en: "⚠ I used the wrong Reg number entirely" },
-  wrong_reg_help: {
-    sw: "Kagua ikiwa ulijiandikisha kwa Reg isiyo sahihi na unataka matokeo yako ya awali yahamishwe kwa Reg mpya. Mabadiliko yanakwenda moja kwa moja kwenye matokeo yako.",
-    en: "Tick this if you registered under the wrong Reg number and want your earlier results moved to the new one. The change goes straight to your results.",
-  },
+  confirm_unchanged: { sw: "Hakuna sehemu iliyobadilishwa", en: "No field changed" },
   new_reg: { sw: "Reg Namba Mpya", en: "New Reg number" },
   new_name: { sw: "Jina Kamili Jipya", en: "New full name" },
   edits_disabled: {

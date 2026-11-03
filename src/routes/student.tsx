@@ -24,6 +24,8 @@ import {
   Loader2,
   Lock,
   AlertTriangle,
+  CheckCircle2,
+  Users,
 } from "lucide-react";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
@@ -87,8 +89,8 @@ function Page() {
     new_academic_year: "",
     new_phone: "",
   });
-  const [wrongReg, setWrongReg] = useState(false);
-  // 1 = Reg Namba, 2 = edit your details, your seminar and your group.
+  // 1 = Reg Namba, 2 = edit your details and pick your seminar and group,
+  // 3 = see the group you landed in and finish.
   const [step, setStep] = useState(1);
   const [editStatus, setEditStatus] = useState<any[]>([]);
   // The student picks their own seminar and group. Seeded from their row on lookup.
@@ -369,22 +371,19 @@ function Page() {
 
     // Nothing to write. A first-time student still has a seat to open, and opening an
     // unchanged seat is the whole point of the press. A student whose seat is already
-    // open has nothing left to do.
+    // open has nothing left to do, so they go straight to the last step.
     if (changed.length === 0) {
       if (student.group_confirmed_at) {
         setSubmitting(false);
         toast.info(t("nothing_changed"));
+        setStep(3);
         return true;
       }
       const locked = await lockSeat();
       setSubmitting(false);
-      if (locked) await alertSuccess(t("group_confirmed_title"), t("group_confirmed_body"));
+      if (locked) setStep(3);
       return locked;
     }
-
-    const reasonPrefix = wrongReg
-      ? "[NILIKOSEA REG KABISA] Matokeo yangu ya awali yahamishwe kwa Reg mpya. "
-      : "";
 
     // The request row is the audit trail. `approved` from the start, because nothing is
     // waiting on an admin — the write below is the same act.
@@ -407,7 +406,7 @@ function Page() {
       new_phone: has("phone") ? edit.new_phone : null,
       new_academic_year: CURRENT_ACADEMIC_YEAR,
       changed_fields: changed,
-      reason: reasonPrefix.trim() || null,
+      reason: null,
       status: "approved",
       reviewed_at: new Date().toISOString(),
       placed_semina: has("semina") ? newSemina : null,
@@ -460,50 +459,23 @@ function Page() {
 
     const newRef = newRegUp || student.reg_no;
     storageSet("student_reg", newRef);
-    setWrongReg(false);
 
     // The details are in. For a student whose seat is still open or inside the hour,
-    // confirming is the second half of the same press: it stamps (or moves) the seat, so
-    // they are left looking at their group with no step left to walk. A frozen seat is
-    // left exactly as it stands.
+    // confirming is the second half of the same press: it stamps (or moves) the seat.
+    // A frozen seat is left exactly as it stands.
     const seatOpened = !seatLocked && (await lockSeat());
     setSubmitting(false);
 
-    // What to show back: the same before -> after pairs the dialog listed, built from the
-    // values at save time rather than the (already re-rendered) form state.
-    const before: Record<string, string> = {
-      reg_no: student.reg_no || "—",
-      full_name: student.full_name || "—",
-      course: courseNow || "—",
-      semester: semesterNow || "—",
-      phone: phoneNow || "—",
-      semina: seminaNow || "—",
-      group: groupNow || "—",
-      study_year: yearNow || "—",
-    };
-    const after: Record<string, string> = {
-      reg_no: newRegUp || "—",
-      full_name: edit.new_full_name || "—",
-      course: edit.new_course || "—",
-      semester: edit.new_semester || "—",
-      phone: edit.new_phone || "—",
-      semina: newSemina || "—",
-      group: newGroup || "—",
-      study_year: derivedYear == null ? "—" : String(derivedYear),
-    };
-    const labels: Record<string, string> = {
-      reg_no: t("reg_number"),
-      full_name: t("full_name"),
-      course: t("course"),
-      semester: t("semester"),
-      phone: t("phone"),
-      semina: t("semina"),
-      group: t("group"),
-      study_year: t("study_year"),
-    };
-    const summary = changed
-      .map((k) => `• ${labels[k] ?? k}: ${before[k]} → ${after[k]}`)
-      .join("\n");
+    // Re-read the row so the next step shows what was actually stored.
+    const { data: refreshed } = await (supabase as any)
+      .from("students")
+      .select("*")
+      .eq("reg_no", newRef)
+      .limit(1)
+      .maybeSingle();
+    if (refreshed) await fillForm(refreshed);
+    // The roster is rendered on step 3, so remount it to pick up the seat just written.
+    setRosterEpoch((n) => n + 1);
 
     if (acadErr) {
       await alertWarning(
@@ -516,26 +488,39 @@ function Page() {
         `${acadDropped.join(", ")} bado haijawashwa kwenye mfumo (admin aendeshe migrations zilizo kwenye supabase/migrations/).`,
       );
     } else if (seatOpened) {
-      // The seat was opened or moved by this press, so lead with that and then list what
-      // changed, so the student can check the seat before the hour runs out.
-      await alertSuccess(
-        t("group_confirmed_title"),
-        `${t("group_confirmed_body")}\n\n${t("confirm_changes")}:\n${summary}`,
-      );
+      toast.success(t("group_confirmed_title"));
     } else {
-      await alertSuccess(t("saved_title"), `${t("saved_body")}\n\n${summary}`);
+      toast.success(t("saved_title"));
     }
 
-    // Re-read the row so the form shows what was actually stored, without resetting the
-    // step the way `confirmStudent` would.
-    const { data: refreshed } = await (supabase as any)
-      .from("students")
-      .select("*")
-      .eq("reg_no", newRef)
-      .limit(1)
-      .maybeSingle();
-    if (refreshed) await fillForm(refreshed);
+    // The changes are in. Hand over to the last step, which shows the group the student
+    // just landed in, the classmates sitting with them, and the one press that finishes.
+    setStep(3);
     return true;
+  };
+
+  /**
+   * The last press on step 3. The details and the seat are already written, so this only
+   * reports what the student is left holding — the group, the classmates, and how long
+   * they still have to change their mind.
+   */
+  const finish = async () => {
+    if (!student) return;
+    setSubmitting(true);
+    try {
+      if (seat === "grace") {
+        await alertSuccess(
+          t("finish_title"),
+          t("finish_grace_body", {
+            time: formatGrace(graceRemainingMs(student.group_confirmed_at, now)),
+          }),
+        );
+      } else {
+        await alertSuccess(t("finish_title"), t("finish_locked_body"));
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -557,13 +542,14 @@ function Page() {
           </div>
         </div>
 
-        {/* Two steps, Back and one save. The student always knows where they are, and
-              the details, seminar and group all appear once the Reg Namba has resolved
-              to a real student. */}
+        {/* Three steps, Back and one save. The student always knows where they are: the
+              details and the seat are picked on step 2, and step 3 shows the group they
+              landed in before they finish. */}
         <div className="flex items-center justify-center gap-2">
           {[
             { n: 1, label: t("step_reg") },
             { n: 2, label: t("step_details") },
+            { n: 3, label: t("step_finish") },
           ].map((s, i, all) => (
             <div key={s.n} className="flex items-center gap-2">
               <button
@@ -837,26 +823,51 @@ function Page() {
                     />
                     <p className="mt-1 text-[11px] text-muted-foreground">{t("phone_help")}</p>
                   </div>
-                  <label className="flex items-start gap-2 p-3 rounded-lg border-2 border-amber-500/40 bg-amber-500/5 cursor-pointer hover:bg-amber-500/10 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={wrongReg}
-                      onChange={(e) => setWrongReg(e.target.checked)}
-                      className="mt-1 h-4 w-4 accent-amber-600"
-                    />
-                    <div className="text-sm">
-                      <div className="font-semibold text-amber-700 dark:text-amber-400">
-                        {t("wrong_reg")}
-                      </div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {t("wrong_reg_help")}
-                      </div>
-                    </div>
-                  </label>
                 </>
               )}
+            </CardContent>
+            <CardFooter className="flex justify-between gap-2">
+              <Button variant="outline" onClick={() => setStep(1)} disabled={submitting}>
+                <ArrowLeft className="h-4 w-4" /> {t("back")}
+              </Button>
+              <Button
+                onClick={() => setAskConfirm(true)}
+                disabled={submitting || !settings?.profile_edits_enabled}
+                className="font-bold"
+              >
+                {submitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Lock className="h-4 w-4" />
+                )}
+                {submitting
+                  ? t("saving")
+                  : seat === "open"
+                    ? t("confirm_group")
+                    : t("save_details")}
+              </Button>
+            </CardFooter>
+          </Card>
+        )}
+
+        {step === 3 && student && (
+          <Card className="border-2 border-primary/25 shadow-lg">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Users className="h-4 w-4 text-primary" /> {t("step_finish")}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                {seat === "locked" ? t("finish_locked_help") : t("finish_help")}
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {/* The group the student just landed in, and the classmates sitting with
+                  them. Rendered here rather than on step 2 so the roster arrives after
+                  the seat is written, not while it is still being chosen. */}
+              <GroupRosterView key={rosterEpoch} reg={student.reg_no || reg} />
+
               {editStatus.length > 0 && (
-                <div className="pt-3 border-t space-y-2">
+                <div className="border-t pt-3 space-y-2">
                   <div className="text-xs font-semibold text-muted-foreground">
                     {t("my_requests")}:
                   </div>
@@ -884,29 +895,26 @@ function Page() {
                   ))}
                 </div>
               )}
-              <div className="border-t pt-3">
-                <GroupRosterView key={rosterEpoch} reg={student?.reg_no || reg} />
-              </div>
             </CardContent>
             <CardFooter className="flex justify-between gap-2">
-              <Button variant="outline" onClick={() => setStep(1)} disabled={submitting}>
+              <Button
+                variant="outline"
+                onClick={() => setStep(2)}
+                disabled={submitting || seat === "locked"}
+              >
                 <ArrowLeft className="h-4 w-4" /> {t("back")}
               </Button>
               <Button
-                onClick={() => setAskConfirm(true)}
+                onClick={() => void finish()}
                 disabled={submitting || !settings?.profile_edits_enabled}
                 className="font-bold"
               >
                 {submitting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Lock className="h-4 w-4" />
+                  <CheckCircle2 className="h-4 w-4" />
                 )}
-                {submitting
-                  ? t("saving")
-                  : seat === "open"
-                    ? t("confirm_group")
-                    : t("save_details")}
+                {t("finish_button")}
               </Button>
             </CardFooter>
           </Card>

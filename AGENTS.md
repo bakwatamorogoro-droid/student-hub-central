@@ -1299,19 +1299,36 @@ This is why "the OK/Cancel text does not show" is a CSS bug and not a missing bu
 `showConfirmButton` was never false. Check the computed `background-color` before
 touching the SweetAlert2 options.
 
-## The single save on step 2 confirms, then leaves an hour to fix things
+## Step 2 confirms, step 3 shows the new group, and the hour runs from step 2
 
-There is no separate "Hakiki" button, and no separate group step. The step-2 button reads
-**Thibitisha Mabadiliko**, and that one press writes the details and stamps `group_confirmed_at`,
-opening the one-hour window described above. The dialog lists every field the student changed —
-old value struck through, new value in primary, seat fields first — so the press is never blind.
-An unchanged seat still confirms: the dialog's job is to confirm, not to require an edit.
+The wizard is three steps: Reg Namba, then the details and the seat, then the group. There is no
+separate "Hakiki" button and no fourth step. The step-2 button reads **Thibitisha Mabadiliko**,
+and that one press writes the details, stamps `group_confirmed_at`, and opens the one-hour window
+described above. The dialog lists every field the student changed — old value struck through, new
+value in primary, seat fields first — so the press is never blind. An unchanged seat still
+confirms: the dialog's job is to confirm, not to require an edit.
+
+Step 3 is where the payoff lands. It renders `GroupRosterView` — the group the student just
+entered, the representative, and the classmates sitting with them — followed by the audit list of
+what changed, and one **Maliza** button. The roster used to sit on step 2, which meant the
+student read a classmate list that was still being rewritten by the write they were about to
+make; rendering it after the save is why `saveAndConfirm` bumps `rosterEpoch` and calls `setStep(3)`
+as its last act. `Maliza` writes nothing: by then the row is already saved, so the press only
+reports what the student is holding.
 
 The button label tracks the window, not just whether a stamp exists. `seat === "open"` reads
 **Thibitisha Mabadiliko**; a seat inside the hour or already locked reads **Hifadhi Marekebisho**.
 A locked seat is not offered the pickers at all — it renders the read-only summary, and
 `saveAndConfirm` skips `lockSeat` for it, because re-stamping would be a no-op at best and a
 stale-seat write at worst. A seat inside the hour keeps its pickers and shows the countdown badge.
+Step 3's Back button is disabled once the seat is locked, so the student cannot walk back into
+pickers the database would refuse.
+
+There is no "Nilikosea Reg Namba" checkbox and no `reason` prefix on the request. Correcting the
+Reg Namba already moves the student's submissions in the same transaction inside
+`apply_profile_update`, so the checkbox never changed what the code did — it only asked the
+student to describe a correction the system had already decided to accept. The request row still
+carries `changed_fields`, which is what the admin list reads.
 
 ## The page must survive a browser that blocks storage
 
