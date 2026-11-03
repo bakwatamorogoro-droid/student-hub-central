@@ -62,9 +62,16 @@ function usePdfDocument(src: string, onLoaded?: (pages: number) => void) {
 
     (async () => {
       try {
-        const pdfjs = await import("pdfjs-dist");
-        // The worker is what keeps a 40-page document from freezing the tab.
-        const worker = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+        // The legacy build, not the default one, because the default targets
+        // modern engines: it calls `Promise.withResolvers` (Chrome 119 /
+        // Safari 17.4) and dies with "Promise.withResolvers is not a function"
+        // on the older phones this app is used on. The legacy build carries its
+        // own polyfills and draws the same PDF.
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        // The worker is what keeps a 40-page document from freezing the tab. It
+        // needs the legacy build too — it is a separate module and would
+        // otherwise hit the same missing method.
+        const worker = await import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url");
         pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
         const opened = (await pdfjs.getDocument({ url: src }).promise) as unknown as PdfDoc;
         if (cancelled) return;
