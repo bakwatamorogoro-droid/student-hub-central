@@ -24,6 +24,7 @@ import { Route as SemesterQuestionsRouteImport } from './routes/semester-questio
 import { Route as StudentRouteImport } from './routes/student'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminAttendanceRouteImport } from './routes/admin.attendance'
+import { Route as AdminDuplicatesRouteImport } from './routes/admin.duplicates'
 import { Route as AdminExamsRouteImport } from './routes/admin.exams'
 import { Route as AdminGroupAssignmentsRouteImport } from './routes/admin.group-assignments'
 import { Route as AdminGroupsRouteImport } from './routes/admin.groups'
@@ -111,6 +112,11 @@ const AdminAttendanceRoute = AdminAttendanceRouteImport.update({
   path: '/attendance',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminDuplicatesRoute = AdminDuplicatesRouteImport.update({
+  id: '/duplicates',
+  path: '/duplicates',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminExamsRoute = AdminExamsRouteImport.update({
   id: '/exams',
   path: '/exams',
@@ -182,6 +188,7 @@ export interface FileRoutesByFullPath {
   '/semester-questions': typeof SemesterQuestionsRoute
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
+  '/admin/duplicates': typeof AdminDuplicatesRoute
   '/admin/exams': typeof AdminExamsRoute
   '/admin/group-assignments': typeof AdminGroupAssignmentsRoute
   '/admin/groups': typeof AdminGroupsRoute
@@ -209,6 +216,7 @@ export interface FileRoutesByTo {
   '/semester-questions': typeof SemesterQuestionsRoute
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
+  '/admin/duplicates': typeof AdminDuplicatesRoute
   '/admin/exams': typeof AdminExamsRoute
   '/admin/group-assignments': typeof AdminGroupAssignmentsRoute
   '/admin/groups': typeof AdminGroupsRoute
@@ -238,6 +246,7 @@ export interface FileRoutesById {
   '/semester-questions': typeof SemesterQuestionsRoute
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
+  '/admin/duplicates': typeof AdminDuplicatesRoute
   '/admin/exams': typeof AdminExamsRoute
   '/admin/group-assignments': typeof AdminGroupAssignmentsRoute
   '/admin/groups': typeof AdminGroupsRoute
@@ -268,6 +277,7 @@ export interface FileRouteTypes {
     | '/semester-questions'
     | '/student'
     | '/admin/attendance'
+    | '/admin/duplicates'
     | '/admin/exams'
     | '/admin/group-assignments'
     | '/admin/groups'
@@ -295,6 +305,7 @@ export interface FileRouteTypes {
     | '/semester-questions'
     | '/student'
     | '/admin/attendance'
+    | '/admin/duplicates'
     | '/admin/exams'
     | '/admin/group-assignments'
     | '/admin/groups'
@@ -323,6 +334,7 @@ export interface FileRouteTypes {
     | '/semester-questions'
     | '/student'
     | '/admin/attendance'
+    | '/admin/duplicates'
     | '/admin/exams'
     | '/admin/group-assignments'
     | '/admin/groups'
@@ -462,6 +474,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAttendanceRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/duplicates': {
+      id: '/admin/duplicates'
+      path: '/duplicates'
+      fullPath: '/admin/duplicates'
+      preLoaderRoute: typeof AdminDuplicatesRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/exams': {
       id: '/admin/exams'
       path: '/exams'
@@ -544,6 +563,7 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminAttendanceRoute: typeof AdminAttendanceRoute
+  AdminDuplicatesRoute: typeof AdminDuplicatesRoute
   AdminExamsRoute: typeof AdminExamsRoute
   AdminGroupAssignmentsRoute: typeof AdminGroupAssignmentsRoute
   AdminGroupsRoute: typeof AdminGroupsRoute
@@ -558,6 +578,7 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAttendanceRoute: AdminAttendanceRoute,
+  AdminDuplicatesRoute: AdminDuplicatesRoute,
   AdminExamsRoute: AdminExamsRoute,
   AdminGroupAssignmentsRoute: AdminGroupAssignmentsRoute,
   AdminGroupsRoute: AdminGroupsRoute,
