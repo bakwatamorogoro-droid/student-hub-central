@@ -37,6 +37,8 @@ import { assignStudentGroup, confirmStudentGroup } from "@/lib/groupRoster";
 import { GROUP_NAMES, SEMINARS } from "@/lib/groupAssignment";
 import { invalidateRosterCache } from "@/lib/useRoster";
 import { GroupRosterView } from "@/components/GroupRosterView";
+import { formatGrace, graceRemainingMs, seatState } from "@/lib/groupLock";
+import { FIELD_LABELS } from "@/lib/requestDiff";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,6 +49,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { storageGet, storageSet } from "@/lib/safe-storage";
 
 export const Route = createFileRoute("/student")({
   component: Page,
@@ -95,6 +98,8 @@ function Page() {
   const [rosterEpoch, setRosterEpoch] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [askConfirm, setAskConfirm] = useState(false);
+  // Ticks while the confirmation window is open so the countdown moves without a reload.
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     supabase
@@ -110,7 +115,7 @@ function Page() {
         });
         setProgramYears(Number(data?.program_years) || DEFAULT_PROGRAM_YEARS);
       });
-    const saved = localStorage.getItem("student_reg");
+    const saved = storageGet("student_reg");
     if (saved) {
       setReg(saved);
       lookup(saved);
@@ -128,6 +133,15 @@ function Page() {
     return () => window.removeEventListener("hashchange", openGroup);
   }, []);
 
+  // The seat state is derived from `group_confirmed_at`, so a tick is all the countdown
+  // needs. It stops once the window closes rather than running for the life of the page.
+  const seat = seatState(student?.group_confirmed_at, now);
+  useEffect(() => {
+    if (seat !== "grace") return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [seat]);
+
   /** Loads one student row into the form. Leaves the current step alone. */
   const fillForm = async (data: any) => {
     setStudent(data);
@@ -141,7 +155,7 @@ function Page() {
       new_academic_year: CURRENT_ACADEMIC_YEAR,
       new_phone: data.phone || "",
     });
-    localStorage.setItem("student_reg", data.reg_no);
+    storageSet("student_reg", data.reg_no);
     setEditSemina(data.semina || "");
     setEditGroup(data.student_group || "");
     const { data: reqs } = await (supabase as any)
@@ -189,20 +203,58 @@ function Page() {
   };
 
   /**
-   * What the confirmation dialog lists. The student sees the seat they picked against the
-   * one the row holds, so "Hifadhi" is never a blind press. An empty list still saves —
-   * the point of the dialog is to confirm the seat, not to require a change.
+   * What the confirmation dialog lists: every field the student actually changed, each
+   * with the value it held before. Semina and group come first because they are the two
+   * the student cannot fix themselves once the hour is up. An empty list still saves —
+   * the point of the dialog is to confirm, not to require a change.
    */
-  const seatChanges = [
-    { label: t("semina"), from: student?.semina || "—", to: editSemina || "—" },
-    { label: t("group"), from: student?.student_group || "—", to: editGroup || "—" },
-  ].filter((c) => c.from !== c.to);
+  const changedRows = (() => {
+    if (!student) return [] as { key: string; label: string; from: string; to: string }[];
+    const rows = [
+      { key: "semina", label: t("semina"), from: student.semina || "—", to: editSemina || "—" },
+      {
+        key: "group",
+        label: t("group"),
+        from: student.student_group || "—",
+        to: editGroup || "—",
+      },
+      {
+        key: "full_name",
+        label: t("full_name"),
+        from: student.full_name || "—",
+        to: edit.new_full_name || "—",
+      },
+      {
+        key: "reg_no",
+        label: t("reg_number"),
+        from: student.reg_no || "—",
+        to: edit.new_reg_no || "—",
+      },
+      {
+        key: "course",
+        label: t("course"),
+        from: student.course || "—",
+        to: edit.new_course || "—",
+      },
+      {
+        key: "semester",
+        label: t("semester"),
+        from: student.semester || "—",
+        to: edit.new_semester || "—",
+      },
+      { key: "phone", label: t("phone"), from: student.phone || "—", to: edit.new_phone || "—" },
+    ];
+    return rows.filter((r) => r.from !== r.to);
+  })();
+
+  /** The seat half of the list, called out separately because it is the locked part. */
+  const seatChanges = changedRows.filter((r) => r.key === "semina" || r.key === "group");
 
   /**
-   * Confirms the seat, which freezes it. The database stamps `group_confirmed_at` and
-   * refuses to move the seat afterwards, so the disabled dropdowns are a convenience
-   * rather than the guard. Called by the one save on step 2, whether or not the student
-   * changed anything: the press is the agreement.
+   * Confirms the seat and starts the one-hour window. The database stamps
+   * `group_confirmed_at` and refuses to move the seat once the hour is up, so the
+   * read-only dropdowns are a convenience rather than the guard. Called by the one save
+   * on step 2, whether or not the student changed anything: the press is the agreement.
    */
   const lockSeat = async (): Promise<boolean> => {
     if (!student) return false;
@@ -221,10 +273,16 @@ function Page() {
       toast.error(outcome.error.message || "Imeshindikana kuhifadhi. Jaribu tena.");
       return false;
     }
-    const stamp = new Date().toISOString();
+    // Keep the original stamp when there was one. The window is measured from the first
+    // confirmation, so re-stamping here would hand the student a fresh hour on every save.
     setStudent((prev: any) =>
       prev
-        ? { ...prev, semina: editSemina, student_group: editGroup, group_confirmed_at: stamp }
+        ? {
+            ...prev,
+            semina: editSemina,
+            student_group: editGroup,
+            group_confirmed_at: prev.group_confirmed_at ?? new Date().toISOString(),
+          }
         : prev,
     );
     invalidateRosterCache();
@@ -261,10 +319,10 @@ function Page() {
 
   /**
    * The one save on step 2. It writes the student's own corrections straight to their
-   * row, then confirms the seat, which locks it. There is no approval step: the student
-   * is the only one who knows their own name and phone number, and an admin queue in
-   * front of every typo fix was pure friction. The request row is still written, as
-   * `approved`, so there is a record of who changed what and when.
+   * row, then confirms the seat and starts the one-hour window. There is no approval
+   * step: the student is the only one who knows their own name and phone number, and an
+   * admin queue in front of every typo fix was pure friction. The request row is still
+   * written, as `approved`, so there is a record of who changed what and when.
    */
   const saveAndConfirm = async (): Promise<boolean> => {
     if (!student) return false;
@@ -276,9 +334,9 @@ function Page() {
       toast.error(t("semester_inactive"));
       return false;
     }
-    // A student who already confirmed is only fixing their details: the seat is locked,
-    // so this press neither moves nor re-stamps it.
-    const alreadyConfirmed = !!student.group_confirmed_at;
+    // Inside the hour the seat is still the student's to move; the database refuses the
+    // write once it closes, so `seatLocked` is what the form must not offer.
+    const seatLocked = seatState(student.group_confirmed_at, Date.now()) === "locked";
 
     const newRegUp = edit.new_reg_no?.toUpperCase() || null;
     const newSemina = editSemina || null;
@@ -301,18 +359,19 @@ function Page() {
     if ((edit.new_course || "") !== courseNow) changed.push("course");
     if ((edit.new_semester || "") !== semesterNow) changed.push("semester");
     if ((edit.new_phone || "") !== phoneNow) changed.push("phone");
-    if (newSemina !== seminaNow) changed.push("semina");
-    if (newGroup !== groupNow) changed.push("group");
+    // A locked seat ignores any seat value the form still holds, so it is not a change.
+    if (!seatLocked && newSemina !== seminaNow) changed.push("semina");
+    if (!seatLocked && newGroup !== groupNow) changed.push("group");
     if (derivedYear != null && String(derivedYear) !== yearNow) changed.push("study_year");
     const has = (k: string) => changed.includes(k);
 
     setSubmitting(true);
 
-    // Nothing to write: for a first-time student the seat is the only thing left to
-    // confirm, and confirming an unchanged seat still locks it, which is the whole point
-    // of the press. A student already confirmed has nothing left to do.
+    // Nothing to write. A first-time student still has a seat to open, and opening an
+    // unchanged seat is the whole point of the press. A student whose seat is already
+    // open has nothing left to do.
     if (changed.length === 0) {
-      if (alreadyConfirmed) {
+      if (student.group_confirmed_at) {
         setSubmitting(false);
         toast.info(t("nothing_changed"));
         return true;
@@ -400,14 +459,51 @@ function Page() {
     );
 
     const newRef = newRegUp || student.reg_no;
-    localStorage.setItem("student_reg", newRef);
+    storageSet("student_reg", newRef);
     setWrongReg(false);
 
-    // The details are in. For a first-time student, confirming is the second half of the
-    // same press: it stamps the seat, so they are left looking at their group with no
-    // step left to walk. A student already confirmed has nothing left to stamp.
-    const locked = alreadyConfirmed || (await lockSeat());
+    // The details are in. For a student whose seat is still open or inside the hour,
+    // confirming is the second half of the same press: it stamps (or moves) the seat, so
+    // they are left looking at their group with no step left to walk. A frozen seat is
+    // left exactly as it stands.
+    const seatOpened = !seatLocked && (await lockSeat());
     setSubmitting(false);
+
+    // What to show back: the same before -> after pairs the dialog listed, built from the
+    // values at save time rather than the (already re-rendered) form state.
+    const before: Record<string, string> = {
+      reg_no: student.reg_no || "—",
+      full_name: student.full_name || "—",
+      course: courseNow || "—",
+      semester: semesterNow || "—",
+      phone: phoneNow || "—",
+      semina: seminaNow || "—",
+      group: groupNow || "—",
+      study_year: yearNow || "—",
+    };
+    const after: Record<string, string> = {
+      reg_no: newRegUp || "—",
+      full_name: edit.new_full_name || "—",
+      course: edit.new_course || "—",
+      semester: edit.new_semester || "—",
+      phone: edit.new_phone || "—",
+      semina: newSemina || "—",
+      group: newGroup || "—",
+      study_year: derivedYear == null ? "—" : String(derivedYear),
+    };
+    const labels: Record<string, string> = {
+      reg_no: t("reg_number"),
+      full_name: t("full_name"),
+      course: t("course"),
+      semester: t("semester"),
+      phone: t("phone"),
+      semina: t("semina"),
+      group: t("group"),
+      study_year: t("study_year"),
+    };
+    const summary = changed
+      .map((k) => `• ${labels[k] ?? k}: ${before[k]} → ${after[k]}`)
+      .join("\n");
 
     if (acadErr) {
       await alertWarning(
@@ -419,11 +515,15 @@ function Page() {
         "Imehifadhiwa",
         `${acadDropped.join(", ")} bado haijawashwa kwenye mfumo (admin aendeshe migrations zilizo kwenye supabase/migrations/).`,
       );
-    } else if (locked && !alreadyConfirmed) {
-      // The seat was confirmed by this press, so say so rather than just "saved".
-      await alertSuccess(t("group_confirmed_title"), t("group_confirmed_body"));
+    } else if (seatOpened) {
+      // The seat was opened or moved by this press, so lead with that and then list what
+      // changed, so the student can check the seat before the hour runs out.
+      await alertSuccess(
+        t("group_confirmed_title"),
+        `${t("group_confirmed_body")}\n\n${t("confirm_changes")}:\n${summary}`,
+      );
     } else {
-      await alertSuccess(t("saved_title"), t("saved_body"));
+      await alertSuccess(t("saved_title"), `${t("saved_body")}\n\n${summary}`);
     }
 
     // Re-read the row so the form shows what was actually stored, without resetting the
@@ -543,10 +643,10 @@ function Page() {
             <CardContent className="space-y-3">
               {student && (
                 <>
-                  {/* The student picks their own seminar and group here, then the single
-                      save confirms and locks the seat. An already-confirmed seat is shown
-                      as a locked summary instead of pickers. */}
-                  {student.group_confirmed_at ? (
+                  {/* The seat is editable until the hour after confirmation runs out, then
+                      frozen for good. The three states share one card: open pickers, pickers
+                      plus a countdown, or a locked summary. */}
+                  {seat === "locked" ? (
                     <div className="rounded-xl border-2 border-emerald-500/40 bg-emerald-500/10 p-3">
                       <div className="flex items-start gap-3">
                         <Lock className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
@@ -555,7 +655,7 @@ function Page() {
                             {t("group_confirmed_title")}
                           </div>
                           <p className="mt-0.5 text-xs text-muted-foreground">
-                            {t("group_confirmed_body")}
+                            {t("grace_expired")}
                           </p>
                           <p className="mt-1 text-[11px] font-mono text-muted-foreground">
                             {t("group_confirmed_at")}:{" "}
@@ -584,6 +684,23 @@ function Page() {
                     </div>
                   ) : (
                     <>
+                      {seat === "grace" && (
+                        <div className="flex items-start gap-3 rounded-xl border-2 border-amber-500/40 bg-amber-500/10 p-3">
+                          <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                          <div className="text-sm">
+                            <div className="font-bold text-amber-700 dark:text-amber-400">
+                              {t("grace_left", {
+                                time: formatGrace(
+                                  graceRemainingMs(student.group_confirmed_at, now),
+                                ),
+                              })}
+                            </div>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {t("group_edit_help")}
+                            </p>
+                          </div>
+                        </div>
+                      )}
                       <div className="grid gap-3 sm:grid-cols-2">
                         <div>
                           <Label>{t("semina")}</Label>
@@ -622,10 +739,12 @@ function Page() {
                           </Select>
                         </div>
                       </div>
-                      <p className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground">
-                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-                        {t("group_edit_help")}
-                      </p>
+                      {seat === "open" && (
+                        <p className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground">
+                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                          {t("group_edit_help")}
+                        </p>
+                      )}
                     </>
                   )}
                   <div className="grid sm:grid-cols-2 gap-3">
@@ -742,25 +861,25 @@ function Page() {
                     {t("my_requests")}:
                   </div>
                   {editStatus.map((r) => (
-                    <div
-                      key={r.id}
-                      className="text-xs p-2 rounded bg-muted flex justify-between gap-2"
-                    >
-                      <span>
+                    <div key={r.id} className="text-xs p-2 rounded bg-muted space-y-0.5">
+                      <div className="font-semibold">
                         {r.new_full_name || r.current_full_name} /{" "}
                         {r.new_reg_no || r.current_reg_no}
-                      </span>
-                      <span
-                        className={
-                          r.status === "approved"
-                            ? "text-green-600 font-bold"
-                            : r.status === "rejected"
-                              ? "text-red-600"
-                              : "text-amber-600"
-                        }
-                      >
-                        {r.status}
-                      </span>
+                      </div>
+                      {/* The field names the student changed, not a workflow status: every
+                          row here is already in effect, so "approved" only read as though
+                          something were still waiting on an admin. */}
+                      <div className="text-muted-foreground">
+                        {(Array.isArray(r.changed_fields) && r.changed_fields.length > 0
+                          ? r.changed_fields
+                          : []
+                        )
+                          .map((k: string) => FIELD_LABELS[k] ?? k)
+                          .join(", ") || t("confirm_unchanged")}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {r.created_at ? new Date(r.created_at).toLocaleString("sw-TZ") : ""}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -785,9 +904,9 @@ function Page() {
                 )}
                 {submitting
                   ? t("saving")
-                  : student?.group_confirmed_at
-                    ? t("save_details")
-                    : t("confirm_group")}
+                  : seat === "open"
+                    ? t("confirm_group")
+                    : t("save_details")}
               </Button>
             </CardFooter>
           </Card>
@@ -797,24 +916,29 @@ function Page() {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
-                {student?.group_confirmed_at ? t("save_details_title") : t("confirm_group_title")}
+                {seat === "open" ? t("confirm_group_title") : t("save_details_title")}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {student?.group_confirmed_at
-                  ? t("save_details_warning")
-                  : t("confirm_group_warning")}
+                {seat === "open"
+                  ? t("confirm_group_warning")
+                  : seat === "grace"
+                    ? t("save_details_warning")
+                    : t("grace_expired")}
               </AlertDialogDescription>
-              {!student?.group_confirmed_at && (
-                <div className="mt-3 space-y-2 text-sm">
-                  {seatChanges.length > 0 ? (
-                    <>
-                      <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                        {t("confirm_changes")}
-                      </div>
-                      {seatChanges.map((c) => (
+              <div className="mt-3 space-y-2 text-sm">
+                {changedRows.length > 0 ? (
+                  <>
+                    <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                      {t("confirm_changes")}
+                    </div>
+                    {changedRows.map((c) => {
+                      const isSeat = c.key === "semina" || c.key === "group";
+                      return (
                         <div
-                          key={c.label}
-                          className="flex items-center justify-between gap-2 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2"
+                          key={c.key}
+                          className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 ${
+                            isSeat ? "border-primary/25 bg-primary/5" : "border-border bg-muted/40"
+                          }`}
                         >
                           <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
                             {c.label}
@@ -825,15 +949,20 @@ function Page() {
                             <span className="text-primary">{c.to}</span>
                           </span>
                         </div>
-                      ))}
-                    </>
-                  ) : (
-                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground">
-                      {t("confirm_no_seat_change")}
-                    </div>
-                  )}
-                </div>
-              )}
+                      );
+                    })}
+                  </>
+                ) : (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground">
+                    {seat === "open" ? t("confirm_nothing") : t("nothing_changed")}
+                  </div>
+                )}
+                {seat === "open" && changedRows.length > 0 && seatChanges.length === 0 && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground">
+                    {t("confirm_no_seat_change")}
+                  </div>
+                )}
+              </div>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>{t("confirm_cancel")}</AlertDialogCancel>

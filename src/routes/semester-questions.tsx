@@ -18,6 +18,7 @@ import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker, type Student } from "@/components/StudentMatchesPicker";
 import { ACTIVE_SEMESTERS } from "@/lib/academicTargeting";
 import { useI18n } from "@/lib/i18n";
+import { storageGet, storageSet } from "@/lib/safe-storage";
 
 export const Route = createFileRoute("/semester-questions")({
   component: Page,
@@ -65,7 +66,7 @@ function Page() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const r = localStorage.getItem("student_reg");
+    const r = storageGet("student_reg");
     if (r) {
       setReg(r);
       lookup(r);
@@ -106,7 +107,7 @@ function Page() {
     setStudent(s);
     setMatches([]);
     setReg(s.reg_no);
-    localStorage.setItem("student_reg", s.reg_no);
+    storageSet("student_reg", s.reg_no);
     loadPapers(s);
   };
 

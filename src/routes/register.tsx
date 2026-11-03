@@ -34,6 +34,7 @@ import {
 import { useI18n } from "@/lib/i18n";
 import { loadDirectory } from "@/lib/directory";
 import { isMissingColumnError } from "@/lib/studentProfile";
+import { storageSet } from "@/lib/safe-storage";
 
 export const Route = createFileRoute("/register")({
   component: RegisterPage,
@@ -205,7 +206,7 @@ function RegisterPage() {
       return;
     }
     if (conflict.kind === "returning") {
-      localStorage.setItem("student_reg", conflict.regNo);
+      storageSet("student_reg", conflict.regNo);
       setLoading(false);
       setConfirmOpen(false);
       toast.success("Tayari umesajiliwa. Karibu tena!");
@@ -257,7 +258,7 @@ function RegisterPage() {
       toast.error(error.message);
       return;
     }
-    localStorage.setItem("student_reg", form.reg_no);
+    storageSet("student_reg", form.reg_no);
     toast.success("Usajili umethibitishwa kikamilifu!");
     // Straight to the PIN step: without a PIN the student cannot sign in or mark
     // attendance, and that is the next thing they need.

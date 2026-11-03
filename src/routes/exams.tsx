@@ -16,6 +16,7 @@ import { ExamVideoHero, BigSystemTitle } from "@/components/ExamVideoHero";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 import { matchesAcademicTarget } from "@/lib/academicTargeting";
+import { storageGet, storageSet } from "@/lib/safe-storage";
 
 export const Route = createFileRoute("/exams")({
   component: ExamsPage,
@@ -38,7 +39,7 @@ function ExamsPage() {
   const [category, setCategory] = useState<string>("all");
 
   useEffect(() => {
-    const r = localStorage.getItem("student_reg");
+    const r = storageGet("student_reg");
     if (r) {
       setRegInput(r);
       lookup(r);
@@ -69,7 +70,7 @@ function ExamsPage() {
     setStudent(s);
     setMatches([]);
     setRegInput(s.reg_no);
-    localStorage.setItem("student_reg", s.reg_no);
+    storageSet("student_reg", s.reg_no);
   };
 
   const lookup = async (reg: string) => {

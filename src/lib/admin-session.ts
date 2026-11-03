@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { randomUuid } from "@/lib/pin-crypto";
+import { storageGet, storageSet, storageRemove } from "@/lib/safe-storage";
 
 /** Admin sign-in. See `adminLogin` for what this does and does not protect. */
 const KEY = "admin_session_token";
@@ -7,7 +8,7 @@ const LEGACY_KEY = "admin_authed";
 
 export function getAdminToken(): string | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(KEY);
+  return storageGet(KEY);
 }
 
 export function isAdmin(): boolean {
@@ -43,14 +44,14 @@ export async function adminLogin(username: string, password: string): Promise<bo
     // `randomUuid()` rather than `crypto.randomUUID()`: the latter needs a secure
     // context (Chrome 92+/Safari 15.4+) and throws a TypeError over plain HTTP,
     // which would reject correct credentials on an older phone or a LAN preview.
-    window.localStorage.setItem(KEY, randomUuid());
-    window.localStorage.setItem(LEGACY_KEY, "1");
+    storageSet(KEY, randomUuid());
+    storageSet(LEGACY_KEY, "1");
     return true;
   }
   return false;
 }
 
 export function adminLogout() {
-  window.localStorage.removeItem(KEY);
-  window.localStorage.removeItem(LEGACY_KEY);
+  storageRemove(KEY);
+  storageRemove(LEGACY_KEY);
 }

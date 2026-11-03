@@ -48,6 +48,7 @@ import {
   type CameraVerdict,
   type GpsSample,
 } from "@/lib/proctoring";
+import { storageGet, storageRemove, storageSet } from "@/lib/safe-storage";
 import { touchSubmission } from "@/lib/liveExamsApi";
 import {
   ExamStepper,
@@ -111,7 +112,7 @@ function ExamPage() {
 
   useEffect(() => {
     const load = async () => {
-      const reg = localStorage.getItem("student_reg");
+      const reg = storageGet("student_reg");
       if (!reg) {
         nav({ to: "/register" });
         return;
@@ -181,7 +182,7 @@ function ExamPage() {
       setQuestions(isAssignment ? all.filter((x: any) => x.id === pickedQid) : all);
       if (!e.autosave_disabled) {
         try {
-          const saved = localStorage.getItem(autosaveKey);
+          const saved = storageGet(autosaveKey);
           if (saved) setAnswers(JSON.parse(saved));
         } catch {}
       }
@@ -197,7 +198,7 @@ function ExamPage() {
     if (!exam || exam.autosave_disabled) return;
     if (!started) return;
     try {
-      localStorage.setItem(autosaveKey, JSON.stringify(answers));
+      storageSet(autosaveKey, JSON.stringify(answers));
     } catch {}
   }, [answers, exam, started, autosaveKey]);
 
@@ -779,7 +780,7 @@ function ExamPage() {
       return;
     }
     try {
-      localStorage.removeItem(autosaveKey);
+      storageRemove(autosaveKey);
     } catch {}
     if (isAssignment && shareCount > 1) {
       toast.success(

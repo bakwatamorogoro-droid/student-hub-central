@@ -26,6 +26,7 @@ import { studentHasPin, verifyStudentPin } from "@/lib/studentAccount";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 import { formatAcademicSummary } from "@/lib/academicTargeting";
 import { toast } from "@/lib/toast";
+import { storageGet, storageSet } from "@/lib/safe-storage";
 
 type QA = { q: any; given: any; correct: boolean; partial?: number };
 
@@ -131,7 +132,7 @@ function ResultsPage() {
   };
 
   useEffect(() => {
-    const r = localStorage.getItem("student_reg");
+    const r = storageGet("student_reg");
     if (r) {
       setRegNo(r);
       fetchResults(r);
@@ -142,7 +143,7 @@ function ResultsPage() {
     setMatches([]);
     setStudent(s);
     setRegNo(s.reg_no);
-    localStorage.setItem("student_reg", s.reg_no);
+    storageSet("student_reg", s.reg_no);
     const r = s.reg_no.toUpperCase();
     const { data } = await supabase
       .from("submissions")
