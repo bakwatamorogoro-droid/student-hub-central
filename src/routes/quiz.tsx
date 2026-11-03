@@ -7,7 +7,12 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { SiteHeader } from "@/components/SiteHeader";
-import { GroupPicker, memberNames, useGroupMembers } from "@/components/GroupAssignmentPicker";
+import {
+  GroupPicker,
+  memberNames,
+  ownGroupOf,
+  useGroupMembers,
+} from "@/components/GroupAssignmentPicker";
 import { FilePreview, PreviewLoading } from "@/components/FilePreview";
 import { StudentMatchesPicker, type Student } from "@/components/StudentMatchesPicker";
 import { WizardNav, WizardProgress, type WizardStep } from "@/components/StepWizard";
@@ -16,7 +21,12 @@ import { storageGet, storageSet } from "@/lib/safe-storage";
 import { toast } from "@/lib/toast";
 import { useI18n } from "@/lib/i18n";
 import { useRoster } from "@/lib/useRoster";
-import { loadGroupSubmission, submitGroupAssignment } from "@/lib/groupAssignmentApi";
+import {
+  loadGroupSubmission,
+  loadGroupSubmissionRows,
+  submitGroupAssignment,
+} from "@/lib/groupAssignmentApi";
+import { canonicalRegNo } from "@/lib/regNo";
 import { PdfPageView } from "@/components/PdfPageView";
 import { AnnotationList, AnnotationTally } from "@/components/AssignmentAnnotator";
 import { ANNOTATION_META, firstAnnotatedPage } from "@/lib/assignmentAnnotations";
@@ -25,8 +35,10 @@ import {
   MAX_GROUP_FILE_BYTES,
   assignmentFileKind,
   canSubmit,
+  checkPresenterTurns,
   formatBytes,
   groupLabel,
+  indexSubmissionsByRegNo,
   previewKindFor,
   submittedMessage,
   toGroupSubmission,
@@ -86,9 +98,46 @@ function Page() {
   const [existing, setExisting] = useState<GroupSubmissionRow | null>(null);
   const [checkingExisting, setCheckingExisting] = useState(false);
   const [step, setStep] = useState(0);
+  /** Every group submission, so a person's one turn can be checked. */
+  const [turnRows, setTurnRows] = useState<GroupSubmissionRow[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const members = useGroupMembers(roster, confirmedKey);
+
+  /**
+   * The student's own group, read from their registration.
+   *
+   * When it is known, the picker is locked to it: the seminar, group and gender
+   * controls are filled in and disabled, so a member of GROUP 1 cannot submit
+   * for GROUP 2. When the registration is incomplete the picker stays open, and
+   * the turn check below still refuses a second submission.
+   */
+  const ownGroup = useMemo(() => ownGroupOf(student), [student]);
+
+  useEffect(() => {
+    if (!ownGroup) return;
+    setSemina(ownGroup.semina);
+    setGroup(ownGroup.group);
+    setGender(ownGroup.gender);
+    setConfirmedKey((prev) => prev ?? ownGroup);
+  }, [ownGroup]);
+
+  // The rows behind the turn check. Loaded once, and refreshed after a send, so
+  // "has this person already presented?" is answered from the same list the
+  // admin sees.
+  useEffect(() => {
+    let live = true;
+    loadGroupSubmissionRows()
+      .then((rows) => {
+        if (live) setTurnRows(rows);
+      })
+      .catch(() => {
+        if (live) setTurnRows([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [existing]);
 
   useEffect(() => {
     const saved = storageGet("student_reg");
@@ -135,33 +184,6 @@ function Page() {
     setMatches(results);
     toast.info(`Tumepata ${results.length} wanafunzi — chagua wewe ni nani.`);
   };
-
-  // Prefill the picker from the student's own row, so the common case is two taps.
-  useEffect(() => {
-    if (!student) return;
-    setSemina(
-      (v) =>
-        v ||
-        String(student.semina ?? "")
-          .trim()
-          .toUpperCase(),
-    );
-    setGroup(
-      (v) =>
-        v ||
-        String(student.student_group ?? "")
-          .trim()
-          .toUpperCase(),
-    );
-    const g = String(student.gender ?? "").toLowerCase();
-    const guessed =
-      g.includes("female") || g.includes("mwanamke")
-        ? "Mwanamke"
-        : g.includes("male") || g.includes("mwanaume")
-          ? "Mwanaume"
-          : "";
-    setGender((v) => v || guessed);
-  }, [student]);
 
   // Once the group is confirmed, look for work the group already sent.
   useEffect(() => {
@@ -216,7 +238,30 @@ function Page() {
 
   const presenters = memberNames(members, selected);
   const check = canSubmit({ question, presenters, file, previewed });
-  const canSend = check.ok && !!confirmedKey && !existing && !sending;
+
+  /**
+   * Whether everyone ticked still has their one turn.
+   *
+   * A person presents once, for their own group. This is the screen's half of
+   * the rule; `submitGroupAssignment` repeats it against a fresh read, so two
+   * phones acting at the same moment cannot both win.
+   */
+  const turnIndex = useMemo(() => indexSubmissionsByRegNo(turnRows, canonicalRegNo), [turnRows]);
+  const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
+  const turnCheck = useMemo(
+    () =>
+      checkPresenterTurns({
+        selectedIds: [...selected],
+        key: confirmedKey ?? { semina: "", gender: "", group: "" },
+        regOfId: (id) => memberById.get(id)?.reg_no,
+        nameOfId: (id) => memberById.get(id)?.full_name,
+        index: turnIndex,
+        canonical: canonicalRegNo,
+      }),
+    [selected, confirmedKey, memberById, turnIndex],
+  );
+
+  const canSend = check.ok && !!confirmedKey && !existing && !sending && turnCheck.ok;
 
   const wizardSteps: WizardStep[] = useMemo(
     () => [
@@ -262,6 +307,10 @@ function Page() {
       toast.error(verdict.missing[0]);
       return;
     }
+    if (!turnCheck.ok) {
+      toast.error(turnMessage(turnCheck));
+      return;
+    }
     setSending(true);
     let res: Awaited<ReturnType<typeof submitGroupAssignment>>;
     try {
@@ -269,6 +318,10 @@ function Page() {
         key: confirmedKey,
         question,
         presenters,
+        presenterRegs: members
+          .filter((m) => selected.has(m.id))
+          .map((m) => String(m.reg_no ?? ""))
+          .filter(Boolean),
         file,
         submittedBy: student
           ? { reg_no: String(student.reg_no ?? ""), full_name: String(student.full_name ?? "") }
@@ -292,6 +345,11 @@ function Page() {
       if (res.error === "already_submitted") {
         toast.error(t("ga_already"));
         setExisting(await loadGroupSubmission(confirmedKey));
+      } else if (res.error.startsWith("already_presented::")) {
+        const [, name, label] = res.error.split("::");
+        toast.error(
+          `${name || "Mwanachama mmoja"} ameshapresent kwenye ${label || "group nyingine"}. Kila mwanachama anapresent mara moja tu, kwenye group lake.`,
+        );
       } else {
         toast.error(res.error);
       }
@@ -411,6 +469,13 @@ function Page() {
                   onToggle={toggle}
                   readOnly={checkingExisting}
                   view={step === 0 ? "pick" : "members"}
+                  lockedNote={
+                    ownGroup
+                      ? `Hii ni group yako kutoka usajili wako: ${ownGroup.semina} · ${ownGroup.group} · ${
+                          ownGroup.gender === "Mwanamke" ? "Wanawake" : "Wanaume"
+                        }. Kazi hutumwa kwa group lako pekee.`
+                      : null
+                  }
                 />
 
                 {step === 2 && confirmedKey && (
@@ -546,6 +611,15 @@ function Page() {
                           </div>
                         )}
 
+                        {!turnCheck.ok && (
+                          <div className="space-y-1 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-xs">
+                            <div className="flex items-center gap-1 font-bold text-rose-700 dark:text-rose-300">
+                              <AlertCircle className="h-3.5 w-3.5" /> Mwanachama hawezi kutuma tena
+                            </div>
+                            <p className="text-muted-foreground">{turnMessage(turnCheck)}</p>
+                          </div>
+                        )}
+
                         <WizardNav
                           current={step}
                           count={wizardSteps.length}
@@ -570,6 +644,16 @@ function Page() {
       </main>
     </div>
   );
+}
+
+/** A sentence for the two ways a presenter's turn can be refused. */
+function turnMessage(
+  check: { kind: "already_used"; label: string } | { kind: "duplicate_pick"; names: string[] },
+): string {
+  if (check.kind === "duplicate_pick") {
+    return `${check.names.join(", ")} ameorodheshwa mara mbili kwenye orodha. Mwone msimamizi — kuna usajili wa marudio.`;
+  }
+  return `Mwanachama mmoja ameshapresent kwenye ${check.label}. Kila mwanachama anapresent mara moja tu, kwenye group lake.`;
 }
 
 /** The confirmation card a group sees after it has sent its work. */

@@ -28,7 +28,7 @@ import {
   type GroupKey,
   type RosterPerson,
 } from "@/lib/groupAssignmentSubmission";
-import { Loader2, Users, CheckCircle2, Mars, Venus, GraduationCap } from "lucide-react";
+import { Loader2, Users, CheckCircle2, Mars, Venus, GraduationCap, Lock } from "lucide-react";
 
 const norm = { semina: normalizeSeminar, gender: normalizeGender, group: normalizeGroupName };
 
@@ -93,6 +93,7 @@ export function GroupPicker({
   onToggle,
   readOnly,
   view = "all",
+  lockedNote,
 }: {
   roster: RosterPerson[];
   loadingRoster: boolean;
@@ -109,6 +110,8 @@ export function GroupPicker({
   onToggle: (id: string) => void;
   readOnly: boolean;
   view?: "all" | "pick" | "members";
+  /** When set, the three pickers are shown read-only with this explanation. */
+  lockedNote?: string | null;
 }) {
   const { t } = useI18n();
   const seminars = useMemo(() => seminarOptions(roster), [roster]);
@@ -116,6 +119,7 @@ export function GroupPicker({
   const ready = !!semina && !!group && !!gender;
   const showPick = view !== "members";
   const showMembers = view !== "pick";
+  const locked = !!lockedNote;
 
   return (
     <div className="space-y-4">
@@ -128,12 +132,22 @@ export function GroupPicker({
             <p className="text-xs text-muted-foreground">{t("ga_sub")}</p>
           </CardHeader>
           <CardContent className="space-y-4 pt-4">
+            {locked && (
+              <div className="flex items-start gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs">
+                <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-700 dark:text-emerald-300" />
+                <span className="text-muted-foreground">{lockedNote}</span>
+              </div>
+            )}
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
                   {t("ga_semina")}
                 </Label>
-                <Select value={semina} onValueChange={onSemina} disabled={confirmed || readOnly}>
+                <Select
+                  value={semina}
+                  onValueChange={onSemina}
+                  disabled={confirmed || readOnly || locked}
+                >
                   <SelectTrigger className="font-semibold">
                     <SelectValue placeholder={t("ga_choose_placeholder")} />
                   </SelectTrigger>
@@ -150,7 +164,11 @@ export function GroupPicker({
                 <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
                   {t("ga_group")}
                 </Label>
-                <Select value={group} onValueChange={onGroup} disabled={confirmed || readOnly}>
+                <Select
+                  value={group}
+                  onValueChange={onGroup}
+                  disabled={confirmed || readOnly || locked}
+                >
                   <SelectTrigger className="font-semibold">
                     <SelectValue placeholder={t("ga_choose_placeholder")} />
                   </SelectTrigger>
@@ -167,7 +185,11 @@ export function GroupPicker({
                 <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
                   Jinsia
                 </Label>
-                <Select value={gender} onValueChange={onGender} disabled={confirmed || readOnly}>
+                <Select
+                  value={gender}
+                  onValueChange={onGender}
+                  disabled={confirmed || readOnly || locked}
+                >
                   <SelectTrigger className="font-semibold">
                     <SelectValue placeholder={t("ga_choose_placeholder")} />
                   </SelectTrigger>
@@ -179,7 +201,7 @@ export function GroupPicker({
               </div>
             </div>
 
-            {!confirmed && (
+            {!confirmed && !locked && (
               <Button
                 className="w-full font-bold"
                 disabled={!ready || loadingRoster}
@@ -287,4 +309,31 @@ export function memberNames(members: RosterPerson[], selected: Set<string>): str
 /** The members of the confirmed group, for the caller that owns the selection. */
 export function useGroupMembers(roster: RosterPerson[], key: GroupKey | null): RosterPerson[] {
   return useMemo(() => (key ? membersOfGroup(roster, key, norm) : []), [roster, key]);
+}
+
+/**
+ * The one group a student belongs to, read from their own row.
+ *
+ * A student's seminar, group and gender are on their registration, so their
+ * group is a fact about them rather than something they choose. The group screen
+ * uses this to lock the picker: a member of GROUP 1 must not be able to submit
+ * work for GROUP 2 by picking it, which is what the owner saw happen.
+ *
+ * Returns null when the row is missing any of the three parts, in which case the
+ * picker stays open — a student whose registration is incomplete still needs a
+ * way to submit, and the turn check is the backstop.
+ */
+export function ownGroupOf(
+  student: {
+    semina?: string | null;
+    student_group?: string | null;
+    gender?: string | null;
+  } | null,
+): GroupKey | null {
+  if (!student) return null;
+  const semina = normalizeSeminar(student.semina);
+  const group = normalizeGroupName(student.student_group);
+  const gender = normalizeGender(student.gender);
+  if (!semina || !group || gender === "unknown") return null;
+  return { semina, gender: gender === "female" ? "Mwanamke" : "Mwanaume", group };
 }

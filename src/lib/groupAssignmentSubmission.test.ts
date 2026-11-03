@@ -5,11 +5,13 @@ import {
   MAX_GROUP_FILE_BYTES,
   assignmentFileKind,
   canSubmit,
+  checkPresenterTurns,
   compareGroupKeys,
   formatBytes,
   groupKey,
   groupLabel,
   groupSubmissionsInOrder,
+  indexSubmissionsByRegNo,
   isGroupRow,
   membersOfGroup,
   parseEnvelope,
@@ -22,6 +24,7 @@ import {
   validateAssignmentFile,
 } from "./groupAssignmentSubmission.ts";
 import { normalizeGender, normalizeGroupName, normalizeSeminar } from "./groupAssignment.ts";
+import { canonicalRegNo } from "./regNo.ts";
 
 const key = { semina: "SEMINA 3", gender: "Mwanaume", group: "GROUP 5" };
 const norm = { semina: normalizeSeminar, gender: normalizeGender, group: normalizeGroupName };
@@ -367,4 +370,141 @@ test("an envelope with no ticks stays free of an empty list", () => {
     }),
   );
   assert.equal(env?.annotations, undefined);
+});
+
+test("presenter registration numbers travel in the envelope", () => {
+  const env = {
+    kind: "group_assignment" as const,
+    semina: "SEMINA 3",
+    gender: "Mwanaume",
+    group: "GROUP 5",
+    presenters: ["ABU", "ALI"],
+    presenter_regs: ["MUM2025-04-1", "MUM2025-04-2"],
+    question: "Q",
+  };
+  const round = parseEnvelope(serializeEnvelope(env));
+  assert.deepEqual(round?.presenter_regs, ["MUM2025-04-1", "MUM2025-04-2"]);
+});
+
+test("a row without presenter numbers carries none, rather than a guessed list", () => {
+  const env = parseEnvelope(
+    JSON.stringify({
+      kind: "group_assignment",
+      semina: "S",
+      gender: "Mwanaume",
+      group: "G",
+      presenters: ["A", "B"],
+      question: "",
+    }),
+  );
+  assert.equal(env?.presenter_regs, undefined);
+});
+
+test("a person who already presented for another group is refused", () => {
+  const rows = [
+    {
+      id: "1",
+      status: GROUP_SUBMISSION_STATUS,
+      reg_no: groupKey({ semina: "SEMINA 3", gender: "Mwanaume", group: "GROUP 1" }),
+      ai_extracted_text: serializeEnvelope({
+        kind: "group_assignment",
+        semina: "SEMINA 3",
+        gender: "Mwanaume",
+        group: "GROUP 1",
+        presenters: ["ABU"],
+        presenter_regs: ["MUM2025-04-15805"],
+        question: "Q",
+      }),
+    },
+  ];
+  const index = indexSubmissionsByRegNo(rows as never, canonicalRegNo);
+  const check = checkPresenterTurns({
+    selectedIds: ["r1"],
+    key: { semina: "SEMINA 3", gender: "Mwanaume", group: "GROUP 2" },
+    regOfId: () => "MUM2025 -04-15805", // the same number, spelled differently
+    nameOfId: () => "ABU",
+    index,
+    canonical: canonicalRegNo,
+  });
+  assert.equal(check.ok, false);
+  assert.equal((check as { kind: string }).kind, "already_used");
+  assert.equal((check as { label: string }).label, "SEMINA 3 · GROUP 1 · WANAUME");
+});
+
+test("a person may submit for their own group, and only once", () => {
+  const rows = [
+    {
+      id: "1",
+      status: GROUP_SUBMISSION_STATUS,
+      reg_no: groupKey({ semina: "SEMINA 3", gender: "Mwanaume", group: "GROUP 5" }),
+      ai_extracted_text: serializeEnvelope({
+        kind: "group_assignment",
+        semina: "SEMINA 3",
+        gender: "Mwanaume",
+        group: "GROUP 5",
+        presenters: ["ABU"],
+        presenter_regs: ["MUM2025-04-15805"],
+        question: "Q",
+      }),
+    },
+  ];
+  const index = indexSubmissionsByRegNo(rows as never, canonicalRegNo);
+  // The same group is not a second turn; that is the "already submitted" path.
+  const check = checkPresenterTurns({
+    selectedIds: ["r1"],
+    key: { semina: "SEMINA 3", gender: "Mwanaume", group: "GROUP 5" },
+    regOfId: () => "MUM2025-04-15805",
+    nameOfId: () => "ABU",
+    index,
+    canonical: canonicalRegNo,
+  });
+  assert.equal(check.ok, true);
+});
+
+test("a first-time presenter passes the turn check", () => {
+  const check = checkPresenterTurns({
+    selectedIds: ["r1", "r2"],
+    key: { semina: "SEMINA 3", gender: "Mwanaume", group: "GROUP 5" },
+    regOfId: (id) => (id === "r1" ? "MUM2025-04-1" : "MUM2025-04-2"),
+    nameOfId: () => "A",
+    index: new Map(),
+    canonical: canonicalRegNo,
+  });
+  assert.equal(check.ok, true);
+});
+
+test("the same person ticked twice is reported as a duplicate registration", () => {
+  const check = checkPresenterTurns({
+    selectedIds: ["r1", "r2"],
+    key: { semina: "SEMINA 3", gender: "Mwanaume", group: "GROUP 5" },
+    // Two roster rows, one real person: the duplicate registration the owner
+    // asked to be cleaned up.
+    regOfId: () => "MUM2025-04-15805",
+    nameOfId: () => "ABU",
+    index: new Map(),
+    canonical: canonicalRegNo,
+  });
+  assert.equal(check.ok, false);
+  assert.equal((check as { kind: string }).kind, "duplicate_pick");
+});
+
+test("a row written before presenter numbers existed still holds the sender's turn", () => {
+  const rows = [
+    {
+      id: "1",
+      status: GROUP_SUBMISSION_STATUS,
+      reg_no: groupKey({ semina: "SEMINA 1", gender: "Mwanaume", group: "GROUP 9" }),
+      ai_extracted_text: serializeEnvelope({
+        kind: "group_assignment",
+        semina: "SEMINA 1",
+        gender: "Mwanaume",
+        group: "GROUP 9",
+        presenters: ["ABU"],
+        question: "Q",
+        submitted_by: { reg_no: "MUM2025-04-99999", full_name: "ABU" },
+      }),
+    },
+  ];
+  const index = indexSubmissionsByRegNo(rows as never, canonicalRegNo);
+  assert.equal(index.has(canonicalRegNo("MUM2025-04-99999")), true);
 });

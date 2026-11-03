@@ -52,6 +52,14 @@ export type GroupEnvelope = {
   group: string;
   presenters: string[];
   question: string;
+  /**
+   * The registration numbers behind `presenters`, in the same order.
+   *
+   * Names are what the admin reads, but a name is not an identity: the cohort
+   * has 77 repeated names. The numbers are what makes "this person already
+   * submitted for another group" a fact rather than a guess.
+   */
+  presenter_regs?: string[];
   submitted_by?: EnvelopePerson;
   /** The admin's written answer, once sent. */
   answer?: string;
@@ -140,6 +148,10 @@ export function parseEnvelope(raw: string | null | undefined): GroupEnvelope | n
         : [],
       question: String(parsed.question ?? ""),
     };
+    if (Array.isArray(parsed.presenter_regs)) {
+      const regs = parsed.presenter_regs.map((r) => String(r)).filter(Boolean);
+      if (regs.length) env.presenter_regs = regs;
+    }
     // Optional fields are only added when the row actually carries them, so a
     // round-trip does not grow the object with `undefined` keys.
     if (parsed.submitted_by) env.submitted_by = parsed.submitted_by;
@@ -425,6 +437,121 @@ export function presentersSummary(presenters: string[]): string {
   if (!list.length) return "Hakuna aliyechaguliwa";
   if (list.length <= 3) return list.join(", ");
   return `${list.slice(0, 3).join(", ")} +${list.length - 3}`;
+}
+
+/**
+ * Where each person on the roster already sent work, keyed by canonical reg no.
+ *
+ * A student belongs to exactly one group, and a group sends exactly once. So a
+ * person who appears in any group's submission has used their turn, and must not
+ * appear in a second one. Without this, a member of GROUP 1 could walk to
+ * GROUP 2's screen, name themselves as a presenter there, and the same person
+ * would be sitting in two submissions — which is what the owner saw and objected
+ * to.
+ *
+ * The key is the registration number, not the name: two students really can
+ * share a name, and refusing one of them their one turn because of the other
+ * would be wrong.
+ */
+export type RegNoIndex = Map<string, { row: GroupSubmissionRow; group: GroupKey; label: string }>;
+
+export function indexSubmissionsByRegNo(
+  rows: GroupSubmissionRow[],
+  canonical: (raw: string | null | undefined) => string,
+): RegNoIndex {
+  const index: RegNoIndex = new Map();
+  for (const row of rows) {
+    if (!isGroupRow(row)) continue;
+    const env = parseEnvelope(row.ai_extracted_text);
+    const key: GroupKey = {
+      semina: env?.semina || String(row.semina ?? ""),
+      gender: env?.gender || "",
+      group: env?.group || String(row.student_group ?? ""),
+    };
+    const regs = personRegsOf(row);
+    for (const reg of regs) {
+      const canon = canonical(reg);
+      if (!canon) continue;
+      // First writer wins, so the answer is stable across reloads.
+      if (!index.has(canon)) index.set(canon, { row, group: key, label: groupLabel(key) });
+    }
+  }
+  return index;
+}
+
+/**
+ * The registration numbers a submission can prove it carries.
+ *
+ * The envelope's `presenter_regs` is the list. A row written before that field
+ * existed carries only names, and a name is not an identity — the cohort has 77
+ * repeated names, so matching on a name could take a turn away from the wrong
+ * student. Such a row therefore contributes only the one number it does hold
+ * for certain: whoever pressed send.
+ */
+export function personRegsOf(row: GroupSubmissionRow): string[] {
+  const env = parseEnvelope(row.ai_extracted_text);
+  if (env?.presenter_regs?.length) return env.presenter_regs;
+  if (env?.submitted_by?.reg_no) return [env.submitted_by.reg_no];
+  return [];
+}
+
+/** One person's turn, as the group screen needs to see it. */
+export type TurnCheck =
+  | { ok: true }
+  | { ok: false; kind: "already_used"; label: string }
+  | { ok: false; kind: "duplicate_pick"; names: string[] };
+
+/**
+ * Whether the chosen presenters may still submit for this group.
+ *
+ * Two refusals live here, and they are different problems:
+ *
+ *   * `duplicate_pick` — the same person was ticked twice. The picker keys on
+ *     the roster id, so this can only happen if the same student is in the
+ *     roster twice, which is a duplicate registration. Say so plainly rather
+ *     than letting the group send a submission naming one person twice.
+ *   * `already_used` — someone in this selection has already presented for a
+ *     different group. This is the rule the owner asked for.
+ */
+export function checkPresenterTurns(input: {
+  /** The roster ids the group ticked. */
+  selectedIds: string[];
+  /** The group the submission is for. */
+  key: GroupKey;
+  /** Reg number for each selected roster id. */
+  regOfId: (id: string) => string | null | undefined;
+  /** Name for each selected roster id, for the message. */
+  nameOfId: (id: string) => string | null | undefined;
+  /** Where each person already sent work, keyed canonically. */
+  index: RegNoIndex;
+  canonical: (raw: string | null | undefined) => string;
+}): TurnCheck {
+  const seen = new Map<string, string[]>();
+  for (const id of input.selectedIds) {
+    const canon = input.canonical(input.regOfId(id));
+    if (!canon) continue;
+    const name = String(input.nameOfId(id) ?? "").trim() || canon;
+    const list = seen.get(canon) ?? [];
+    list.push(name);
+    seen.set(canon, list);
+  }
+
+  const twice = [...seen.values()].filter((names) => names.length > 1);
+  if (twice.length) {
+    return { ok: false, kind: "duplicate_pick", names: twice.flat() };
+  }
+
+  const target = groupKey(input.key);
+  for (const [canon] of seen) {
+    const used = input.index.get(canon);
+    if (!used) continue;
+    // The same group sending again is not a second turn; that is the "already
+    // submitted" path, which the caller handles separately.
+    if (groupKey(used.group) === target) continue;
+    return { ok: false, kind: "already_used", label: used.label };
+  }
+
+  return { ok: true };
 }
 
 /** The file extension label the preview needs. */

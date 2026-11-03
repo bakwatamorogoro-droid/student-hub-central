@@ -7,6 +7,7 @@ import {
   GROUP_SUBMISSION_STATUS,
   groupKey,
   groupLabel,
+  indexSubmissionsByRegNo,
   parseEnvelope,
   serializeEnvelope,
   type EnvelopePerson,
@@ -14,6 +15,7 @@ import {
   type GroupKey,
   type GroupSubmissionRow,
 } from "@/lib/groupAssignmentSubmission";
+import { canonicalRegNo } from "@/lib/regNo";
 
 /**
  * The Supabase half of the group assignment feature.
@@ -55,6 +57,37 @@ export async function loadGroupSubmission(key: GroupKey): Promise<GroupSubmissio
   return rows[0] ?? null;
 }
 
+/**
+ * The turn check against the rows as they are right now, not as the page last
+ * saw them.
+ *
+ * `checkPresenterTurns` in the pure module is the same rule; this is its
+ * database-facing half, called just before the file is uploaded so that a race
+ * between two groups cannot let one person into two submissions.
+ */
+async function checkTurnsAgainstLiveRows(
+  key: GroupKey,
+  presenterRegs: string[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const wanted = new Set(presenterRegs.map((r) => canonicalRegNo(r)).filter(Boolean));
+  if (wanted.size === 0) return { ok: true };
+
+  const rows = await loadGroupSubmissionRows();
+  const index = indexSubmissionsByRegNo(rows, canonicalRegNo);
+  const target = groupKey(key);
+  for (const canon of wanted) {
+    const used = index.get(canon);
+    if (!used) continue;
+    if (groupKey(used.group) === target) continue;
+    const name = presenterRegs.find((r) => canonicalRegNo(r) === canon) ?? canon;
+    return {
+      ok: false,
+      error: `already_presented::${name}::${used.label}`,
+    };
+  }
+  return { ok: true };
+}
+
 function safeFileName(name: string): string {
   return name.replace(/[^\w.-]+/g, "_");
 }
@@ -64,6 +97,8 @@ export type SubmitGroupInput = {
   question: string;
   /** Names of the members who presented, as shown on screen. */
   presenters: string[];
+  /** The registration numbers behind `presenters`, in the same order. */
+  presenterRegs?: string[];
   file: File;
   /** The submitter, when the screen knows who that is. */
   submittedBy?: EnvelopePerson | null;
@@ -87,6 +122,14 @@ export async function submitGroupAssignment(input: SubmitGroupInput): Promise<Su
   const existing = await loadGroupSubmission(input.key);
   if (existing) return { ok: false, error: "already_submitted" };
 
+  // A person belongs to one group and presents once. The caller checked this
+  // against the rows it had loaded, but two phones in different groups can act
+  // at the same moment, so the check is repeated here against a fresh read
+  // before the file is uploaded. Catching it here is what makes the rule hold
+  // even when the two submissions race.
+  const turn = await checkTurnsAgainstLiveRows(input.key, input.presenterRegs ?? []);
+  if (!turn.ok) return { ok: false, error: turn.error };
+
   const path = `assignments/groups/${safeFileName(groupKey(input.key))}/${Date.now()}-${safeFileName(input.file.name)}`;
   const { error: upErr } = await supabase.storage
     .from(BUCKET)
@@ -102,6 +145,7 @@ export async function submitGroupAssignment(input: SubmitGroupInput): Promise<Su
     presenters: input.presenters,
     question: input.question,
   };
+  if (input.presenterRegs?.length) envelope.presenter_regs = input.presenterRegs;
   if (input.submittedBy) envelope.submitted_by = input.submittedBy;
 
   const insert: Database["public"]["Tables"]["pdf_submissions"]["Insert"] = {
