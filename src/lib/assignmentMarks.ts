@@ -200,3 +200,222 @@ export function allMarksTable(rows: AllMarksRow[]): string[][] {
 }
 
 export const ALL_MARKS_HEADERS = ["Reg Namba", "Jina", "Kozi", "Alama", "Daraja (Grade)"] as const;
+
+/* -------------------------------------------------------------------------- */
+/* Which groups did the work, and who to export                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One group's line in the admin's overview: what it sent, whether it has been
+ * marked, and how it did.
+ *
+ * The overview answers one question the card grid cannot — "which groups have
+ * finished?" — so `submitted` and `marked` are kept as plain booleans rather
+ * than being re-derived from a string on every render.
+ */
+export type GroupOverview = {
+  /** The same key `markKey` uses, so a mark can be found from a roster row. */
+  id: string;
+  label: string;
+  semina: string;
+  gender: string;
+  group: string;
+  /** The group sent its work. */
+  submitted: boolean;
+  /** The admin has read it and sent an answer back. */
+  answered: boolean;
+  /** The admin has put a mark on it. */
+  marked: boolean;
+  /** "7/24", or "" when there is no mark yet. */
+  mark: string;
+  score: number | null;
+  max: number | null;
+  percent: number | null;
+  grade: string;
+  /** Names of the members who presented. */
+  presenters: string[];
+  question: string;
+  submittedAt: string | null;
+  /** The page marks the teacher put on the work. */
+  annotations: number;
+  /** The group's file, so the admin can open or download it. */
+  fileUrl: string | null;
+  fileName: string | null;
+};
+
+/** The columns the per-group sheet shows. */
+export type GroupMarksRow = {
+  Group: string;
+  Semina: string;
+  Jinsia: string;
+  "Reg Namba": string;
+  Jina: string;
+  Kozi: string;
+  Alama: string;
+  "Daraja (Grade)": string;
+};
+
+export const GROUP_MARKS_HEADERS = [
+  "Group",
+  "Semina",
+  "Jinsia",
+  "Reg Namba",
+  "Jina",
+  "Kozi",
+  "Alama",
+  "Daraja (Grade)",
+] as const;
+
+/**
+ * A mark found through the group's own key.
+ *
+ * The overview and the roster spell the group the same way they always have, so
+ * `groupMarkId` is the single place that turns (semina, gender, group) into the
+ * key a mark is stored under. Keeping it here means the overview and the export
+ * cannot drift apart.
+ */
+export function groupMarkId(
+  semina: string | null | undefined,
+  gender: string | null | undefined,
+  group: string | null | undefined,
+): string {
+  return markKey(semina, gender, group);
+}
+
+/**
+ * The groups that did the work, ready for the overview and the export picker.
+ *
+ * A group that never submitted is not invented here: the caller passes the
+ * submissions it already has, and each becomes one line, so this stays a pure
+ * map over them and the "who did the work" list cannot drift from the card grid.
+ */
+export function groupOverviewRows(
+  submissions: {
+    key: { semina: string; gender: string; group: string };
+    label: string;
+    presenters: string[];
+    question: string;
+    answered: boolean;
+    submittedAt: string | null;
+    mark: string | null;
+    markScore: number | null;
+    markMax: number | null;
+    annotations: unknown[];
+    row: { file_url?: string | null; file_name?: string | null };
+  }[],
+): GroupOverview[] {
+  return submissions.map((s) => {
+    const percent = markPercent(s.markScore, s.markMax);
+    return {
+      id: groupMarkId(s.key.semina, s.key.gender, s.key.group),
+      label: s.label,
+      semina: norm(s.key.semina),
+      gender: genderKey(s.key.gender),
+      group: norm(s.key.group),
+      submitted: true,
+      answered: s.answered,
+      marked: s.markScore !== null,
+      mark: s.mark ?? "",
+      score: s.markScore,
+      max: s.markMax,
+      percent,
+      grade: gradeOf(percent),
+      presenters: s.presenters,
+      question: s.question,
+      submittedAt: s.submittedAt,
+      annotations: s.annotations.length,
+      fileUrl: s.row.file_url ?? null,
+      fileName: s.row.file_name ?? null,
+    };
+  });
+}
+
+/** How many groups did the work, how many are marked, and how the marks read. */
+export function marksSummary(groups: GroupOverview[]) {
+  const total = groups.length;
+  const submitted = groups.filter((g) => g.submitted).length;
+  const marked = groups.filter((g) => g.marked).length;
+  const answered = groups.filter((g) => g.answered).length;
+  const percents = groups
+    .map((g) => g.percent)
+    .filter((p): p is number => p !== null && Number.isFinite(p));
+  const average = percents.length
+    ? percents.reduce((sum, p) => sum + p, 0) / percents.length
+    : null;
+  const best = percents.length ? Math.max(...percents) : null;
+  const lowest = percents.length ? Math.min(...percents) : null;
+  return { total, submitted, marked, answered, average, best, lowest };
+}
+
+/** "A" for a mark that passed, "-" when there is nothing to grade yet. */
+export function gradeOrDash(percent: number | null): string {
+  const grade = gradeOf(percent);
+  return grade || "-";
+}
+
+/**
+ * One line per student in the chosen groups, for a per-group export.
+ *
+ * Every student seated in a chosen group appears, even one whose group has no
+ * mark yet: the sheet is a class roll, and dropping a name would hide who is
+ * still outstanding. `groups` is the set of group keys to include.
+ */
+export function groupMarksRows(
+  roster: MarkRosterPerson[],
+  marks: GroupMark[],
+  groups: string[],
+): GroupMarksRow[] {
+  const wanted = new Set(groups);
+  const byGroup = new Map<string, GroupMark>();
+  for (const m of marks) byGroup.set(markKey(m.semina, m.gender, m.group), m);
+
+  const rows: GroupMarksRow[] = [];
+  for (const person of roster) {
+    const id = groupMarkId(person.semina, person.gender, person.student_group);
+    if (!wanted.has(id)) continue;
+    const mark = byGroup.get(id);
+    const score = mark?.score ?? null;
+    const max = mark?.max ?? null;
+    const percent = markPercent(score, max);
+    rows.push({
+      Group: norm(person.student_group),
+      Semina: norm(person.semina),
+      Jinsia: genderLabelOf(person.gender),
+      "Reg Namba": String(person.reg_no ?? "").trim(),
+      Jina: String(person.full_name ?? "").trim(),
+      Kozi: String(person.course ?? "").trim(),
+      Alama: formatMark(score, max),
+      "Daraja (Grade)": gradeOrDash(percent),
+    });
+  }
+  return rows.sort(
+    (a, b) =>
+      a.Semina.localeCompare(b.Semina) ||
+      a.Jinsia.localeCompare(b.Jinsia) ||
+      a.Group.localeCompare(b.Group) ||
+      a["Reg Namba"].localeCompare(b["Reg Namba"]) ||
+      a.Jina.localeCompare(b.Jina),
+  );
+}
+
+/** The same rows as arrays, which is what a PDF table wants. */
+export function groupMarksTable(rows: GroupMarksRow[]): string[][] {
+  return rows.map((r) => [
+    r.Group,
+    r.Semina,
+    r.Jinsia,
+    r["Reg Namba"],
+    r.Jina,
+    r.Kozi,
+    r.Alama,
+    r["Daraja (Grade)"],
+  ]);
+}
+
+/** "Wanaume" / "Wanawake" for the sheet's Jinsia column. */
+function genderLabelOf(raw: string | null | undefined): string {
+  const v = genderKey(raw);
+  if (v === "MWANAMKE") return "Wanawake";
+  if (v === "MWANAUME") return "Wanaume";
+  return v;
+}

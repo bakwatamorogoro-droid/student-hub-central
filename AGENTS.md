@@ -1567,6 +1567,22 @@ owner asked for; `allMarksRows` builds exactly that shape. Students in a group
 with no mark yet stay on the roll with a blank mark, because dropping them would
 hide who is still outstanding.
 
+### Who did the work, and per-group downloads
+
+The admin page opens with "Taarifa za kazi za group" (`OverviewCard`): one line
+per group that **actually submitted**, from `groupOverviewRows`. A group that
+never handed anything in is left off rather than listed as absent — the list is
+the answer to "who did the work", so an invented row would be a lie. Each line
+carries the presenters, the mark and the grade, and a "Fungua" button that opens
+the same review dialog as the cards below.
+
+That card is also the export picker. Tick groups and the downloads cover those
+alone; tick nothing and they cover everyone, because an empty selection would
+otherwise produce an empty file and read as a bug. `groupMarksRows` builds the
+per-group shape — group, seminar and gender on every line, so a sheet holding
+three groups still makes sense on its own — and `exportGroupMarks` writes it to
+Excel, Word, PDF or CSV. The flat "everyone" export above is untouched.
+
 `SignaturePad` signs in red (`#dc2626`) by default, with black, blue and green
 swatches. Red is the requested default, but a red tick can be lost against red
 text, so the choice is kept.

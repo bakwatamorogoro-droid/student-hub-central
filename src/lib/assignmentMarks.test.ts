@@ -3,10 +3,17 @@ import assert from "node:assert/strict";
 
 import {
   ALL_MARKS_HEADERS,
+  GROUP_MARKS_HEADERS,
   allMarksRows,
   allMarksTable,
   formatMark,
   gradeOf,
+  gradeOrDash,
+  groupMarkId,
+  groupMarksRows,
+  groupMarksTable,
+  groupOverviewRows,
+  marksSummary,
   markPercent,
   parseMark,
   trimNumber,
@@ -212,4 +219,213 @@ test("the table form is the same data, ready for a PDF grid", () => {
     [{ semina: "SEMINA 3", gender: "M", group: "GROUP 5", score: 18, max: 24 }],
   );
   assert.deepEqual(allMarksTable(rows), [["A1", "AMINA", "BSED", "18/24", "A"]]);
+});
+
+/* -------------------------------------------------------------------------- */
+/* The overview: which groups did the work, and who to export                 */
+/* -------------------------------------------------------------------------- */
+
+const submission = (over: Partial<Parameters<typeof groupOverviewRows>[0][number]> = {}) => ({
+  key: { semina: "SEMINA 3", gender: "Mwanaume", group: "GROUP 5" },
+  label: "SEMINA 3 · GROUP 5 · WANAUME",
+  presenters: ["AMINA", "BAKARI"],
+  question: "Je, ni masharti gani ya mkopo?",
+  answered: false,
+  submittedAt: "2026-01-02T10:00:00.000Z",
+  mark: null,
+  markScore: null,
+  markMax: null,
+  annotations: [],
+  row: { file_url: "https://x/f.pdf", file_name: "f.pdf" },
+  ...over,
+});
+
+test("a group that did the work becomes one overview line, marked or not", () => {
+  const rows = groupOverviewRows([
+    submission(),
+    submission({
+      key: { semina: "SEMINA 3", gender: "Mwanamke", group: "GROUP 5" },
+      label: "SEMINA 3 · GROUP 5 · WANAWAKE",
+      mark: "18/24",
+      markScore: 18,
+      markMax: 24,
+      answered: true,
+      annotations: [{}, {}],
+    }),
+  ]);
+
+  assert.equal(rows.length, 2);
+  const men = rows.find((r) => r.gender === "MWANAUME")!;
+  const women = rows.find((r) => r.gender === "MWANAMKE")!;
+
+  // The same "GROUP 5" on each side of the seminar is two different groups.
+  assert.notEqual(men.id, women.id);
+  assert.equal(men.submitted, true);
+  assert.equal(men.marked, false);
+  assert.equal(men.mark, "");
+  assert.equal(men.percent, null);
+  assert.equal(men.grade, "");
+
+  assert.equal(women.marked, true);
+  assert.equal(women.mark, "18/24");
+  assert.equal(women.percent, 75);
+  assert.equal(women.grade, "A");
+  assert.equal(women.answered, true);
+  assert.equal(women.annotations, 2);
+});
+
+test("the overview key is the same key the mark is stored under", () => {
+  const [row] = groupOverviewRows([submission()]);
+  assert.equal(row.id, groupMarkId("SEMINA 3", "Mwanaume", "GROUP 5"));
+  // A differently spelled gender lands on the same key, or the overview would
+  // lose the mark its own roster row carries.
+  assert.equal(row.id, groupMarkId("semina 3", "male", "group 5"));
+});
+
+test("the summary counts the groups, and averages only the marks that exist", () => {
+  const groups = groupOverviewRows([
+    submission({ mark: "18/24", markScore: 18, markMax: 24, answered: true }),
+    submission({
+      key: { semina: "SEMINA 3", gender: "Mwanaume", group: "GROUP 6" },
+      mark: "6/24",
+      markScore: 6,
+      markMax: 24,
+    }),
+    // A group that submitted but has not been marked yet must not drag the
+    // average toward zero.
+    submission({
+      key: { semina: "SEMINA 3", gender: "Mwanaume", group: "GROUP 7" },
+    }),
+  ]);
+
+  const s = marksSummary(groups);
+  assert.equal(s.total, 3);
+  assert.equal(s.submitted, 3);
+  assert.equal(s.marked, 2);
+  assert.equal(s.answered, 1);
+  assert.equal(s.average, 50); // (75 + 25) / 2, not divided by three
+  assert.equal(s.best, 75);
+  assert.equal(s.lowest, 25);
+});
+
+test("an empty overview has no average rather than a divide-by-zero", () => {
+  const s = marksSummary([]);
+  assert.deepEqual(s, {
+    total: 0,
+    submitted: 0,
+    marked: 0,
+    answered: 0,
+    average: null,
+    best: null,
+    lowest: null,
+  });
+});
+
+test("the per-group sheet shows the group, the seminar and the gender", () => {
+  assert.deepEqual(
+    [...GROUP_MARKS_HEADERS],
+    ["Group", "Semina", "Jinsia", "Reg Namba", "Jina", "Kozi", "Alama", "Daraja (Grade)"],
+  );
+});
+
+test("choosing groups keeps only those students, with their own group's mark", () => {
+  const roster = [
+    {
+      reg_no: "A1",
+      full_name: "AMINA",
+      course: "BSED",
+      semina: "SEMINA 3",
+      gender: "Mwanaume",
+      student_group: "GROUP 5",
+    },
+    {
+      reg_no: "B2",
+      full_name: "BAKARI",
+      course: "BSED",
+      semina: "SEMINA 3",
+      gender: "Mwanaume",
+      student_group: "GROUP 6",
+    },
+  ];
+  const marks: GroupMark[] = [
+    { semina: "SEMINA 3", gender: "Mwanaume", group: "GROUP 5", score: 18, max: 24 },
+  ];
+  const chosen = [groupMarkId("SEMINA 3", "Mwanaume", "GROUP 5")];
+
+  const rows = groupMarksRows(roster, marks, chosen);
+  assert.equal(rows.length, 1, "only the chosen group's students");
+  assert.equal(rows[0]["Reg Namba"], "A1");
+  assert.equal(rows[0].Group, "GROUP 5");
+  assert.equal(rows[0].Jinsia, "Wanaume");
+  assert.equal(rows[0].Alama, "18/24");
+  assert.equal(rows[0]["Daraja (Grade)"], "A");
+
+  // Choosing both groups keeps the group with no mark on the roll, blank.
+  const both = groupMarksRows(roster, marks, [
+    groupMarkId("SEMINA 3", "Mwanaume", "GROUP 5"),
+    groupMarkId("SEMINA 3", "Mwanaume", "GROUP 6"),
+  ]);
+  assert.equal(both.length, 2);
+  assert.equal(both.find((r) => r["Reg Namba"] === "B2")!.Alama, "");
+  assert.equal(both.find((r) => r["Reg Namba"] === "B2")!["Daraja (Grade)"], "-");
+});
+
+test("the per-group sheet reads in seminar, gender and group order", () => {
+  const roster = [
+    {
+      reg_no: "1",
+      full_name: "A",
+      course: "X",
+      semina: "SEMINA 3",
+      gender: "Mwanamke",
+      student_group: "GROUP 5",
+    },
+    {
+      reg_no: "2",
+      full_name: "B",
+      course: "X",
+      semina: "SEMINA 3",
+      gender: "Mwanaume",
+      student_group: "GROUP 6",
+    },
+    {
+      reg_no: "3",
+      full_name: "C",
+      course: "X",
+      semina: "SEMINA 3",
+      gender: "Mwanaume",
+      student_group: "GROUP 5",
+    },
+  ];
+  const all = roster.map((p) => groupMarkId(p.semina, p.gender, p.student_group));
+  assert.deepEqual(
+    groupMarksRows(roster, [], all).map((r) => `${r.Jinsia} ${r.Group} ${r["Reg Namba"]}`),
+    ["Wanaume GROUP 5 3", "Wanaume GROUP 6 2", "Wanawake GROUP 5 1"],
+  );
+});
+
+test("the per-group table form is the same data, ready for a PDF grid", () => {
+  const rows = groupMarksRows(
+    [
+      {
+        reg_no: "A1",
+        full_name: "AMINA",
+        course: "BSED",
+        semina: "SEMINA 3",
+        gender: "M",
+        student_group: "GROUP 5",
+      },
+    ],
+    [{ semina: "SEMINA 3", gender: "M", group: "GROUP 5", score: 18, max: 24 }],
+    [groupMarkId("SEMINA 3", "M", "GROUP 5")],
+  );
+  assert.deepEqual(groupMarksTable(rows), [
+    ["GROUP 5", "SEMINA 3", "Wanaume", "A1", "AMINA", "BSED", "18/24", "A"],
+  ]);
+});
+
+test("an ungraded student shows a dash, not a false F", () => {
+  assert.equal(gradeOrDash(null), "-");
+  assert.equal(gradeOrDash(90), "A");
+  assert.equal(gradeOrDash(10), "F");
 });
