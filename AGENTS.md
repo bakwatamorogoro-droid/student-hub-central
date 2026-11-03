@@ -1202,6 +1202,42 @@ constraint that shapes `studyYear.ts` and `academicTargeting.ts`. A group is gen
 of leaving a blank. Nothing writes that slot yet — it is the seam for a future "replace
 representative" action.
 
+## The CR has one door and one job: open a stuck classmate's account
+
+The CR (class representative) is not an admin and not a student. Their whole screen is `/cr`, and
+its whole job is to open the account of a classmate who is stuck so that classmate can sign in,
+correct their details and set their own PIN. Nothing else lives there — marks, exams and settings
+stay behind `/admin`, because a CR who needs those should sign in as an admin.
+
+`src/lib/crAccess.ts` holds the pair (`IS2026` / `CR2026`) and `crCredentialsMatch`. The username is
+trimmed and case-folded because it is retyped from a noticeboard; the password is compared exactly,
+because trimming the one secret would quietly accept a near-miss. `cr-session.ts` keeps the flag in
+its own `cr_session_token` key, separate from the admin's, so a CR sign-in never unlocks `/admin`.
+
+"Stuck" is two independent things and both stop a correction, so `CrUnlockPanel` fixes both in one
+press:
+
+- the edit form is closed — `grantStudentEdit` writes the grant the student page reads, and
+- the sign-in is closed by a PIN lockout or a pile of failed attempts — `crUnlockStudentPin`
+  clears them.
+
+Opening is idempotent. A student with nothing to clear reports "nothing to open" rather than being
+written again, so a second press does not churn the row.
+
+Two things the CR's unlock deliberately does **not** do. It does not issue a new PIN: that would let
+a CR read a classmate's secret, and the student owns that action. And it does not clear the device
+binding: that binding is the one thing stopping a PIN being passed around a classroom, and a student
+who changed phone has their own "Sahau PIN" tab (which re-binds to the new phone) plus the admin's
+set-PIN. The rules live in `src/lib/pinLock.ts`, pure and import-free so `pinLock.test.ts` pins them
+without a database.
+
+The student's half is the "Badilisha" tab on `/account`, backed by `changeOwnPin`. It proves the old
+PIN first, so a stolen session token alone cannot lock the owner out, and it signs every device out —
+which is why the page clears the token and sends the student back to the sign-in with the new PIN.
+
+A locked system does not close this door: `LockGate` lets `/cr` through alongside `/admin`, because
+otherwise a mistyped Reg Namba waits for the lock to lift.
+
 ## Study year comes from the Reg Namba, never from the student
 
 The edit form used to show a study-year `Select` and the student could pick anything. Now

@@ -2,6 +2,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { getDeviceId } from "@/lib/device-id";
 import { z } from "zod";
 import {
+  clearedPinPayload,
+  needsUnlock,
+  pinLockFromPayload,
+  type PinLockState,
+} from "@/lib/pinLock";
+import {
   digestsEqual,
   generatePin,
   hashDeviceId,
@@ -438,7 +444,10 @@ async function resolveSession(tokenInput: string): Promise<StudentRow | null> {
 export async function verifyStudentPin(
   regNoInput: string,
   pinInput: string,
-): Promise<{ ok: true; regNo: string; fullName: string } | { ok: false; reason: "bad_credentials" | "locked" | "not_ready" }> {
+): Promise<
+  | { ok: true; regNo: string; fullName: string }
+  | { ok: false; reason: "bad_credentials" | "locked" | "not_ready" }
+> {
   const regNo = regNoSchema.safeParse(regNoInput);
   const pin = pinSchema.safeParse(pinInput);
   if (!regNo.success || !pin.success) return { ok: false, reason: "bad_credentials" };
@@ -461,7 +470,9 @@ export async function verifyStudentPin(
       ...payload,
       fail: fail >= MAX_FAILS ? 0 : fail,
       locked_until:
-        fail >= MAX_FAILS ? new Date(Date.now() + LOCK_MINUTES * 60_000).toISOString() : payload.locked_until ?? null,
+        fail >= MAX_FAILS
+          ? new Date(Date.now() + LOCK_MINUTES * 60_000).toISOString()
+          : (payload.locked_until ?? null),
     };
     await writePinRow(student, next, row.id);
     return { ok: false, reason: fail >= MAX_FAILS ? "locked" : "bad_credentials" };
@@ -547,6 +558,156 @@ export async function adminSetStudentPin(
 /** Whether a student already holds a PIN, for the admin table. */
 export async function studentHasPin(studentId: string): Promise<boolean> {
   return (await readPinRow(studentId)) !== null;
+}
+
+/**
+ * A student's PIN state, read by Reg Namba, for the CR's list.
+ *
+ * The CR decides from this whether there is anything to open: a locked row or one
+ * bound to another phone is the case they are there for, and a healthy row is not.
+ * The PIN itself is never returned — only the salt-and-hash-free state.
+ */
+export async function studentPinState(
+  regNoInput: string,
+): Promise<
+  | { ok: true; fullName: string; regNo: string; state: PinLockState }
+  | { ok: false; message: string }
+> {
+  const regNo = regNoSchema.safeParse(regNoInput);
+  if (!regNo.success) return { ok: false, message: "Reg Namba si sahihi" };
+
+  const student = await findStudent(regNo.data);
+  if (!student) return { ok: false, message: "Reg Namba haijasajiliwa" };
+
+  const row = await readPinRow(student.id);
+  return {
+    ok: true,
+    fullName: student.full_name,
+    regNo: student.reg_no,
+    state: pinLockFromPayload(row?.payload),
+  };
+}
+
+/**
+ * Opens a student's account so they can sign in and change their own PIN.
+ *
+ * This is the CR's one job. It clears the lockout and the failed-attempt count,
+ * and signs out every live session. It deliberately does not touch the salt, the
+ * hash, or the device binding: the student keeps the PIN they know, the
+ * anti-sharing rule that stops a PIN being passed around a classroom survives,
+ * and changing the PIN stays the student's own action on `/account`. Handing out
+ * a new PIN from here would let a CR read a classmate's secret, which is not what
+ * opening an account means.
+ *
+ * `clearedPinPayload` owns the shape of the cleared row, so the rule is testable
+ * without a database — see `pinLock.test.ts`.
+ */
+export async function crUnlockStudentPin(
+  regNoInput: string,
+): Promise<
+  { ok: true; fullName: string; regNo: string; changed: boolean } | { ok: false; message: string }
+> {
+  const regNo = regNoSchema.safeParse(regNoInput);
+  if (!regNo.success) return { ok: false, message: "Reg Namba si sahihi" };
+
+  const student = await findStudent(regNo.data);
+  if (!student) return { ok: false, message: "Reg Namba haijasajiliwa" };
+
+  const row = await readPinRow(student.id);
+  if (!row) return { ok: false, message: "Mwanafunzi hana PIN bado" };
+
+  const state = pinLockFromPayload(row.payload);
+  if (!needsUnlock(state)) {
+    // Nothing to clear. Say so rather than writing an identical row, which would
+    // only churn the record and sign the student out for no reason.
+    return { ok: true, fullName: student.full_name, regNo: student.reg_no, changed: false };
+  }
+
+  const stored = await writePinRow(student, clearedPinPayload(row.payload) as PinPayload, row.id);
+  if (!stored) return { ok: false, message: "Imeshindikana kufungua akaunti" };
+
+  // A lockout and a live session are the same problem seen twice: the student is
+  // outside. Clearing the sessions too means the reopened PIN works immediately
+  // instead of losing to a token minted before the lock.
+  await clearSessions(student.id);
+
+  return { ok: true, fullName: student.full_name, regNo: student.reg_no, changed: true };
+}
+
+/**
+ * Changes the signed-in student's own PIN, after proving the old one.
+ *
+ * This is the half the student owns: the CR opens the account, the student picks a
+ * new PIN. Proving the old PIN first means a stolen session token alone cannot
+ * lock the owner out of their own account.
+ *
+ * The new PIN is bound to the current device, matching `claimStudentPin`, so the
+ * student can sign in from where they changed it.
+ */
+export async function changeOwnPin(
+  tokenInput: string,
+  oldPinInput: string,
+  newPinInput: string,
+): Promise<
+  { ok: true } | { ok: false; reason: "bad_credentials" | "locked" | "weak" | "not_ready" }
+> {
+  const token = tokenSchema.safeParse(tokenInput);
+  if (!token.success) return { ok: false, reason: "not_ready" };
+
+  const oldPin = pinSchema.safeParse(oldPinInput);
+  const newPin = pinSchema.safeParse(newPinInput);
+  if (!newPin.success) return { ok: false, reason: "weak" };
+  if (!oldPin.success) return { ok: false, reason: "bad_credentials" };
+
+  const student = await resolveSession(token.data);
+  if (!student) return { ok: false, reason: "not_ready" };
+
+  const row = await readPinRow(student.id);
+  if (!row) return { ok: false, reason: "bad_credentials" };
+
+  const { payload } = row;
+  if (payload.locked_until && new Date(payload.locked_until).getTime() > Date.now()) {
+    return { ok: false, reason: "locked" };
+  }
+
+  const supplied = await hashSecret(oldPin.data, payload.salt);
+  if (!digestsEqual(supplied, payload.hash)) {
+    const fail = (payload.fail || 0) + 1;
+    await writePinRow(
+      student,
+      {
+        ...payload,
+        fail: fail >= MAX_FAILS ? 0 : fail,
+        locked_until:
+          fail >= MAX_FAILS
+            ? new Date(Date.now() + LOCK_MINUTES * 60_000).toISOString()
+            : (payload.locked_until ?? null),
+      },
+      row.id,
+    );
+    return { ok: false, reason: fail >= MAX_FAILS ? "locked" : "bad_credentials" };
+  }
+
+  if (newPin.data === oldPin.data) return { ok: false, reason: "weak" };
+
+  const salt = newSalt();
+  const next: PinPayload = {
+    v: 1,
+    t: "pin",
+    salt,
+    hash: await hashSecret(newPin.data, salt),
+    // Bind to the phone the change was made from, the same rule as a fresh claim.
+    device: await hashDeviceId(currentDeviceId(), salt),
+    fail: 0,
+    locked_until: null,
+  };
+  const stored = await writePinRow(student, next, row.id);
+  if (!stored) return { ok: false, reason: "not_ready" };
+
+  // Every other device's session was minted against the old PIN, so the change
+  // signs them out. The caller re-signs in with the new PIN.
+  await clearSessions(student.id);
+  return { ok: true };
 }
 
 /**

@@ -88,6 +88,11 @@ export function SiteHeader() {
                 label: t("nav_account"),
                 icon: <LogIn className="h-3.5 w-3.5" />,
               },
+              {
+                to: "/cr",
+                label: t("nav_cr"),
+                icon: <UserCog className="h-3.5 w-3.5" />,
+              },
               { to: "/admin", label: t("admin") },
             ].map((l) => (
               <Link

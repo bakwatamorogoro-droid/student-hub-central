@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
+  changeOwnPin,
   claimStudentPin,
   getMyProfile,
   loginStudent,
@@ -21,6 +22,7 @@ import {
   GraduationCap,
   KeyRound,
   Loader2,
+  Lock,
   LogIn,
   LogOut,
   QrCode,
@@ -51,6 +53,10 @@ function Page() {
   // Shown only after the pair proves ambiguous, so the common case stays short.
   const [resetReg, setResetReg] = useState("");
   const [resetNeedsReg, setResetNeedsReg] = useState(false);
+  // Changing the PIN you already know, after the CR has opened your account.
+  const [oldPin, setOldPin] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [changeBusy, setChangeBusy] = useState(false);
 
   // Restore a previous session so a refresh does not sign the student out.
   useEffect(() => {
@@ -168,6 +174,45 @@ function Page() {
     }
   };
 
+  /**
+   * The student's own PIN change, after the CR reopened the account.
+   *
+   * The change signs every device out, so the student signs back in with the new
+   * PIN immediately — otherwise a stale token would keep working and the change
+   * would look like it had not taken.
+   */
+  const doChangePin = async () => {
+    const token = getStudentToken();
+    if (!token) return toast.error("Umetoka. Ingia tena kwanza.");
+    if (!/^[0-9]{4,10}$/.test(oldPin)) return toast.error("Weka PIN yako ya sasa");
+    if (!/^[0-9]{4,10}$/.test(newPin)) return toast.error("PIN mpya inatakiwa tarakimu 4 hadi 10");
+    setChangeBusy(true);
+    try {
+      const res = await changeOwnPin(token, oldPin, newPin);
+      if (!res.ok) {
+        if (res.reason === "locked") {
+          toast.error("Akaunti imefungwa kwa muda. Mwone CR akufungulie.");
+        } else if (res.reason === "weak") {
+          toast.error("PIN mpya si sahihi — tumia tarakimu 4 hadi 10 tofauti na ya sasa.");
+        } else if (res.reason === "not_ready") {
+          toast.error("Imeshindikana kuwasiliana na hifadhidata. Jaribu tena.");
+        } else {
+          toast.error("PIN yako ya sasa si sahihi");
+        }
+        return;
+      }
+      setOldPin("");
+      setNewPin("");
+      // The old session is gone by design, so sign in again with the new PIN.
+      clearStudentToken();
+      setProfile(null);
+      setPin(newPin);
+      toast.success("PIN yako imebadilishwa. Ingia kwa PIN mpya.");
+    } finally {
+      setChangeBusy(false);
+    }
+  };
+
   const signOut = async () => {
     const token = getStudentToken();
     if (token) await logoutStudent(token).catch(() => undefined);
@@ -250,12 +295,15 @@ function Page() {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue={issuedPin ? "login" : "claim"}>
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="claim" className="gap-1">
                 <KeyRound className="h-3.5 w-3.5" /> Pata PIN
               </TabsTrigger>
               <TabsTrigger value="login" className="gap-1">
                 <LogIn className="h-3.5 w-3.5" /> Ingia
+              </TabsTrigger>
+              <TabsTrigger value="change" className="gap-1">
+                <Lock className="h-3.5 w-3.5" /> Badilisha
               </TabsTrigger>
               <TabsTrigger value="reset" className="gap-1">
                 <RotateCcw className="h-3.5 w-3.5" /> Sahau PIN
@@ -359,6 +407,50 @@ function Page() {
               </Button>
               <p className="text-center text-xs text-muted-foreground">
                 Huna PIN? Fungua kichupo cha "Pata PIN" juu. Umesahau? Fungua "Sahau PIN".
+              </p>
+            </TabsContent>
+
+            <TabsContent value="change" className="space-y-3 pt-3">
+              <div className="flex gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                <Lock className="h-5 w-5 shrink-0 text-primary" />
+                <p className="text-xs text-muted-foreground">
+                  Unajua PIN yako na unataka kubadilisha? Weka ya sasa, kisha chagua mpya. Akaunti
+                  iliyofungwa na CR inaweza kubadilisha PIN hapa.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>PIN yako ya sasa</Label>
+                <Input
+                  type="password"
+                  inputMode="numeric"
+                  value={oldPin}
+                  onChange={(e) => setOldPin(e.target.value.replace(/\D/g, ""))}
+                  placeholder="Tarakimu 4-10"
+                  className="font-mono tracking-widest"
+                  autoComplete="current-password"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>PIN mpya</Label>
+                <Input
+                  type="password"
+                  inputMode="numeric"
+                  value={newPin}
+                  onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ""))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") doChangePin();
+                  }}
+                  placeholder="Tarakimu 4-10"
+                  className="font-mono tracking-widest"
+                  autoComplete="new-password"
+                />
+              </div>
+              <Button onClick={doChangePin} disabled={changeBusy} className="w-full">
+                {changeBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+                Badilisha PIN
+              </Button>
+              <p className="text-center text-xs text-muted-foreground">
+                Ukibadilisha, vifaa vingine vyote vinatolewa. Ingia upya kwa PIN mpya.
               </p>
             </TabsContent>
 
