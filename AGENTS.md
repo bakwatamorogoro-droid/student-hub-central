@@ -1678,6 +1678,17 @@ by URL when `file_name` is empty — `previewKindFor(name, src)` — because a r
 can carry a `file_url` with no name, and without the fallback such a PDF was
 declared "cannot be shown here" while being perfectly readable.
 
+**Import the legacy pdfjs build, not the default one.** `pdfjs-dist` 4.x ships
+two builds and the default targets modern engines: it calls
+`Promise.withResolvers` (Chrome 119 / Safari 17.4) and throws
+`Promise.withResolvers is not a function` on the older phones this app is
+actually used on. The owner hit exactly that. `pdfjs-dist/legacy/build/pdf.mjs`
+carries its own polyfills and draws the same document, so both the main module
+and the worker must be imported from `legacy/build/` — the worker is a separate
+module and hits the same missing method on its own. Reproduce it by deleting
+`Promise.withResolvers` before the import; the default build then fails and the
+legacy build still renders.
+
 A Word file has no pages to click, so its marks attach to the whole document
 (page 0); `page: 0` means "the whole work" everywhere in the code.
 
