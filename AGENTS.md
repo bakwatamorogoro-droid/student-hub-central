@@ -13,7 +13,7 @@
 
 - Use shared semantic glass surfaces, Outfit headings, and Figtree body text across public and admin UI so visual updates remain consistent and theme-safe.
 - Keep academic targeting centralized through the shared year helpers so student, exam, quiz, and assignment visibility stays consistent.
-- Treat a *missing* student field as "no mismatch", not as a mismatch, when filtering by academic target. Most of the cohort has no `study_year` (945/1623) and almost none has an `academic_year` (1562/1623 have null), so an equality check silently hides published work from the majority. Only a value that is present *and* different should exclude. This lives in `matchesAcademicTarget` (`src/lib/academicTargeting.ts`); call it rather than re-writing the check inline, because `Number(null) === 0` makes an inline copy fail closed in a way that looks like "no work assigned".
+- Treat a _missing_ student field as "no mismatch", not as a mismatch, when filtering by academic target. Most of the cohort has no `study_year` (945/1623) and almost none has an `academic_year` (1562/1623 have null), so an equality check silently hides published work from the majority. Only a value that is present _and_ different should exclude. This lives in `matchesAcademicTarget` (`src/lib/academicTargeting.ts`); call it rather than re-writing the check inline, because `Number(null) === 0` makes an inline copy fail closed in a way that looks like "no work assigned".
 
 ## Deployment
 
@@ -1290,6 +1290,29 @@ The visible effect is a classmate listed twice in the roster. The fix is a data 
 deduplicate on `upper(trim(reg_no))`, keeping the row that carries the results and attendance.
 Do not "fix" this in `findMyGroup` by de-duplicating by Reg Namba — two real students can share
 a Reg Namba only through the data error, and hiding it in the view makes the cleanup harder.
+
+**Counts have moved on, and the cleanup is now a screen, not a SQL statement.** Re-counted against
+the live project: **1626 rows, 185 duplicate groups, 200 rows to fold in**. The spellings are wider
+than "trailing space" — the separator varies too (`MUM2025_04_13229`, `MUM2025 -04-13229`), so the
+comparison is `canonicalRegNo` (strip everything but letters and digits, uppercase), not
+`upper(trim(...))`.
+
+Three things learned while building the merge that a future edit must not undo:
+
+1. **It is a merge, not a delete.** 146 `submissions`, 20 `attendance` and 132 `quiz_participants`
+   rows hang off the rows that a naive delete would remove. `/admin/duplicates` moves every
+   dependent onto the keeper first.
+2. **The tidy-spelling step goes last.** `students.reg_no` is `UNIQUE`, and in 89 of the 185 groups
+   the keeper's tidy spelling is already held by a row being removed. Writing it before the
+   deletions trips the constraint. Order: move dependents → delete emptied rows → tidy the keeper.
+3. **A colliding dependent keeps the richer copy.** Two `submissions` rows for the same
+   `(exam, student)` are not identical; on 14 of the live collisions the duplicate held the higher
+   mark. `submissionQuality` (answered questions, then score) decides, and the winner's content is
+   copied onto the keeper's own row — never its `id` or `student_id`.
+
+`dedupeStudents.ts` is pure (the decision, testable with `node --test`); `dedupeStudentsApi.ts`
+holds the database half. Keep that split — the collision rule is the part that is easy to get wrong
+and impossible to unit-test through a live client.
 
 ## Confirming a group writes the seat; there is no lock and no window
 
