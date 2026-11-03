@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { checkRegistrationConflicts } from "@/lib/registration";
+import { displayRegNo } from "@/lib/regNo";
 import { getDeviceId } from "@/lib/device-id";
 import { toast } from "@/lib/toast";
 import { CheckCircle2, Users } from "lucide-react";
@@ -195,7 +196,9 @@ function RegisterPage() {
   const submit = async () => {
     setLoading(true);
     const device_id = getDeviceId();
-    const regUpper = form.reg_no.trim().toUpperCase();
+    // The number is stored in one tidy shape, so the roster does not collect the
+    // spacing variants that produced the duplicates in the first place.
+    const regUpper = displayRegNo(form.reg_no);
     const nameTrim = form.full_name.trim();
 
     const conflict = await checkRegistrationConflicts(regUpper, nameTrim);
@@ -231,8 +234,8 @@ function RegisterPage() {
     }
 
     const baseRow = {
-      reg_no: form.reg_no,
-      full_name: form.full_name,
+      reg_no: regUpper,
+      full_name: form.full_name.trim(),
       phone: form.phone,
       course: form.course || null,
       age: form.age ? Number(form.age) : null,
@@ -258,7 +261,7 @@ function RegisterPage() {
       toast.error(error.message);
       return;
     }
-    storageSet("student_reg", form.reg_no);
+    storageSet("student_reg", regUpper);
     toast.success("Usajili umethibitishwa kikamilifu!");
     // Straight to the PIN step: without a PIN the student cannot sign in or mark
     // attendance, and that is the next thing they need.
