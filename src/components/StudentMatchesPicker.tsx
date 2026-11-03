@@ -10,6 +10,7 @@ export type Student = {
   study_year?: number | string | null;
   semina?: string;
   student_group?: string;
+  gender?: string | null;
   phone?: string | null;
 };
 

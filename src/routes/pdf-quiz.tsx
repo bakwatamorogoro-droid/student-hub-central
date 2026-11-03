@@ -12,6 +12,7 @@ import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 import { matchesAcademicTarget } from "@/lib/academicTargeting";
 import { storageGet, storageSet } from "@/lib/safe-storage";
+import { GROUP_SUBMISSION_STATUS } from "@/lib/groupAssignmentSubmission";
 
 type Search = { a?: string };
 
@@ -62,7 +63,10 @@ function Page() {
     setReg(data.reg_no);
     storageSet("student_reg", data.reg_no);
     const { data: subs } = await supabase.from("pdf_submissions" as any).select("*").eq("reg_no", data.reg_no).order("created_at", { ascending: false });
-    setMySubs((subs as any[]) || []);
+    // A group's work is a `pdf_submissions` row too, but it belongs to the whole
+    // group and is reviewed on /admin/group-assignments. Keeping it out of this
+    // history stops one group's file showing up as if one student sent it.
+    setMySubs(((subs as any[]) || []).filter((r) => r.status !== GROUP_SUBMISSION_STATUS));
     if (active && !matchesAcademicTarget(active, data)) setActive(null);
     toast.success(`Karibu, ${data.full_name}`);
   };
