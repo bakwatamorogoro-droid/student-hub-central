@@ -23,8 +23,24 @@ import { supabase } from "@/integrations/supabase/client";
 import { checkRegistrationConflicts } from "@/lib/registration";
 import { displayRegNo } from "@/lib/regNo";
 import { getDeviceId } from "@/lib/device-id";
+import { findStudentsByQuery } from "@/lib/studentSearch";
+import {
+  bindDevice,
+  biometricAvailable,
+  buildRegistrationReceipt,
+  deviceId as regDeviceId,
+  enrollBiometric,
+  hasBiometricFor,
+  receiptPayload,
+  regNoForDevice,
+  storedBiometricKind,
+  verifyBiometric,
+  type BiometricKind,
+  type RegistrationReceipt,
+} from "@/lib/biometric";
+import { QrCodeDisplay } from "@/components/QrCodeDisplay";
 import { toast } from "@/lib/toast";
-import { CheckCircle2, Users } from "lucide-react";
+import { CheckCircle2, Fingerprint, ScanFace, ShieldCheck, Users, Loader2 } from "lucide-react";
 import {
   CURRENT_ACADEMIC_YEAR,
   GROUPS,
@@ -75,6 +91,27 @@ function RegisterPage() {
   const [nameConfirmed, setNameConfirmed] = useState(false);
   const [nameConfirmOpen, setNameConfirmOpen] = useState(false);
 
+  // The Reg Namba lookup: the student types their number and the name comes back
+  // by itself, so the two fields can never disagree about who is registering.
+  const [lookupState, setLookupState] = useState<"idle" | "looking" | "found" | "none">("idle");
+  const [lookedUpName, setLookedUpName] = useState("");
+  // A returning student is already on file, so their name is shown and locked
+  // rather than typed: retyping it is how a duplicate gets created.
+  const [returningName, setReturningName] = useState<string | null>(null);
+  const [returningReg, setReturningReg] = useState<string | null>(null);
+
+  // What this phone can prove, and what it is already holding. `regNoForDevice`
+  // non-null means the phone belongs to someone: another number is refused.
+  const [bio, setBio] = useState<{ available: boolean; kind: BiometricKind }>({
+    available: false,
+    kind: "none",
+  });
+  const [bioDone, setBioDone] = useState<BiometricKind | "none">("none");
+  const [bioBusy, setBioBusy] = useState(false);
+  const [boundReg, setBoundReg] = useState<string | null>(() => regNoForDevice());
+  // Set once the row is written and the QR receipt is ready.
+  const [receipt, setReceipt] = useState<RegistrationReceipt | null>(null);
+
   const [geo, setGeo] = useState<any>(null);
   const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
 
@@ -120,6 +157,65 @@ function RegisterPage() {
     const optionalColumns = optional.split(", ");
     void loadSettings(optionalColumns);
   }, []);
+
+  // Asked once on mount: whether this phone can prompt for a fingerprint or a
+  // face at all. A phone with no sensor simply skips the step, which is why the
+  // device binding below is the part that carries the guarantee.
+  useEffect(() => {
+    let alive = true;
+    biometricAvailable().then((a) => {
+      if (alive) setBio(a);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /**
+   * Reg Namba → the name on file.
+   *
+   * Fires once the number is long enough to be one, and writes the name into the
+   * form so the student sees who they are registering as. A number already on
+   * file comes back as `returning`, and the name is locked rather than typed.
+   */
+  const runLookup = async (raw: string) => {
+    const value = displayRegNo(raw);
+    if (!value || value.length < 5) {
+      setLookupState("idle");
+      setLookedUpName("");
+      setReturningName(null);
+      setReturningReg(null);
+      return;
+    }
+    setLookupState("looking");
+    const rows = await findStudentsByQuery(value);
+    // Only an exact number counts: a name search that happens to match must not
+    // be mistaken for "this student exists".
+    const exact = rows.filter((r) => displayRegNo(r.reg_no) === value);
+    if (exact.length > 0) {
+      const row = exact[0];
+      setLookedUpName(row.full_name || "");
+      setReturningName(row.full_name || "");
+      setReturningReg(displayRegNo(row.reg_no));
+      setLookupState("found");
+      setForm((f) => ({
+        ...f,
+        full_name: row.full_name || f.full_name,
+        phone: row.phone || f.phone,
+        course: row.course || f.course,
+        semina: row.semina || f.semina,
+        student_group: row.student_group || f.student_group,
+        study_year: row.study_year ? String(row.study_year) : f.study_year,
+        gender: row.gender || f.gender,
+        age: row.age ? String(row.age) : f.age,
+      }));
+      return;
+    }
+    setReturningName(null);
+    setReturningReg(null);
+    setLookedUpName("");
+    setLookupState("none");
+  };
 
   const distanceM = (a: number, b: number, c: number, d: number) => {
     const R = 6371000,
@@ -186,6 +282,16 @@ function RegisterPage() {
       toast.error("Semester hiyo bado haijawashwa. Chagua SEMESTER 1.");
       return;
     }
+    // The device binding is checked before anything else: this phone may only
+    // ever carry one Reg Namba, and that holds even where there is no sensor.
+    const owner = regNoForDevice();
+    const mine = displayRegNo(form.reg_no);
+    if (owner && owner !== mine) {
+      toast.error(
+        `Simu hii imesajiliwa kwa ${owner}. Reg Namba nyingine haikubaliwi kwenye simu hii. Omba msimamizi akuwezeshe.`,
+      );
+      return;
+    }
     setLoading(true);
     const ok = await checkLocation();
     setLoading(false);
@@ -193,7 +299,50 @@ function RegisterPage() {
     setConfirmOpen(true);
   };
 
+  /**
+   * The biometric step, run when the student submits the review dialog.
+   *
+   * A phone with a sensor prompts for a fingerprint or a face, so the student
+   * physically confirms the registration. A phone without one is passed through
+   * on the device binding alone — refusing it would lock out a whole class of
+   * device, and the binding is the guarantee that actually holds everywhere.
+   */
+  const runBiometricGate = async (): Promise<boolean> => {
+    const reg = displayRegNo(form.reg_no);
+    if (!bio.available) {
+      setBioDone("none");
+      return true;
+    }
+    setBioBusy(true);
+    try {
+      // First time on this phone: enrol the credential. Afterwards, only a
+      // confirmation is needed, and a cleared credential is re-enrolled.
+      const res = hasBiometricFor(reg)
+        ? await verifyBiometric(reg)
+        : await enrollBiometric(reg, form.full_name);
+      if (res.ok) {
+        setBioDone(res.kind);
+        return true;
+      }
+      if (res.reason === "cancelled") {
+        toast.error("Umesitisha uthibitisho wa kidole. Jaribu tena kusajili.");
+      } else if (res.reason === "unsupported") {
+        setBioDone("none");
+        return true;
+      } else {
+        toast.error(res.message || "Uthibitisho wa kidole haukufanikiwa. Jaribu tena.");
+      }
+      return false;
+    } finally {
+      setBioBusy(false);
+    }
+  };
+
   const submit = async () => {
+    // The biometric gate comes first: nothing is written until the student has
+    // confirmed it is them on this phone.
+    const passed = await runBiometricGate();
+    if (!passed) return;
     setLoading(true);
     const device_id = getDeviceId();
     // The number is stored in one tidy shape, so the roster does not collect the
@@ -210,10 +359,22 @@ function RegisterPage() {
     }
     if (conflict.kind === "returning") {
       storageSet("student_reg", conflict.regNo);
+      // A returning student is already on file; tie the phone to them so the
+      // device rule applies from this visit onward, and show the same receipt.
+      bindDevice(conflict.regNo);
+      setBoundReg(conflict.regNo);
+      setReceipt(
+        buildRegistrationReceipt({
+          regNo: conflict.regNo,
+          fullName: conflict.fullName,
+          semina: form.semina || null,
+          group: form.student_group || null,
+          verified: bioDone,
+        }),
+      );
       setLoading(false);
       setConfirmOpen(false);
       toast.success("Tayari umesajiliwa. Karibu tena!");
-      nav({ to: "/exams" });
       return;
     }
     if (conflict.kind === "taken_by_other") {
@@ -262,11 +423,89 @@ function RegisterPage() {
       return;
     }
     storageSet("student_reg", regUpper);
+    // The phone now belongs to this student: a different Reg Namba from here on
+    // is refused before anything is written.
+    bindDevice(regUpper);
+    setBoundReg(regUpper);
+    setReceipt(
+      buildRegistrationReceipt({
+        regNo: regUpper,
+        fullName: nameTrim,
+        semina: form.semina || null,
+        group: form.student_group || null,
+        verified: bioDone,
+      }),
+    );
     toast.success("Usajili umethibitishwa kikamilifu!");
-    // Straight to the PIN step: without a PIN the student cannot sign in or mark
-    // attendance, and that is the next thing they need.
-    nav({ to: "/account" });
   };
+
+  // Once the row is written, the page becomes a receipt: who was registered, how
+  // they proved it, and a QR the office can scan. There is no way back into the
+  // form from here, because the registration is already done.
+  if (receipt) {
+    const proof =
+      receipt.verified === "fingerprint"
+        ? { icon: <Fingerprint className="h-4 w-4" />, label: "Kidole cha mkono" }
+        : receipt.verified === "face"
+          ? { icon: <ScanFace className="h-4 w-4" />, label: "Uso (Face ID)" }
+          : { icon: <ShieldCheck className="h-4 w-4" />, label: "Kifaa kilichothibitishwa" };
+    return (
+      <div className="min-h-screen bg-background">
+        <SiteHeader />
+        <main className="container mx-auto px-4 py-8 max-w-xl">
+          <Card className="border-2 border-emerald-500/40">
+            <CardHeader className="items-center text-center">
+              <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-emerald-500/15">
+                <CheckCircle2 className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <CardTitle className="mt-2 text-xl">Umejisajili kikamilifu</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Taarifa zako zimehifadhiwa na kifaa hiki kimefungwa kwa namba yako.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-2 rounded-lg border bg-muted/30 p-3 text-sm">
+                <div className="text-muted-foreground">Jina:</div>
+                <div className="font-semibold">{receipt.fullName}</div>
+                <div className="text-muted-foreground">Reg Namba:</div>
+                <div className="font-mono font-semibold">{receipt.regNo}</div>
+                <div className="text-muted-foreground">Semina:</div>
+                <div>{receipt.semina || "—"}</div>
+                <div className="text-muted-foreground">Group:</div>
+                <div>{receipt.group || "—"}</div>
+                <div className="text-muted-foreground">Uthibitisho:</div>
+                <div className="flex items-center gap-1.5">
+                  {proof.icon}
+                  {proof.label}
+                </div>
+              </div>
+
+              <div className="flex flex-col items-center gap-2 rounded-xl border border-primary/25 bg-primary/5 p-4">
+                <p className="text-sm font-medium">QR yako ya usajili</p>
+                <QrCodeDisplay value={receiptPayload(receipt)} size={240} />
+                <p className="text-center text-xs text-muted-foreground">
+                  Onyesha QR hii kwa msimamizi au CR ili kuthibitisha usajili wako. Unaweza pia
+                  kuipiga picha kwa kumbukumbu.
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => window.print()}>
+                  Chapisha
+                </Button>
+                <Button className="flex-1" onClick={() => nav({ to: "/account" })}>
+                  Endelea kwa PIN
+                </Button>
+              </div>
+              <p className="text-center text-[11px] text-muted-foreground">
+                Hatua inayofuata: weka PIN yako ili uweze kuingia na kuhudhuria mitihani.
+              </p>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -283,18 +522,49 @@ function RegisterPage() {
                 <Label>{t("reg_number")} *</Label>
                 <Input
                   value={form.reg_no}
-                  onChange={(e) => editField({ reg_no: e.target.value.toUpperCase() })}
+                  onChange={(e) => {
+                    const v = e.target.value.toUpperCase();
+                    editField({ reg_no: v });
+                    void runLookup(v);
+                  }}
                   placeholder="Mfano: MUM2021-04-08787"
                   required
                 />
+                {lookupState === "looking" && (
+                  <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Inatafuta jina lako…
+                  </p>
+                )}
+                {lookupState === "none" && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Namba hii haipo kwenye orodha. Jaza jina lako chini.
+                  </p>
+                )}
+                {lookupState === "found" && returningName && (
+                  <p className="mt-1 flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="h-3 w-3" /> Umepatikana: {returningName}
+                  </p>
+                )}
+                {boundReg && boundReg !== displayRegNo(form.reg_no) && (
+                  <p className="mt-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs">
+                    Simu hii imefungwa kwa <b>{boundReg}</b>. Reg Namba nyingine haitakubaliwa
+                    kwenye simu hii.
+                  </p>
+                )}
               </div>
               <div>
                 <Label>{t("full_name")} *</Label>
                 <Input
                   value={form.full_name}
-                  onChange={(e) => editField({ full_name: e.target.value })}
+                  onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                  readOnly={!!returningName}
                   required
                 />
+                {returningName && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Jina limetolewa kutoka Reg Namba yako — hauhitaji kuliandika.
+                  </p>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -438,8 +708,53 @@ function RegisterPage() {
                   Umewekwa kiotomatiki — hauwezi kubadilishwa.
                 </p>
               </div>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {t("continue_confirm")}
+              {/* What the phone can prove. The sensor prompt itself runs on the
+                  final submit, so this panel only tells the student what to
+                  expect — a fingerprint/face on a phone that has one, and the
+                  device rule on every phone. */}
+              <div className="flex gap-2 rounded-xl border border-primary/25 bg-primary/5 p-3">
+                {bio.available ? (
+                  bio.kind === "face" ? (
+                    <ScanFace className="h-5 w-5 shrink-0 text-primary" />
+                  ) : (
+                    <Fingerprint className="h-5 w-5 shrink-0 text-primary" />
+                  )
+                ) : (
+                  <ShieldCheck className="h-5 w-5 shrink-0 text-primary" />
+                )}
+                <div className="text-xs">
+                  <p className="font-semibold text-foreground">
+                    {bio.available
+                      ? bio.kind === "face"
+                        ? "Utathibitishwa kwa uso (Face ID)"
+                        : "Utathibitishwa kwa kidole cha mkono"
+                      : "Uthibitisho wa kifaa"}
+                  </p>
+                  <p className="mt-0.5 text-muted-foreground">
+                    {bio.available
+                      ? "Unapogusa Thibitisha, simu yako itaomba uthibitisho. Kifaa hiki kitafungwa kwa Reg Namba yako pekee."
+                      : "Simu hii haina kihisi cha kidole. Kifaa hiki kitafungwa kwa Reg Namba yako pekee — Reg Namba nyingine haitakubaliwa hapa."}
+                  </p>
+                  {hasBiometricFor(displayRegNo(form.reg_no)) && (
+                    <p className="mt-1 flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
+                      <CheckCircle2 className="h-3 w-3" /> Kifaa hiki kimekwisha hifadhi uthibitisho
+                      wako
+                      {storedBiometricKind(displayRegNo(form.reg_no)) === "face"
+                        ? " (uso)"
+                        : " (kidole)"}
+                      .
+                    </p>
+                  )}
+                </div>
+              </div>
+              <Button type="submit" className="w-full" disabled={loading || bioBusy}>
+                {bioBusy ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Inathibitisha…
+                  </>
+                ) : (
+                  t("continue_confirm")
+                )}
               </Button>
             </form>
           </CardContent>
@@ -480,6 +795,16 @@ function RegisterPage() {
                 <div className="text-muted-foreground">Kitaaluma:</div>
                 <div>{form.academic_year}</div>
               </div>
+              <p className="flex items-start gap-2 rounded-lg border border-primary/25 bg-primary/5 p-2 text-xs text-muted-foreground">
+                {bio.available ? (
+                  <Fingerprint className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                ) : (
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                )}
+                {bio.available
+                  ? "Ukibonyeza Thibitisha, simu yako itaomba kidole au uso wako kuthibitisha ni wewe."
+                  : "Kifaa hiki kitafungwa kwa Reg Namba yako pekee. Reg Namba nyingine haitakubaliwa kwenye simu hii."}
+              </p>
             </div>
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={loading}>

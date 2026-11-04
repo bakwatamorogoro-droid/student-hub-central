@@ -1808,3 +1808,42 @@ two branches; the wizard step tracker is hidden while browsing seats, because
 there is no step to be on. `OpenSeatsPanel` itself collapses and picks one seminar
 from a dropdown, with a summary badge row (seminars / open groups / free seats) on
 top, so the card stays short.
+
+## Registration: name from Reg Namba, then a fingerprint, then a QR
+
+`/register` now runs in four moves, and `src/lib/biometric.ts` owns the last two.
+
+**The name comes from the number.** Typing a Reg Namba calls `findStudentsByQuery`
+and, on an exact match, fills the name (and phone, course, semina, group, year)
+from the row. A returning student's name is `readOnly`, because retyping it is how
+the roster grew duplicates in the first place. Only an exact number counts — a
+name that happens to match must not be read as "this student exists".
+
+**What a fingerprint can and cannot be.** A web page can never read a print. It
+can only ask the phone's own sensor to *confirm* one through WebAuthn, and the
+phone answers with a key pair. So "the fingerprint matches the Reg Namba" cannot
+mean comparing prints — there is nothing to compare. It means the phone holds a
+private key enrolled for that number. Two layers carry the guarantee:
+
+1. **Device binding** — `bindDevice`/`regNoForDevice` keep one phone to one Reg
+   Namba. A phone already carrying a different number refuses the new one, and
+   `handleReview` shows the owner rather than a bare refusal. This is the layer
+   that works on *every* phone, sensor or not.
+2. **Biometric gate** — `enrollBiometric`/`verifyBiometric` prompt the platform
+   authenticator (Touch ID / Face ID / Android fingerprint / Windows Hello) when
+   the device has one. A phone with no sensor skips this step and is held by layer
+   1 alone; refusing it would lock out a whole class of device for no gain.
+
+**The QR is a receipt, not a secret.** After the row is written the page becomes a
+success screen with a QR built by `buildRegistrationReceipt` — Reg Namba, name,
+semina, group, which proof was used, and the device id. It carries nothing the
+student cannot already see, so a screenshot is harmless; it exists so the office
+can scan a registration instead of typing a number.
+
+The submit path is ordered: device-owner check → GPS → review dialog → biometric
+gate → write. The biometric prompt therefore happens on the final "Thibitisha",
+and a cancelled prompt writes nothing. `biometric.test.ts` pins the binding rule
+(the part that has to hold without a sensor) and the receipt round-trip; the
+`node --test` run has no `window`, which is exactly the no-sensor case, so the
+biometric functions must decline rather than throw.
+
