@@ -34,6 +34,11 @@ export type RosterEntry = {
   gender?: string | null;
   student_group?: string | null;
   phone?: string | null;
+  /** The year the student is in, and the year the cohort is running. Both are read to
+   *  answer "which seats are open *for this year*", because one seminar holds several
+   *  intakes at once. */
+  study_year?: number | string | null;
+  academic_year?: string | null;
   /** Set once the student saves a seat. The planner skips these rows, so the marker is
    *  "the student chose this seat", not a lock — a later save always moves it. */
   group_confirmed_at?: string | null;
@@ -231,6 +236,116 @@ export function planAssignments(roster: RosterEntry[]): Plan {
   const resolved = roster.map((s) => ({ ...s, semina: seminars[s.id] ?? s.semina }));
   const { groups, unassigned, unknownGender } = assignGroups(resolved);
   return { seminars, groups, unknownGender, unassigned };
+}
+
+/** The cohort a seat belongs to: one study year inside one academic year. */
+export type CohortKey = {
+  studyYear?: number | string | null;
+  academicYear?: string | null;
+};
+
+/**
+ * The year the current registration drive is seating. The cohort registering for
+ * 2026/2027 is in its second year, so the open-seats panel and the group picker both ask
+ * for year 2 of the current academic year.
+ */
+export const REGISTERING_COHORT: CohortKey = { studyYear: 2 };
+
+/**
+ * Whether a row belongs to the cohort the seat is for.
+ *
+ * A *missing* year is not evidence of a mismatch. Most of the imported cohort has no
+ * `academic_year` at all (425 of the 436 year-2 rows), so requiring it to equal the target
+ * would empty the list the owner asked for. Only a value that is present *and* different
+ * excludes — the same rule `matchesAcademicTarget` uses for exams.
+ */
+export function isInCohort(s: RosterEntry, key: CohortKey): boolean {
+  if (key.studyYear != null && Number(s.study_year ?? NaN) !== Number(key.studyYear)) return false;
+  if (key.academicYear && s.academic_year != null && s.academic_year !== key.academicYear)
+    return false;
+  return true;
+}
+
+/** Only the rows that belong to one cohort. */
+export function cohortRoster(roster: RosterEntry[], key: CohortKey): RosterEntry[] {
+  return roster.filter((s) => isInCohort(s, key));
+}
+
+/**
+ * The seats still open in one cohort, seminar by seminar.
+ *
+ * The whole-roster report answers "how is the cohort seated?"; this answers the question
+ * the student actually has — "which groups can I still join?". A group that has filled its
+ * 8 seats is simply absent from the returned cells, which is the automatic removal the
+ * owner asked for: nothing has to close a group by hand.
+ *
+ * Fullness is measured against the **whole roster**, not the cohort alone, because a group
+ * holds eight people regardless of which year they are in. Counting only the cohort would
+ * offer a seat in a group that is already physically full. The cohort key only decides
+ * *which* seminars are shown — the ones this year's students actually sit in.
+ */
+export type OpenSeats = {
+  semina: string;
+  male: GroupCell[];
+  female: GroupCell[];
+};
+
+export function openSeatsForCohort(roster: RosterEntry[], key: CohortKey): OpenSeats[] {
+  const cohortIds = new Set(cohortRoster(roster, key).map((s) => s.id));
+  if (cohortIds.size === 0) return [];
+
+  const holdsCohort = (c: GroupCell) => c.members.some((m) => cohortIds.has(m.id));
+  const open = (cells: GroupCell[]) => cells.filter((c) => c.free > 0 && holdsCohort(c));
+
+  const out: OpenSeats[] = [];
+  for (const r of buildSeminarReports(roster)) {
+    const male = open(r.male);
+    const female = open(r.female);
+    if (male.length || female.length) out.push({ semina: r.semina, male, female });
+  }
+  return out;
+}
+
+/**
+ * The open seats in the shape the group exporters already understand.
+ *
+ * `exportGroups` takes `SeminarReport[]`, so building the same shape here means the
+ * student's download goes through the one export implementation the admin's pages use,
+ * rather than a second one that could drift from it.
+ */
+export function openSeatsAsReports(seats: OpenSeats[]): SeminarReport[] {
+  return seats.map((s) => {
+    const all = [...s.male, ...s.female];
+    return {
+      semina: s.semina,
+      male: s.male,
+      female: s.female,
+      completeGroups: 0,
+      totalGroups: all.length,
+      totalStudents: all.reduce((n, c) => n + c.count, 0),
+      maleCount: s.male.reduce((n, c) => n + c.count, 0),
+      femaleCount: s.female.reduce((n, c) => n + c.count, 0),
+      confirmedGroups: all.filter((c) => c.allConfirmed).length,
+      confirmedStudents: all.reduce((n, c) => n + c.confirmed, 0),
+      unknownGender: [],
+    };
+  });
+}
+
+/**
+ * The open group names in one seminar for one gender, or `null` when the seminar is not in
+ * the list at all (so the caller can tell "nothing open" from "not shown").
+ */
+export function openGroupNamesFor(
+  seats: OpenSeats[],
+  semina: string | null | undefined,
+  gender: Gender,
+): string[] | null {
+  if (!semina) return null;
+  const found = seats.find((s) => s.semina === semina);
+  if (!found) return null;
+  const cells = gender === "female" ? found.female : found.male;
+  return cells.map((c) => c.group);
 }
 
 export type PlannedMove = { semina: string; student_group: string };

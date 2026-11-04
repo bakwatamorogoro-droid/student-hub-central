@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 import {
   GRANT_STATUS,
   canEdit,
+  isEditSpent,
   grantFromRows,
   hasGrant,
   isGrantRow,
   requestHistory,
   unlockedAtFor,
   unlockedAtFromRows,
+  usedAtFor,
 } from "./editPermission.ts";
 
 const STUDENT = "11111111-1111-1111-1111-111111111111";
@@ -136,4 +138,64 @@ test("no grant anywhere means no grant", () => {
   assert.equal(unlockedAtFor({ id: STUDENT }, []), null);
   assert.equal(unlockedAtFor(null, null), null);
   assert.equal(unlockedAtFor({ id: STUDENT, edit_unlocked_at: null }, null), null);
+});
+
+/* --- one correction per student -------------------------------------------- */
+
+test("a spent edit closes the form even while the cohort switch is on", () => {
+  // The owner's rule: once the student has edited and confirmed, they cannot edit
+  // again until the admin opens the form for them.
+  assert.equal(
+    canEdit({ globallyEnabled: true, unlockedAt: null, usedAt: "2026-11-04T09:00:00.000Z" }),
+    false,
+  );
+});
+
+test("a fresh student under the cohort switch can still edit", () => {
+  assert.equal(canEdit({ globallyEnabled: true, unlockedAt: null, usedAt: null }), true);
+});
+
+test("a new grant reopens the form after the edit was spent", () => {
+  assert.equal(
+    canEdit({ globallyEnabled: true, unlockedAt: "2026-11-05T09:00:00.000Z", usedAt: null }),
+    true,
+  );
+});
+
+test("a grant reopens the form even if a spent stamp lingers", () => {
+  assert.equal(
+    canEdit({
+      globallyEnabled: false,
+      unlockedAt: "2026-11-05T09:00:00.000Z",
+      usedAt: "2026-11-04T09:00:00.000Z",
+    }),
+    true,
+  );
+});
+
+test("the spent flag is only set when there is no open grant", () => {
+  assert.equal(
+    isEditSpent({ globallyEnabled: true, unlockedAt: null, usedAt: "2026-11-04T09:00:00.000Z" }),
+    true,
+  );
+  assert.equal(isEditSpent({ globallyEnabled: true, unlockedAt: null, usedAt: null }), false);
+  assert.equal(
+    isEditSpent({
+      globallyEnabled: true,
+      unlockedAt: "2026-11-05T09:00:00.000Z",
+      usedAt: "2026-11-04T09:00:00.000Z",
+    }),
+    false,
+  );
+  assert.equal(
+    isEditSpent({ globallyEnabled: false, unlockedAt: null, usedAt: "2026-11-04T09:00:00.000Z" }),
+    false,
+  );
+});
+
+test("the used stamp is read off the student row, absent means never used", () => {
+  assert.equal(usedAtFor({ edit_used_at: "2026-11-04T09:00:00.000Z" }), "2026-11-04T09:00:00.000Z");
+  assert.equal(usedAtFor({ edit_used_at: null }), null);
+  assert.equal(usedAtFor({}), null);
+  assert.equal(usedAtFor(null), null);
 });

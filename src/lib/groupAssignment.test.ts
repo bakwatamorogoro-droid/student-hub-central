@@ -8,6 +8,10 @@ import {
   assignGroups,
   assignSeminar,
   buildSeminarReports,
+  isInCohort,
+  openGroupNamesFor,
+  openSeatsAsReports,
+  openSeatsForCohort,
   findMyGroup,
   formatGroupLabel,
   normalizeGender,
@@ -519,4 +523,104 @@ test("findMyGroup reports whether the student's own seat is confirmed", () => {
   ];
   assert.equal(findMyGroup(roster, "MUM2025-04-13988")?.confirmed, false);
   assert.equal(findMyGroup(roster, "MUM2025-04-15550")?.confirmed, true);
+});
+
+/* --- open seats for one cohort --------------------------------------------- */
+
+const year2 = (n: number, semina: string, gender: string, opts: { group?: string } = {}) =>
+  cohort(semina, gender, n, opts).map((s, i) => ({
+    ...s,
+    id: `y2-${semina}-${gender}-${i}`,
+    study_year: 2,
+    academic_year: "2026/2027",
+  }));
+
+test("a group that fills its eight seats is dropped from the open list", () => {
+  const roster = year2(8, "SEMINA 1", "Mwanaume");
+  const seats = openSeatsForCohort(roster, { studyYear: 2, academicYear: "2026/2027" });
+  const seminar = seats.find((s) => s.semina === "SEMINA 1");
+  assert.equal(seminar, undefined, "the only group is full, so no seminar is offered");
+});
+
+test("a group with room is offered, with the free count", () => {
+  const roster = year2(5, "SEMINA 1", "Mwanaume");
+  const seats = openSeatsForCohort(roster, { studyYear: 2, academicYear: "2026/2027" });
+  const seminar = seats.find((s) => s.semina === "SEMINA 1");
+  assert.ok(seminar);
+  assert.equal(seminar.male[0].free, 3);
+  assert.equal(seminar.female.length, 0);
+});
+
+test("a missing academic year is not a mismatch", () => {
+  const roster = year2(3, "SEMINA 1", "Mwanaume").map((s) => ({ ...s, academic_year: null }));
+  assert.equal(isInCohort(roster[0], { studyYear: 2, academicYear: "2026/2027" }), true);
+});
+
+test("a different academic year is a mismatch", () => {
+  const roster = year2(3, "SEMINA 1", "Mwanaume").map((s) => ({
+    ...s,
+    academic_year: "2025/2026",
+  }));
+  assert.equal(isInCohort(roster[0], { studyYear: 2, academicYear: "2026/2027" }), false);
+});
+
+test("a different study year is a mismatch", () => {
+  const roster = year2(3, "SEMINA 1", "Mwanaume").map((s) => ({ ...s, study_year: 3 }));
+  assert.equal(isInCohort(roster[0], { studyYear: 2 }), false);
+});
+
+test("fullness is measured against the whole roster, not the cohort", () => {
+  // The group physically holds eight people across every year. Counting only year 2 would
+  // offer a seat in a group that is already full.
+  const otherYear = cohort("SEMINA 1", "Mwanaume", 5).map((s, i) => ({
+    ...s,
+    id: `y1-${i}`,
+    study_year: 3,
+  }));
+  const mine = year2(3, "SEMINA 1", "Mwanaume").map((s, i) => ({ ...s, id: `mine-${i}` }));
+  const seats = openSeatsForCohort([...otherYear, ...mine], { studyYear: 2 });
+  const seminar = seats.find((s) => s.semina === "SEMINA 1");
+  // All eight land in GROUP 1 through the planner, so nothing is open.
+  assert.equal(seminar, undefined);
+});
+
+test("a seminar with no year-2 student is not offered", () => {
+  const other = cohort("SEMINA 2", "Mwanaume", 2).map((s, i) => ({
+    ...s,
+    id: `o-${i}`,
+    study_year: 3,
+  }));
+  const mine = year2(2, "SEMINA 1", "Mwanaume").map((s, i) => ({ ...s, id: `m-${i}` }));
+  const seats = openSeatsForCohort([...other, ...mine], { studyYear: 2 });
+  assert.deepEqual(
+    seats.map((s) => s.semina),
+    ["SEMINA 1"],
+  );
+});
+
+test("an empty cohort yields no seats rather than every group", () => {
+  const roster = cohort("SEMINA 1", "Mwanaume", 3).map((s, i) => ({
+    ...s,
+    id: `x-${i}`,
+    study_year: 4,
+  }));
+  assert.deepEqual(openSeatsForCohort(roster, { studyYear: 2 }), []);
+});
+
+test("openGroupNamesFor answers for one seminar and gender, null when absent", () => {
+  const roster = year2(2, "SEMINA 1", "Mwanaume");
+  const seats = openSeatsForCohort(roster, { studyYear: 2 });
+  const names = openGroupNamesFor(seats, "SEMINA 1", "male");
+  assert.ok(names && names.length > 0);
+  assert.equal(openGroupNamesFor(seats, "SEMINA 9", "male"), null);
+  assert.equal(openGroupNamesFor(seats, null, "male"), null);
+});
+
+test("openSeatsAsReports keeps the cells the exporters read", () => {
+  const roster = year2(2, "SEMINA 1", "Mwanaume");
+  const reports = openSeatsAsReports(openSeatsForCohort(roster, { studyYear: 2 }));
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].semina, "SEMINA 1");
+  assert.equal(reports[0].male[0].free, 6);
+  assert.equal(reports[0].totalGroups, reports[0].male.length + reports[0].female.length);
 });
