@@ -23,6 +23,20 @@ export const GROUP_NAMES: string[] = Array.from(
   (_, i) => `GROUP ${i + 1}`,
 );
 
+/**
+ * Whether a seminar name is one of the current fifteen.
+ *
+ * The imported cohort carries a legacy `SEMINA 16` (57 students). It is not a
+ * real seminar any more — there is no group 11 of it to seat — so the
+ * student-facing lists offer SEMINA 1…15 only. The admin views keep every
+ * seminar, because the students still sitting in SEMINA 16 have to be found
+ * before they can be moved out.
+ */
+export function isCurrentSeminar(raw: string | null | undefined): boolean {
+  const n = Number(String(raw ?? "").match(/\d+/)?.[0]);
+  return Number.isFinite(n) && n >= 1 && n <= SEMINAR_COUNT;
+}
+
 /** 11 × 8 — the most one gender can hold in a single seminar. */
 export const SEATS_PER_SEMINAR_PER_GENDER = GROUPS_PER_SEMINAR * GROUP_SIZE;
 
@@ -299,6 +313,9 @@ export function openSeatsForCohort(roster: RosterEntry[], key: CohortKey): OpenS
 
   const out: OpenSeats[] = [];
   for (const r of buildSeminarReports(roster)) {
+    // The student-facing list offers the fifteen current seminars only. A legacy
+    // `SEMINA 16` that still holds students is not a place anyone may join.
+    if (!isCurrentSeminar(r.semina)) continue;
     const male = open(r.male);
     const female = open(r.female);
     if (male.length || female.length) out.push({ semina: r.semina, male, female });

@@ -472,6 +472,21 @@ const dict: Record<string, { sw: string; en: string }> = {
     en: "You have already saved your correction once. If you need to change anything again, ask an admin or your CR to open the form for you.",
   },
   group_full: { sw: "imejaa", en: "full" },
+  legacy_semina_help: {
+    sw: "Semina hii ni ya zamani na haipokei wanafunzi wapya. Chagua semina moja kati ya 1 hadi 15.",
+    en: "This seminar is a legacy one and is no longer taking students. Pick a seminar between 1 and 15.",
+  },
+  start_mode_label: { sw: "Unataka kufanya nini?", en: "What would you like to do?" },
+  start_mode_seats: { sw: "Angalia nafasi zilizo wazi", en: "View open seats" },
+  start_mode_update: { sw: "Update taarifa zako", en: "Update your details" },
+  start_mode_seats_help: {
+    sw: "Ona magroup yaliyo wazi kwa mwaka huu na upakue orodha yake.",
+    en: "See the groups still open this year and download the list.",
+  },
+  start_mode_update_help: {
+    sw: "Weka Reg Namba yako ili kubadilisha semina, group au taarifa zako nyingine.",
+    en: "Enter your Reg number to change your seminar, group or other details.",
+  },
   no_open_group_here: {
     sw: "Hakuna group lililo wazi kwenye semina hii. Chagua semina nyingine.",
     en: "No group is open in this seminar. Pick another seminar.",
