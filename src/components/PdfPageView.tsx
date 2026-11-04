@@ -94,7 +94,19 @@ function usePdfDocument(src: string, onLoaded?: (pages: number) => void) {
 }
 
 /** The zoom control both viewers show. */
-function ZoomControls({ scale, setScale }: { scale: number; setScale: (s: number) => void }) {
+export function ZoomControls({
+  scale,
+  setScale,
+  min = 0.6,
+  max = 3,
+  step = 0.2,
+}: {
+  scale: number;
+  setScale: (s: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+}) {
   return (
     <div className="flex items-center gap-1">
       <Button
@@ -102,7 +114,7 @@ function ZoomControls({ scale, setScale }: { scale: number; setScale: (s: number
         size="sm"
         variant="ghost"
         className="h-7 px-2"
-        onClick={() => setScale(Math.max(0.6, Number((scale - 0.2).toFixed(1))))}
+        onClick={() => setScale(Math.max(min, Number((scale - step).toFixed(2))))}
         aria-label="Punguza"
       >
         <ZoomOut className="h-3.5 w-3.5" />
@@ -113,7 +125,7 @@ function ZoomControls({ scale, setScale }: { scale: number; setScale: (s: number
         size="sm"
         variant="ghost"
         className="h-7 px-2"
-        onClick={() => setScale(Math.min(3, Number((scale + 0.2).toFixed(1))))}
+        onClick={() => setScale(Math.min(max, Number((scale + step).toFixed(2))))}
         aria-label="Kuza"
       >
         <ZoomIn className="h-3.5 w-3.5" />
