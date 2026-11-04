@@ -9,6 +9,7 @@ import {
   assignSeminar,
   buildSeminarReports,
   isInCohort,
+  isCurrentSeminar,
   openGroupNamesFor,
   openSeatsAsReports,
   openSeatsForCohort,
@@ -623,4 +624,32 @@ test("openSeatsAsReports keeps the cells the exporters read", () => {
   assert.equal(reports[0].semina, "SEMINA 1");
   assert.equal(reports[0].male[0].free, 6);
   assert.equal(reports[0].totalGroups, reports[0].male.length + reports[0].female.length);
+});
+
+/* --- the fifteen current seminars only -------------------------------------- */
+
+test("isCurrentSeminar accepts 1..15 and rejects the legacy 16", () => {
+  assert.equal(isCurrentSeminar("SEMINA 1"), true);
+  assert.equal(isCurrentSeminar("SEMINA 15"), true);
+  assert.equal(isCurrentSeminar("semina 7"), true);
+  assert.equal(isCurrentSeminar("SEMINA 16"), false);
+  assert.equal(isCurrentSeminar("SEMINA 0"), false);
+  assert.equal(isCurrentSeminar(null), false);
+  assert.equal(isCurrentSeminar("TEST"), false);
+});
+
+test("the open list never offers a legacy SEMINA 16", () => {
+  const roster = year2(2, "SEMINA 16", "Mwanaume");
+  assert.deepEqual(openSeatsForCohort(roster, { studyYear: 2 }), []);
+});
+
+test("the open list keeps the real seminars while dropping the legacy one", () => {
+  const roster = [
+    ...year2(2, "SEMINA 3", "Mwanaume").map((s, i) => ({ ...s, id: `a-${i}` })),
+    ...year2(2, "SEMINA 16", "Mwanaume").map((s, i) => ({ ...s, id: `b-${i}` })),
+  ];
+  assert.deepEqual(
+    openSeatsForCohort(roster, { studyYear: 2 }).map((s) => s.semina),
+    ["SEMINA 3"],
+  );
 });

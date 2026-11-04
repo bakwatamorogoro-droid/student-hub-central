@@ -6,6 +6,7 @@ import {
   buildSeminarReports,
   findMyGroup,
   genderLabel,
+  isCurrentSeminar,
   representativesFor,
   type GroupCell,
   type GroupMember,
@@ -29,7 +30,13 @@ export function CrGroupsOverview() {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<string | null>(null);
 
-  const reports = useMemo(() => buildSeminarReports(roster), [roster]);
+  // The browse list shows the fifteen current seminars only; the legacy `SEMINA 16` is
+  // not a real seminar and has no group 11 to browse. A CR can still *find* a student who
+  // is still sitting in it, because the search below reads the whole roster.
+  const reports = useMemo(
+    () => buildSeminarReports(roster).filter((r) => isCurrentSeminar(r.semina)),
+    [roster],
+  );
 
   const found = useMemo(() => {
     const q = query.trim();
