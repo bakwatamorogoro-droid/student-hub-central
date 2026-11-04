@@ -27,6 +27,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Users,
+  LayoutGrid,
 } from "lucide-react";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
@@ -41,6 +42,7 @@ import {
   GROUP_NAMES,
   REGISTERING_COHORT,
   SEMINARS,
+  isCurrentSeminar,
   isInCohort,
   normalizeGender,
   openGroupNamesFor,
@@ -109,6 +111,10 @@ function Page() {
   // 1 = Reg Namba, 2 = edit your details and pick your seminar and group,
   // 3 = see the group you landed in and finish.
   const [step, setStep] = useState(1);
+  // The first thing on the page is a choice: look at which groups are still open, or go
+  // straight to updating your own details. Students arriving to register want the list;
+  // students who already have a seat want the form. One dropdown serves both.
+  const [mode, setMode] = useState<"seats" | "update">("seats");
   const [editStatus, setEditStatus] = useState<any[]>([]);
   // The request history the student reads. `editStatus` is the same rows plus any grant the
   // admin left, which is what the unlock check reads.
@@ -146,7 +152,10 @@ function Page() {
   // step, that link lands on step 2 rather than making the student walk the wizard.
   useEffect(() => {
     const openGroup = () => {
-      if (window.location.hash === "#group-yangu") setStep(2);
+      if (window.location.hash === "#group-yangu") {
+        setMode("update");
+        setStep(2);
+      }
     };
     openGroup();
     window.addEventListener("hashchange", openGroup);
@@ -594,53 +603,91 @@ function Page() {
           </div>
         </div>
 
-        {/* Three steps, Back and one save. The student always knows where they are: the
-              details and the seat are picked on step 2, and step 3 shows the group they
-              landed in before they finish. */}
-        <div className="flex items-center justify-center gap-2">
-          {[
-            { n: 1, label: t("step_reg") },
-            { n: 2, label: t("step_details") },
-            { n: 3, label: t("step_finish") },
-          ].map((s, i, all) => (
-            <div key={s.n} className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => (s.n <= step || student ? setStep(s.n) : undefined)}
-                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition-colors ${
-                  step === s.n
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : step > s.n
-                      ? "border-primary/40 bg-primary/10 text-primary"
-                      : "border-border bg-card text-muted-foreground"
-                }`}
-              >
-                <span
-                  className={`grid h-4 w-4 place-items-center rounded-full text-[10px] ${
-                    step >= s.n ? "bg-primary-foreground/25" : "bg-muted"
+        {/* The wizard steps belong to the update flow. While the student is only browsing
+            the open seats there is no step to be on, so the tracker is hidden. */}
+        {!(step === 1 && mode === "seats") && (
+          <div className="flex items-center justify-center gap-2">
+            {[
+              { n: 1, label: t("step_reg") },
+              { n: 2, label: t("step_details") },
+              { n: 3, label: t("step_finish") },
+            ].map((s, i, all) => (
+              <div key={s.n} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => (s.n <= step || student ? setStep(s.n) : undefined)}
+                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition-colors ${
+                    step === s.n
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : step > s.n
+                        ? "border-primary/40 bg-primary/10 text-primary"
+                        : "border-border bg-card text-muted-foreground"
                   }`}
                 >
-                  {s.n}
-                </span>
-                <span className="hidden sm:inline">{s.label}</span>
-              </button>
-              {i < all.length - 1 && <span className="h-px w-4 bg-border sm:w-6" />}
-            </div>
-          ))}
-        </div>
+                  <span
+                    className={`grid h-4 w-4 place-items-center rounded-full text-[10px] ${
+                      step >= s.n ? "bg-primary-foreground/25" : "bg-muted"
+                    }`}
+                  >
+                    {s.n}
+                  </span>
+                  <span className="hidden sm:inline">{s.label}</span>
+                </button>
+                {i < all.length - 1 && <span className="h-px w-4 bg-border sm:w-6" />}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* The first choice, before anything else: look at the seats that are still open, or
+            update your own details. Picking a mode decides which card step 1 shows, so a
+            student is never scrolling past a form they do not want. */}
+        {step === 1 && (
+          <Card className="border-2 border-primary/20 shadow-sm">
+            <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
+              <div className="flex-1 space-y-1.5">
+                <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  {t("start_mode_label")}
+                </Label>
+                <Select value={mode} onValueChange={(v) => setMode(v as "seats" | "update")}>
+                  <SelectTrigger className="font-semibold">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="seats">
+                      <span className="flex items-center gap-2">
+                        <LayoutGrid className="h-3.5 w-3.5 text-primary" />
+                        {t("start_mode_seats")}
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="update">
+                      <span className="flex items-center gap-2">
+                        <UserCog className="h-3.5 w-3.5 text-primary" />
+                        {t("start_mode_update")}
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-xs text-muted-foreground sm:max-w-[45%] sm:pb-2.5">
+                {mode === "seats" ? t("start_mode_seats_help") : t("start_mode_update_help")}
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* The open seats come first: a student who has not yet typed a Reg Namba still
             needs to see which groups and seminars are still taking people this year, and
             to take that list away with them. A group that has filled up drops out of this
             list by itself. */}
-        {step === 1 && (
+        {step === 1 && mode === "seats" && (
           <OpenSeatsPanel
             academicYear={CURRENT_ACADEMIC_YEAR}
             studyYear={Number(REGISTERING_COHORT.studyYear)}
           />
         )}
 
-        {step === 1 && (
+        {step === 1 && mode === "update" && (
           <Card className="border-2 border-primary/25 shadow-lg">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
@@ -742,11 +789,21 @@ function Page() {
                               {sm}
                             </SelectItem>
                           ))}
-                          {editSemina && !SEMINARS.includes(editSemina) && (
-                            <SelectItem value={editSemina}>{editSemina}</SelectItem>
+                          {/* A student still sitting in a legacy seminar keeps seeing it in
+                              the trigger, so the field is not blank, but it cannot be
+                              re-chosen: the notice below tells them to move to a real one. */}
+                          {editSemina && !isCurrentSeminar(editSemina) && (
+                            <SelectItem value={editSemina} disabled>
+                              {editSemina}
+                            </SelectItem>
                           )}
                         </SelectContent>
                       </Select>
+                      {editSemina && !isCurrentSeminar(editSemina) && (
+                        <p className="mt-1 text-xs font-bold text-amber-600">
+                          {t("legacy_semina_help")}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <Label>{t("group")}</Label>

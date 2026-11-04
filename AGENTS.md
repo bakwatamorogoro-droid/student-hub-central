@@ -1782,3 +1782,29 @@ cannot hand a second edit to someone who already used their first. A grant alway
 wins over a spent stamp. `canEdit`/`isEditSpent`/`usedAtFor` in
 `src/lib/editPermission.ts` own the rule and are unit-tested; the admin's
 `EditPermissionPanel` lists who has spent an edit so it can be reopened.
+
+## Fifteen seminars, and the start-of-page choice
+
+The imported cohort carries a legacy `SEMINA 16` (57 students, 10 of them year
+2). It is not a real seminar: there is no eleventh group to seat. `isCurrentSeminar`
+in `src/lib/groupAssignment.ts` is the one place that decides "is this one of the
+current fifteen", and it is applied to every *student-facing* list:
+
+- `openSeatsForCohort` skips a seminar `isCurrentSeminar` rejects, so the open-seat
+  list and the step-2 group picker never offer a seat in `SEMINA 16`.
+- `CrGroupsOverview`'s browse list is filtered the same way. Its *search* still
+  reads the whole roster, so a CR can find a student who is still sitting there.
+- The step-2 seminar picker offers SEMINA 1…15 only. A student still in `SEMINA 16`
+  keeps seeing it in the trigger (so the field is not blank) but it is `disabled`,
+  with `legacy_semina_help` under it telling them to move to a real seminar.
+
+The admin views (`GroupManager`, `GroupDirectory`, `SeminarReportPanel`) are
+deliberately *not* filtered: the students still in SEMINA 16 have to be found
+before they can be moved out.
+
+`/student` step 1 now opens on a mode dropdown — *view open seats* or *update your
+details* — instead of showing both. The seats card and the Reg Namba card are the
+two branches; the wizard step tracker is hidden while browsing seats, because
+there is no step to be on. `OpenSeatsPanel` itself collapses and picks one seminar
+from a dropdown, with a summary badge row (seminars / open groups / free seats) on
+top, so the card stays short.
