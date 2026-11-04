@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,10 +37,26 @@ import { DEFAULT_PROGRAM_YEARS, studyYearFromReg } from "@/lib/studyYear";
 import { useI18n } from "@/lib/i18n";
 import { loadDirectory } from "@/lib/directory";
 import { assignStudentGroup, consumeStudentEdit, saveStudentSeat } from "@/lib/groupRoster";
-import { GROUP_NAMES, SEMINARS } from "@/lib/groupAssignment";
-import { invalidateRosterCache } from "@/lib/useRoster";
+import {
+  GROUP_NAMES,
+  REGISTERING_COHORT,
+  SEMINARS,
+  isInCohort,
+  normalizeGender,
+  openGroupNamesFor,
+  openSeatsForCohort,
+} from "@/lib/groupAssignment";
+import { invalidateRosterCache, useRoster } from "@/lib/useRoster";
 import { GroupRosterView } from "@/components/GroupRosterView";
-import { canEdit, hasGrant, requestHistory, unlockedAtFor } from "@/lib/editPermission";
+import { OpenSeatsPanel } from "@/components/OpenSeatsPanel";
+import {
+  canEdit,
+  hasGrant,
+  isEditSpent,
+  requestHistory,
+  unlockedAtFor,
+  usedAtFor,
+} from "@/lib/editPermission";
 import { FIELD_LABELS } from "@/lib/requestDiff";
 import {
   AlertDialog,
@@ -144,6 +160,7 @@ function Page() {
   // grant is spent by the save, so this re-derives every time the student's rows are
   // re-read.
   const grantAt = unlockedAtFor(student, editStatus);
+  const usedAt = usedAtFor(student);
   const editUnlocked = hasGrant({
     globallyEnabled: !!settings?.profile_edits_enabled,
     unlockedAt: grantAt,
@@ -151,7 +168,33 @@ function Page() {
   const editable = canEdit({
     globallyEnabled: !!settings?.profile_edits_enabled,
     unlockedAt: grantAt,
+    usedAt,
   });
+  // The student has had their one correction and the admin has not opened the form again.
+  // The form stays visible but closed, with the reason on it, rather than vanishing.
+  const editSpent = isEditSpent({
+    globallyEnabled: !!settings?.profile_edits_enabled,
+    unlockedAt: grantAt,
+    usedAt,
+  });
+
+  // The seats this year's cohort may still take. The same list the step-1 panel shows, so
+  // the group picker below can mark a full group as closed instead of offering it.
+  const { roster } = useRoster();
+  const cohort = useMemo(
+    () => ({ ...REGISTERING_COHORT, academicYear: CURRENT_ACADEMIC_YEAR }),
+    [],
+  );
+  const openSeats = useMemo(() => openSeatsForCohort(roster, cohort), [roster, cohort]);
+  // `null` means "this student is not in the year-2 cohort", in which case the picker keeps
+  // every group, exactly as before. An array is the definitive open list for their seminar.
+  const openGroupsMine = useMemo(
+    () =>
+      student && isInCohort(student, cohort)
+        ? openGroupNamesFor(openSeats, editSemina, normalizeGender(student.gender))
+        : null,
+    [openSeats, editSemina, student, cohort],
+  );
 
   /** Loads one student row into the form. Leaves the current step alone. */
   const fillForm = async (data: any) => {
@@ -473,10 +516,12 @@ function Page() {
     const newRef = newRegUp || student.reg_no;
     storageSet("student_reg", newRef);
 
-    // Spend the admin's grant, if there was one. One grant buys one correction, so the
-    // door the admin opened closes as soon as the student has walked through it. The
-    // database is the record, so the local rows are re-read below rather than trusted.
-    if (editUnlocked) await consumeStudentEdit(student.id);
+    // Spend the chance. The student has edited and confirmed, so they may not edit again
+    // until the admin or CR opens the form for them. This runs whether the door was opened
+    // by a grant or by the cohort-wide switch: `consume_student_edit` clears the grant and
+    // stamps `edit_used_at` in one call, which is what closes the cohort-wide switch for
+    // this one student.
+    await consumeStudentEdit(student.id);
 
     // Stamp the seat marker so the planner leaves the student where they put themselves.
     // A student who already has a stamp keeps it; a fresh seat gets one now.
@@ -584,6 +629,17 @@ function Page() {
           ))}
         </div>
 
+        {/* The open seats come first: a student who has not yet typed a Reg Namba still
+            needs to see which groups and seminars are still taking people this year, and
+            to take that list away with them. A group that has filled up drops out of this
+            list by itself. */}
+        {step === 1 && (
+          <OpenSeatsPanel
+            academicYear={CURRENT_ACADEMIC_YEAR}
+            studyYear={Number(REGISTERING_COHORT.studyYear)}
+          />
+        )}
+
         {step === 1 && (
           <Card className="border-2 border-primary/25 shadow-lg">
             <CardHeader className="pb-3">
@@ -658,6 +714,19 @@ function Page() {
                       </div>
                     </div>
                   )}
+                  {editSpent && (
+                    <div className="flex items-start gap-3 rounded-xl border-2 border-amber-500/40 bg-amber-500/10 p-3">
+                      <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                      <div className="text-sm">
+                        <div className="font-bold text-amber-700 dark:text-amber-300">
+                          {t("edit_spent_title")}
+                        </div>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {t("edit_spent_help")}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   {/* The student owns their seat, so the pickers are always live. There is
                       no window and no lock: a change saved here always takes effect. */}
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -686,16 +755,35 @@ function Page() {
                           <SelectValue placeholder={t("choose_group")} />
                         </SelectTrigger>
                         <SelectContent>
-                          {GROUP_NAMES.map((g) => (
-                            <SelectItem key={g} value={g}>
-                              {g}
-                            </SelectItem>
-                          ))}
+                          {GROUP_NAMES.map((g) => {
+                            // A group that has filled up is not offered. `openGroupsMine` is
+                            // null for a student outside the year-2 cohort, so they keep the
+                            // full list exactly as before.
+                            const full =
+                              openGroupsMine !== null &&
+                              !openGroupsMine.includes(g) &&
+                              g !== editGroup;
+                            return (
+                              <SelectItem key={g} value={g} disabled={full}>
+                                <span className="flex items-center gap-2">
+                                  {g}
+                                  {full && (
+                                    <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                                      {t("group_full")}
+                                    </span>
+                                  )}
+                                </span>
+                              </SelectItem>
+                            );
+                          })}
                           {editGroup && !GROUP_NAMES.includes(editGroup) && (
                             <SelectItem value={editGroup}>{editGroup}</SelectItem>
                           )}
                         </SelectContent>
                       </Select>
+                      {openGroupsMine !== null && openGroupsMine.length === 0 && (
+                        <p className="mt-1 text-xs text-amber-600">{t("no_open_group_here")}</p>
+                      )}
                     </div>
                   </div>
                   <p className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground">

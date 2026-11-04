@@ -22,14 +22,28 @@ export type EditPermission = {
   globallyEnabled: boolean;
   /** When the admin opened this one student's form; null when no grant is outstanding. */
   unlockedAt?: string | null;
+  /**
+   * When the student last spent a grant. A used grant is not an open door: the student
+   * has had their one correction and needs the admin to open the form again.
+   */
+  usedAt?: string | null;
 };
 
 /** The `status` that marks a row as the admin's grant rather than a profile request. */
 export const GRANT_STATUS = "edit_granted";
 
-/** True when this student may write, from either switch. */
-export function canEdit({ globallyEnabled, unlockedAt }: EditPermission): boolean {
-  return !!globallyEnabled || !!unlockedAt;
+/**
+ * True when this student may write.
+ *
+ * A grant always opens the form. The cohort-wide switch opens it only for a student who
+ * has not already spent an edit — one correction each, which is what the owner asked for
+ * ("akiedit na akathibisha hawezi kuedit tena hadi afanyiwe edit tena"). Without the
+ * `usedAt` half, turning the switch on for the whole cohort handed a second edit to every
+ * student who had already used their first.
+ */
+export function canEdit({ globallyEnabled, unlockedAt, usedAt }: EditPermission): boolean {
+  if (unlockedAt) return true;
+  return !!globallyEnabled && !usedAt;
 }
 
 /**
@@ -40,6 +54,15 @@ export function canEdit({ globallyEnabled, unlockedAt }: EditPermission): boolea
  */
 export function hasGrant({ unlockedAt }: EditPermission): boolean {
   return !!unlockedAt;
+}
+
+/**
+ * True when the student has already used their one correction and the admin has not
+ * opened the form again. Drives the "you have already updated once" notice, so a closed
+ * form is explained rather than looking broken.
+ */
+export function isEditSpent({ globallyEnabled, unlockedAt, usedAt }: EditPermission): boolean {
+  return !unlockedAt && !!usedAt && !!globallyEnabled;
 }
 
 /** A `profile_update_requests` row, narrowed to what a grant reads. */
@@ -107,4 +130,18 @@ export function unlockedAtFor(
   rows: GrantRow[] | null | undefined,
 ): string | null {
   return student?.edit_unlocked_at ?? unlockedAtFromRows(rows, student?.id);
+}
+
+/**
+ * When the student last spent an edit, off the row the page already loads.
+ *
+ * Read straight from `students.edit_used_at` (added by
+ * `20261104140000_student_edit_once.sql`). A database that has not run it simply reports
+ * `undefined`, which reads as "never used an edit" — the behaviour before this rule
+ * existed, so nothing locks out early on an old database.
+ */
+export function usedAtFor(
+  student: { edit_used_at?: string | null } | null | undefined,
+): string | null {
+  return student?.edit_used_at ?? null;
 }

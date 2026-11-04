@@ -1754,3 +1754,31 @@ The CR's print station deliberately shows the **stable join code**, never the
 25-second rotating token: a CR is not in the room running the session, and the
 only useful thing they can do with attendance is carry a poster to the wall
 before students arrive.
+
+## Open seats and the one-correction rule
+
+`/student` step 1 shows an `OpenSeatsPanel` above the Reg Namba card: the groups
+and seminars still taking people for the current academic year, study year 2,
+downloadable as PDF/Word/Excel/CSV. Step 2's group picker greys out exactly the
+full groups from the same list.
+
+- `openSeatsForCohort(roster, key)` in `src/lib/groupAssignment.ts` is the one
+  source of truth. Fullness is measured against the **whole roster**, not the
+  cohort: a group holds 8 people whatever year they are in, so counting only the
+  cohort would offer a seat in a physically full group. The cohort key only
+  decides *which* seminars appear. A group with no room is simply absent, which
+  is the auto-hide — nothing closes a group by hand.
+- `REGISTERING_COHORT` holds the study year of the drive; the caller adds
+  `academicYear: CURRENT_ACADEMIC_YEAR`. `isInCohort` treats a *missing*
+  `academic_year` as a match, not a mismatch (most of the imported cohort has
+  none), the same rule `matchesAcademicTarget` uses.
+- The download reuses `groupExports` via `openSeatsAsReports`, so the student's
+  file and the admin's file come from one exporter.
+
+One correction per student: `students.edit_used_at` (migration
+`20261104140000_student_edit_once.sql`). `consume_student_edit` stamps it and
+`grant_student_edit` clears it, so the cohort-wide `profile_edits_enabled` switch
+cannot hand a second edit to someone who already used their first. A grant always
+wins over a spent stamp. `canEdit`/`isEditSpent`/`usedAtFor` in
+`src/lib/editPermission.ts` own the rule and are unit-tested; the admin's
+`EditPermissionPanel` lists who has spent an edit so it can be reopened.

@@ -23,16 +23,18 @@ export type { MyGroup, SeminarReport };
 
 /** The columns the group logic reads. */
 export const ROSTER_COLUMNS =
-  "id, reg_no, full_name, semina, gender, student_group, phone, group_confirmed_at";
+  "id, reg_no, full_name, semina, gender, student_group, phone, study_year, academic_year, group_confirmed_at";
 
 /**
- * The roster columns, newest first. `group_confirmed_at` arrives with the confirmation
- * migration, so a database that has not run it yet rejects the whole select with a
- * missing-column error. Dropping the unknown names and retrying keeps every other page
- * working until the migration is applied.
+ * The roster columns, newest first. `group_confirmed_at`, `study_year` and
+ * `academic_year` arrive with later migrations, so a database that has not run them yet
+ * rejects the whole select with a missing-column error. Dropping the unknown names and
+ * retrying keeps every other page working until the migrations are applied.
  */
 const ROSTER_FALLBACKS = [
   ROSTER_COLUMNS,
+  "id, reg_no, full_name, semina, gender, student_group, phone, study_year, academic_year",
+  "id, reg_no, full_name, semina, gender, student_group, phone, group_confirmed_at",
   "id, reg_no, full_name, semina, gender, student_group, phone",
   "id, reg_no, full_name, semina, gender, student_group",
 ];

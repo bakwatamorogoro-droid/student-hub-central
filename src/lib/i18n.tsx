@@ -463,6 +463,19 @@ const dict: Record<string, { sw: string; en: string }> = {
     en: "The admin opened your form so you can correct it. Make your changes, then tap Save changes. This permission ends as soon as you save.",
   },
   edit_unlocked_banner: { sw: "Umefunguliwa na admin", en: "Opened by the admin" },
+  edit_spent_title: {
+    sw: "Umekwisha kurekebisha mara moja",
+    en: "You have already used your one update",
+  },
+  edit_spent_help: {
+    sw: "Umekwisha kuhifadhi marekebisho yako mara moja. Ukiwa unahitaji kubadilisha tena, mwone admin au CR akufungulie.",
+    en: "You have already saved your correction once. If you need to change anything again, ask an admin or your CR to open the form for you.",
+  },
+  group_full: { sw: "imejaa", en: "full" },
+  no_open_group_here: {
+    sw: "Hakuna group lililo wazi kwenye semina hii. Chagua semina nyingine.",
+    en: "No group is open in this seminar. Pick another seminar.",
+  },
   confirm_reg_first: { sw: "Thibitisha Reg Namba kwanza.", en: "Confirm your Reg number first." },
   tab_edit: { sw: "Update Taarifa", en: "Update details" },
   tab_issue: { sw: "Changamoto", en: "Report an issue" },

@@ -8,7 +8,7 @@ import { confirmAction } from "@/lib/alerts";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { grantStudentEdit, revokeStudentEdit } from "@/lib/groupRoster";
 import { GRANT_STATUS } from "@/lib/editPermission";
-import { Loader2, Search, Unlock, Lock, PencilRuler, RefreshCw } from "lucide-react";
+import { Loader2, Search, Unlock, Lock, PencilRuler, RefreshCw, History } from "lucide-react";
 
 /**
  * The admin's per-student edit switch.
@@ -31,6 +31,7 @@ type Row = {
   student_group: string | null;
   group_confirmed_at: string | null;
   edit_unlocked_at?: string | null;
+  edit_used_at?: string | null;
 };
 
 type GrantRow = { id: string; student_id: string; created_at: string | null };
@@ -41,6 +42,7 @@ export function EditPermissionPanel() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Row[]>([]);
   const [holders, setHolders] = useState<Row[]>([]);
+  const [spent, setSpent] = useState<Row[]>([]);
   const [searching, setSearching] = useState(false);
   const [loadingHolders, setLoadingHolders] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -59,34 +61,45 @@ export function EditPermissionPanel() {
       setListError(false);
       setHolders((data || []) as Row[]);
       setLoadingHolders(false);
-      return;
-    }
-    // The column arrives with the migration. Until it is applied, fall back to the grant
-    // rows the grant writes in that case, resolved to names.
-    const { data: grants, error: grantError } = await (supabase as any)
-      .from("profile_update_requests")
-      .select("id, student_id, created_at, status")
-      .eq("status", GRANT_STATUS)
-      .order("created_at", { ascending: false })
-      .limit(500);
-    if (grantError) {
-      setListError(true);
+    } else {
+      // The column arrives with the migration. Until it is applied, fall back to the grant
+      // rows the grant writes in that case, resolved to names.
+      const { data: grants, error: grantError } = await (supabase as any)
+        .from("profile_update_requests")
+        .select("id, student_id, created_at, status")
+        .eq("status", GRANT_STATUS)
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (grantError) {
+        setListError(true);
+        setLoadingHolders(false);
+        return;
+      }
+      setListError(false);
+      const ids = [...new Set(((grants || []) as GrantRow[]).map((r) => r.student_id))];
+      if (!ids.length) {
+        setHolders([]);
+      } else {
+        const { data: students } = await (supabase as any)
+          .from("students")
+          .select(STUDENT_COLUMNS)
+          .in("id", ids);
+        setHolders((students || []) as Row[]);
+      }
       setLoadingHolders(false);
-      return;
     }
-    setListError(false);
-    const ids = [...new Set(((grants || []) as GrantRow[]).map((r) => r.student_id))];
-    if (!ids.length) {
-      setHolders([]);
-      setLoadingHolders(false);
-      return;
-    }
-    const { data: students } = await (supabase as any)
+
+    // Who has already used their one correction. These are the students who cannot edit
+    // again until a grant is issued, so the admin needs them in front of them, not only the
+    // names still holding an unused grant.
+    const { data: used, error: usedError } = await (supabase as any)
       .from("students")
-      .select(STUDENT_COLUMNS)
-      .in("id", ids);
-    setHolders((students || []) as Row[]);
-    setLoadingHolders(false);
+      .select(`${STUDENT_COLUMNS}, edit_used_at`)
+      .not("edit_used_at", "is", null)
+      .is("edit_unlocked_at", null)
+      .order("edit_used_at", { ascending: false })
+      .limit(200);
+    setSpent(usedError ? [] : ((used || []) as Row[]));
   }, []);
 
   useEffect(() => {
@@ -239,6 +252,27 @@ export function EditPermissionPanel() {
             </p>
           ) : (
             <ul className="space-y-2">{holders.map((row) => renderRow(row, true, "revoke"))}</ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <History className="h-4 w-4" /> Waliotumia Nafasi Yao ({spent.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Hawa wamekwisha hifadhi marekebisho yao mara moja, kwa hiyo hawawezi kuedit tena.
+            Mfungulie kama anataka kubadilisha kitu.
+          </p>
+          {spent.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Hakuna mwanafunzi aliyekwisha tumia nafasi yake.
+            </p>
+          ) : (
+            <ul className="space-y-2">{spent.map((row) => renderRow(row, false, "grant"))}</ul>
           )}
         </CardContent>
       </Card>
