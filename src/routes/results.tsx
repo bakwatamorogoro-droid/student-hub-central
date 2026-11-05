@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { gradeShortAnswer } from "@/lib/grading.functions";
 import { findStudentsByQuery } from "@/lib/studentSearch";
-import { studentHasPin, verifyStudentPin } from "@/lib/studentAccount";
+import { verifyStudentByPhone } from "@/lib/studentAccount";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 import { formatAcademicSummary } from "@/lib/academicTargeting";
 import { toast } from "@/lib/toast";
@@ -53,12 +53,14 @@ function ResultsPage() {
   const [retrying, setRetrying] = useState(false);
   const [questionsByExam, setQuestionsByExam] = useState<Record<string, any[]>>({});
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  const [pinInput, setPinInput] = useState("");
+  const [phoneInput, setPhoneInput] = useState("");
   const [pinBusy, setPinBusy] = useState(false);
   const [pinError, setPinError] = useState("");
   const [verified, setVerified] = useState(false);
   const [needsPin, setNeedsPin] = useState(false);
-  const [resultsRequirePin, setResultsRequirePin] = useState(true);
+  // The code shown back once the Reg Namba and the phone on file agree. It is
+  // the receipt the student reads to the office; the results load right under it.
+  const [verificationCode, setVerificationCode] = useState("");
   const grade = gradeShortAnswer;
 
   // Jaribu tena grading kwa submission yoyote yenye matatizo (score=null au ai_confirmed=false)
@@ -135,7 +137,7 @@ function ResultsPage() {
     const r = storageGet("student_reg");
     if (r) {
       setRegNo(r);
-      fetchResults(r);
+      fetchResults(r, "");
     }
   }, []);
 
@@ -194,21 +196,22 @@ function ResultsPage() {
     }
   };
 
-  /** Anzisha upya lango la msimbo kila utafutaji mpya. */
+  /** Anzisha upya lango la uthibitisho kila utafutaji mpya. */
   const resetGate = () => {
     setVerified(false);
     setNeedsPin(false);
-    setPinInput("");
     setPinError("");
+    setVerificationCode("");
   };
 
   /**
-   * Reg Namba -> (msimbo kama unahitajika) -> matokeo.
+   * Reg Namba + namba ya simu -> uthibitisho -> matokeo.
    *
-   * Msimbo hulinda tu wale walio nao. Mwanafunzi asiyekuwa na msimbo anaendelea
-   * kama kawaida, ili kuwasha kipengele hiki kusiwafunge nje wanafunzi wote.
+   * Namba ya simu iliyosajiliwa ndiyo inayothibitisha ni wewe. Ikilinganishwa
+   * na namba iliyoandikwa kwenye orodha, na ikilingana, matokeo hufunguka mara
+   * moja pamoja na kodi ya uthibitisho inayoweza kuonyeshwa ofisini.
    */
-  const fetchResults = async (reg: string) => {
+  const fetchResults = async (reg: string, phone: string) => {
     if (!reg) return;
     resetGate();
     setRows([]);
@@ -225,47 +228,59 @@ function ResultsPage() {
     if (results.length > 1) {
       setStudent(null);
       setMatches(results);
+      setPhoneInput("");
       toast.info(`Tumepata ${results.length} wanafunzi — chagua wewe ni nani.`);
       return;
     }
     const s = results[0];
-    const { data: cfg } = await supabase
-      .from("app_settings")
-      .select("results_require_pin")
-      .eq("id", 1)
-      .maybeSingle();
-    const requirePin =
-      (cfg as { results_require_pin?: boolean } | null)?.results_require_pin !== false;
-    setResultsRequirePin(requirePin);
-    const hasPin = await studentHasPin(s.id);
-    if (requirePin && hasPin) {
+    if (!phone.trim()) {
+      // The number is the proof, so without it we can only show who we found.
       setStudent(s);
       setRegNo(s.reg_no);
       setNeedsPin(true);
       setSearched(true);
       return;
     }
+    setPinBusy(true);
+    const res = await verifyStudentByPhone(s.reg_no, phone);
+    setPinBusy(false);
+    if (!res.ok) {
+      setStudent(s);
+      setRegNo(s.reg_no);
+      setNeedsPin(true);
+      setSearched(true);
+      setPinError(
+        res.reason === "no_phone"
+          ? "Hakuna namba ya simu kwenye taarifa zako. Nenda Akaunti uongeze namba, kisha ujaribu tena."
+          : "Namba ya simu hailingani na ile uliyosajiliwa. Jaribu tena.",
+      );
+      return;
+    }
+    setVerificationCode(res.code);
+    setVerified(true);
+    setNeedsPin(false);
     await loadResults(s);
   };
 
-  const submitPin = async () => {
+  const submitPhone = async () => {
     if (!student) return;
-    if (!/^[0-9]{4,10}$/.test(pinInput)) {
-      setPinError("Msimbo ni tarakimu 4 hadi 10.");
+    if (!/^[0-9+\s-]{7,20}$/.test(phoneInput.trim())) {
+      setPinError("Weka namba ya simu uliyojisajili nayo.");
       return;
     }
     setPinBusy(true);
     setPinError("");
-    const res = await verifyStudentPin(student.reg_no, pinInput);
+    const res = await verifyStudentByPhone(student.reg_no, phoneInput.trim());
     setPinBusy(false);
     if (!res.ok) {
       setPinError(
-        res.reason === "locked"
-          ? "Msimbo umefungwa kwa muda. Jaribu tena baadaye."
-          : "Msimbo si sahihi.",
+        res.reason === "no_phone"
+          ? "Hakuna namba ya simu kwenye taarifa zako. Nenda Akaunti uongeze namba, kisha ujaribu tena."
+          : "Namba ya simu hailingani na ile uliyosajiliwa. Jaribu tena.",
       );
       return;
     }
+    setVerificationCode(res.code);
     setVerified(true);
     setNeedsPin(false);
     await loadResults(student);
@@ -345,21 +360,39 @@ function ResultsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 value={regNo}
                 onChange={(e) => setRegNo(e.target.value.toUpperCase())}
-                placeholder="Reg Namba au jina (mfano: jina la mwisho)"
+                placeholder="Reg Namba (mfano: MUM2025-04-14106)"
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") fetchResults(regNo);
+                  if (e.key === "Enter") fetchResults(regNo, phoneInput);
                 }}
               />
-              <Button onClick={() => fetchResults(regNo)}>Tafuta</Button>
+              <Input
+                value={phoneInput}
+                onChange={(e) => setPhoneInput(e.target.value.replace(/[^0-9+\s-]/g, ""))}
+                placeholder="Namba ya simu uliyojisajili nayo"
+                inputMode="tel"
+                type="tel"
+                autoComplete="tel"
+                maxLength={20}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") fetchResults(regNo, phoneInput);
+                }}
+              />
+              <Button onClick={() => fetchResults(regNo, phoneInput)} className="shrink-0">
+                Tafuta
+              </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Weka Reg Namba yako na namba ya simu uliyojisajili nayo. Uthibitisho hufanyika mara
+              moja na matokeo yako yanaonekana papo hapo.
+            </p>
             {matches.length > 0 && (
               <StudentMatchesPicker
                 matches={matches}
-                onConfirm={(s) => fetchResults(s.reg_no)}
+                onConfirm={(s) => fetchResults(s.reg_no, phoneInput)}
                 onCancel={() => setMatches([])}
               />
             )}
@@ -370,36 +403,55 @@ function ResultsPage() {
           <Card className="mb-6 border-2 border-primary/40 bg-gradient-to-br from-primary/10 to-transparent">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-base">
-                <Lock className="h-4 w-4 text-primary" /> Weka msimbo wako
+                <Lock className="h-4 w-4 text-primary" /> Thibitisha namba yako ya simu
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Uthibitisho wa msimbo unahitajika kuona matokeo ya {student?.full_name}.
+                Ili kuona matokeo ya <b>{student?.full_name}</b>, weka namba ya simu uliyojisajili
+                nayo.
               </p>
               <div className="flex gap-2">
                 <Input
-                  type="password"
-                  inputMode="numeric"
-                  value={pinInput}
-                  onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ""))}
-                  placeholder="Msimbo (tarakimu)"
+                  value={phoneInput}
+                  onChange={(e) => setPhoneInput(e.target.value.replace(/[^0-9+\s-]/g, ""))}
+                  inputMode="tel"
+                  type="tel"
+                  autoComplete="tel"
+                  maxLength={20}
+                  placeholder="07XXXXXXXX"
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") submitPin();
+                    if (e.key === "Enter") submitPhone();
                   }}
                 />
-                <Button onClick={submitPin} disabled={pinBusy}>
+                <Button onClick={submitPhone} disabled={pinBusy}>
                   {pinBusy ? "Inathibitisha..." : "Thibitisha"}
                 </Button>
               </div>
               {pinError && <p className="text-sm text-destructive">{pinError}</p>}
-              <p className="text-xs text-muted-foreground">
-                Huna msimbo? Nenda{" "}
-                <a className="text-primary underline" href="/account">
-                  Akaunti yako
-                </a>{" "}
-                kuomba mmoja.
+            </CardContent>
+          </Card>
+        )}
+        {verified && verificationCode && (
+          <Card className="mb-6 border-2 border-emerald-500/50 bg-gradient-to-br from-emerald-500/15 to-transparent">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base text-emerald-800 dark:text-emerald-300">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600" /> Uthibitisho wa kodi
+                umekamilika
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Reg Namba na namba ya simu vimelingana. Onyesha kodi hii ofisini ikiwa utahitajika:
               </p>
+              <div className="flex items-center gap-3">
+                <span className="rounded-xl border-2 border-emerald-500/40 bg-background px-4 py-2 font-mono text-2xl font-black tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
+                  {verificationCode}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  Matokeo yako yapo chini kabisa.
+                </span>
+              </div>
             </CardContent>
           </Card>
         )}
