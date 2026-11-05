@@ -13,7 +13,7 @@ import {
   type AttendanceFailure,
   type OpenSession,
 } from "@/lib/attendance";
-import { loginStudent } from "@/lib/studentAccount";
+import { loginStudentByPhone } from "@/lib/studentAccount";
 import { CheckCircle2, Loader2, LogIn, MapPin, QrCode, ShieldAlert, XCircle } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { getStudentToken, setStudentToken } from "@/lib/student-session";
@@ -25,7 +25,8 @@ const FAILURE_TEXT: Record<AttendanceFailure, string> = {
   invalid_token: "QR au msimbo haitambuliki. Hakikisha ni wa kipindi kinachoendelea.",
   expired_token: "QR hii imeisha muda wake. Scan tena QR ya sasa.",
   session_closed: "Kipindi hiki kimefungwa. Huwezi kuhudhuria kipindi kilichofungwa.",
-  not_registered: "Haujatambuliwa kama mwanafunzi. Weka Reg Namba na PIN yako kisha ujaribu tena.",
+  not_registered:
+    "Haujatambuliwa kama mwanafunzi. Weka Reg Namba na namba yako ya simu kisha ujaribu tena.",
   gps_required:
     "Umbali hauwezi kuthibitishwa. Ruhusu GPS, na hakikisha kipindi kina eneo la darasa.",
   outside_area: "Uko nje ya eneo lililoruhusiwa la darasa. Sogeza karibu na mwalimu.",
@@ -83,8 +84,9 @@ export function QrAttendanceCheckIn({
 
   // Sign-in happens on this page rather than sending the student to /account and
   // back: a scanned link arrives with a session to join, and a detour loses it.
+  // The proof is the phone the school holds, so there is no PIN to remember.
   const [regNo, setRegNo] = useState("");
-  const [pin, setPin] = useState("");
+  const [phone, setPhone] = useState("");
   const [signingIn, setSigningIn] = useState(false);
 
   // The session the student picked on the pick step and is about to confirm.
@@ -103,7 +105,7 @@ export function QrAttendanceCheckIn({
    * shows why the scan button is not live yet.
    */
   const steps: WizardStep[] = [
-    { key: "who", title: "Jitambulishe", hint: "Thibitisha ni wewe kwa Reg Namba na PIN" },
+    { key: "who", title: "Jitambulishe", hint: "Thibitisha ni wewe kwa Reg Namba na simu yako" },
     { key: "pick", title: "Kipindi", hint: "Skani QR au andika msimbo wa kipindi" },
     { key: "confirm", title: "Thibitisha", hint: "Ruhusu GPS na hudhuria" },
   ];
@@ -209,7 +211,7 @@ export function QrAttendanceCheckIn({
         pendingRef.current = scanned;
         if (scanned.kind === "join") setCode(scanned.joinCode);
         setStep(0);
-        toast.error("Weka Reg Namba na PIN yako, kisha mahudhurio yataendelea.");
+        toast.error("Weka Reg Namba na namba yako ya simu, kisha mahudhurio yataendelea.");
         return;
       }
       chooseSession(scanned);
@@ -230,37 +232,39 @@ export function QrAttendanceCheckIn({
     }
   }, [studentToken, chooseSession]);
 
+  /**
+   * Signs the student in with the two details they already know: their Reg Namba
+   * and the phone the school holds. No PIN is needed here — the phone on file is
+   * the proof, and the session is minted exactly as a PIN sign-in would mint it.
+   */
   const signIn = useCallback(async () => {
     if (!regNo.trim()) return toast.error("Weka Reg Namba yako");
-    if (!/^[0-9]{4,10}$/.test(pin)) return toast.error("PIN inatakiwa tarakimu 4 hadi 10");
+    if (!/^[0-9+\s-]{7,20}$/.test(phone.trim()))
+      return toast.error("Weka namba ya simu uliyojisajili nayo");
     setSigningIn(true);
     try {
-      const res = await loginStudent(regNo.trim(), pin);
+      const res = await loginStudentByPhone(regNo.trim(), phone.trim());
       if (!res.ok) {
         const msg =
-          res.reason === "locked"
-            ? "Akaunti imefungwa kwa muda. Jaribu tena baadaye."
-            : res.reason === "wrong_device"
-              ? "PIN ni sahihi lakini simu hii si ile uliyotumia. Omba msimamizi akuwezeshe."
-              : res.reason === "not_ready"
-                ? "Mfumo haujawa tayari. Mwambie msimamizi."
-                : "Reg Namba au PIN si sahihi.";
+          res.reason === "no_phone"
+            ? "Hakuna namba ya simu kwenye taarifa zako. Nenda Akaunti uongeze namba, kisha ujaribu tena."
+            : "Reg Namba au namba ya simu si sahihi. Tumia namba uliyojisajili nayo.";
         toast.error(msg);
         return;
       }
       setStudentToken(res.token);
       setTokenState(res.token);
-      setPin("");
+      setPhone("");
       toast.success(`Karibu ${res.fullName}`);
     } finally {
       setSigningIn(false);
     }
-  }, [regNo, pin]);
+  }, [regNo, phone]);
 
   const handleCode = useCallback(async () => {
     const st = getStudentToken();
     if (!st) {
-      toast.error("Weka Reg Namba na PIN yako kwanza.");
+      toast.error("Weka Reg Namba na namba yako ya simu kwanza.");
       return;
     }
     if (code.trim().length < 4) {
@@ -274,7 +278,7 @@ export function QrAttendanceCheckIn({
   const confirmCheckIn = useCallback(async () => {
     const st = getStudentToken();
     if (!st) {
-      toast.error("Weka Reg Namba na PIN yako kwanza.");
+      toast.error("Weka Reg Namba na namba yako ya simu kwanza.");
       setStep(0);
       return;
     }
@@ -371,10 +375,10 @@ export function QrAttendanceCheckIn({
             <div className="flex gap-2">
               <ShieldAlert className="h-5 w-5 shrink-0 text-primary" />
               <div className="text-sm">
-                <p className="font-medium">Jitambulishe kwa Reg Namba na PIN</p>
+                <p className="font-medium">Jitambulishe kwa Reg Namba na simu yako</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   Mahudhurio huhifadhiwa kwa jina lako, kwa hiyo tunahitaji kuthibitisha ni wewe.
-                  Ukishajitambulisha, utaendelea kuchagua kipindi.
+                  Tumia namba ya simu uliyojisajili nayo — hakuna PIN inayohitajika.
                 </p>
               </div>
             </div>
@@ -392,18 +396,21 @@ export function QrAttendanceCheckIn({
                 />
               </div>
               <div>
-                <Label htmlFor="qr-pin" className="text-xs">
-                  PIN
+                <Label htmlFor="qr-phone" className="text-xs">
+                  Namba ya Simu
                 </Label>
                 <Input
-                  id="qr-pin"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ""))}
-                  inputMode="numeric"
-                  type="password"
-                  placeholder="Tarakimu 4–10"
-                  autoComplete="current-password"
-                  maxLength={10}
+                  id="qr-phone"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value.replace(/[^0-9+\s-]/g, ""))}
+                  inputMode="tel"
+                  type="tel"
+                  placeholder="07XXXXXXXX"
+                  autoComplete="tel"
+                  maxLength={20}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") signIn();
+                  }}
                 />
               </div>
             </div>

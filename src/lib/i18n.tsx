@@ -230,8 +230,8 @@ const dict: Record<string, { sw: string; en: string }> = {
     en: "Identify yourself to check in.",
   },
   att_need_account_body: {
-    sw: "Weka Reg Namba na PIN yako kwenye kisanduku cha “Hudhuria kwa QR Code” hapa chini — huhitaji kuondoka kwenye ukurasa huu.",
-    en: "Enter your Reg number and PIN in the “Check in with QR Code” box below — no need to leave this page.",
+    sw: "Weka Reg Namba na namba yako ya simu kwenye kisanduku cha “Hudhuria kwa QR Code” hapa chini — huhitaji kuondoka kwenye ukurasa huu.",
+    en: "Enter your Reg number and the phone number you registered with in the “Check in with QR Code” box below — no need to leave this page.",
   },
   att_go_account: { sw: "Fungua Akaunti", en: "Open Account" },
   att_confirmed: { sw: "Mahudhurio yamethibitishwa", en: "Attendance confirmed" },

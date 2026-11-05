@@ -1,5 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getDeviceId } from "@/lib/device-id";
+import { canonicalRegNo } from "@/lib/regNo";
+import { deriveVerificationCode } from "@/lib/verificationCode";
 import { z } from "zod";
 import {
   clearedPinPayload,
@@ -370,6 +372,17 @@ export async function loginStudent(regNoInput: string, pinInput: string): Promis
     await writePinRow(student, { ...payload, fail: 0, locked_until: null }, row.id);
   }
 
+  return mintSession(student, deviceHash);
+}
+
+/**
+ * Mints a session row for a student who has already been proved.
+ *
+ * Shared by the PIN path and the phone path so both mint exactly the same kind
+ * of session: one live session per student, only the token's digest stored, and
+ * the device the session was created on recorded so a later check can see it.
+ */
+async function mintSession(student: StudentRow, deviceHash: string): Promise<LoginResult> {
   // One live session per student, so signing in elsewhere ends the old one.
   await clearSessions(student.id);
 
@@ -393,6 +406,92 @@ export async function loginStudent(regNoInput: string, pinInput: string): Promis
   if (error) return { ok: false, reason: "not_ready" };
 
   return { ok: true, token, fullName: student.full_name };
+}
+
+/**
+ * A short, human-readable code that confirms *this* pair of details.
+ *
+ * It is derived, never stored: the same Reg Namba and phone always produce the
+ * same code, so the student can read it aloud and the office can recompute it
+ * from the roster alone. It is a receipt, not a secret — it proves the two
+ * details were accepted together, and nothing more.
+ */
+export async function verificationCodeFor(regNoInput: string, phoneInput: string): Promise<string> {
+  const canon = canonicalRegNo(regNoInput);
+  const phone = normalizePhone(phoneInput) ?? "";
+  const digest = await tokenDigest(`verify:${canon}:${phone}`);
+  return deriveVerificationCode(digest);
+}
+
+/**
+ * Signs a student in with the phone number the school holds for them.
+ *
+ * This is the shortcut for a phone that was never given a PIN. The number on
+ * file is the shared secret the school and the student both know, so a match is
+ * treated as proof of identity and a session is minted, exactly as the PIN path
+ * does. The device binding the PIN path writes is deliberately *not* applied
+ * here: the whole point is that a student can use a phone they have not used
+ * before, and locking the account to it would defeat that.
+ */
+export async function loginStudentByPhone(
+  regNoInput: string,
+  phoneInput: string,
+): Promise<
+  | { ok: true; token: string; fullName: string }
+  | { ok: false; reason: "bad_credentials" | "no_phone" }
+> {
+  const regNo = regNoSchema.safeParse(regNoInput);
+  const phone = z.string().trim().min(7).max(20).safeParse(phoneInput);
+  if (!regNo.success || !phone.success) return { ok: false, reason: "bad_credentials" };
+
+  const student = await findStudent(regNo.data);
+  if (!student) return { ok: false, reason: "bad_credentials" };
+
+  const onFile = normalizePhone(student.phone || "");
+  const offered = normalizePhone(phone.data);
+  if (!onFile) return { ok: false, reason: "no_phone" };
+  if (!offered || onFile !== offered) return { ok: false, reason: "bad_credentials" };
+
+  const session = await mintSession(
+    student,
+    await hashDeviceId(currentDeviceId(), "phone-session"),
+  );
+  if (!session.ok) return { ok: false, reason: "bad_credentials" };
+  return { ok: true, token: session.token, fullName: session.fullName };
+}
+
+/**
+ * Confirms a Reg Namba and the phone on file, without signing anyone in.
+ *
+ * The results page needs "is this really this student?" but must not create a
+ * session or bind the phone: a student checking marks on a friend's phone
+ * should not disturb anything. So this only compares the two details.
+ */
+export async function verifyStudentByPhone(
+  regNoInput: string,
+  phoneInput: string,
+): Promise<
+  | { ok: true; regNo: string; fullName: string; code: string }
+  | { ok: false; reason: "bad_credentials" | "no_phone" }
+> {
+  const regNo = regNoSchema.safeParse(regNoInput);
+  const phone = z.string().trim().min(7).max(20).safeParse(phoneInput);
+  if (!regNo.success || !phone.success) return { ok: false, reason: "bad_credentials" };
+
+  const student = await findStudent(regNo.data);
+  if (!student) return { ok: false, reason: "bad_credentials" };
+
+  const onFile = normalizePhone(student.phone || "");
+  const offered = normalizePhone(phone.data);
+  if (!onFile) return { ok: false, reason: "no_phone" };
+  if (!offered || onFile !== offered) return { ok: false, reason: "bad_credentials" };
+
+  return {
+    ok: true,
+    regNo: student.reg_no,
+    fullName: student.full_name,
+    code: await verificationCodeFor(student.reg_no, phone.data),
+  };
 }
 
 /** Resolves a session token to the student it belongs to, or null. */
