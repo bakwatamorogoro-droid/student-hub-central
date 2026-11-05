@@ -1847,3 +1847,16 @@ and a cancelled prompt writes nothing. `biometric.test.ts` pins the binding rule
 `node --test` run has no `window`, which is exactly the no-sensor case, so the
 biometric functions must decline rather than throw.
 
+
+**The phone on file is the proof of identity.** Attendance and results both sign
+a student in with their Reg Namba plus the phone number the school holds, rather
+than a PIN. `loginStudentByPhone` mints the same session a PIN login would, and
+`verifyStudentByPhone` only compares the two details (no session, no device
+binding) because checking marks on a friend's phone should change nothing. Both
+return a `no_phone` reason when the roster row has no number, so the page can say
+"add a number under Akaunti" instead of a generic refusal.
+
+**The verification code is a receipt, not a secret.** `verificationCodeFor`
+hashes Reg Namba + phone and `deriveVerificationCode` maps the digest onto a
+vowel-free alphabet, so the code cannot spell a word and reads cleanly aloud. It
+proves the two details were accepted together; it guards nothing.
