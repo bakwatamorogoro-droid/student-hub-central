@@ -29,17 +29,26 @@ export function FilePreview({
   fileName,
   height = 420,
   onLoaded,
+  expand = false,
 }: {
   src: string;
   fileName?: string | null;
   height?: number;
   /** Fires once the PDF has actually rendered, so a preview gate can trust it. */
   onLoaded?: () => void;
+  /**
+   * Let the file take its full height instead of scrolling in its own box.
+   *
+   * Set this when the preview sits inside something that already scrolls (the
+   * admin's review dialog). Two nested scrollers make the wheel stop at the
+   * inner box's end while the reader is still partway down the document.
+   */
+  expand?: boolean;
 }) {
   const kind = previewKindFor(fileName, src);
 
   if (kind === "word") {
-    return <WordPreview src={src} fileName={fileName} height={height} />;
+    return <WordPreview src={src} fileName={fileName} height={height} expand={expand} />;
   }
 
   if (kind === "other") {
@@ -53,7 +62,9 @@ export function FilePreview({
     );
   }
 
-  return <PdfPreview src={src} fileName={fileName} height={height} onLoaded={onLoaded} />;
+  return (
+    <PdfPreview src={src} fileName={fileName} height={height} onLoaded={onLoaded} expand={expand} />
+  );
 }
 
 /**
@@ -69,11 +80,13 @@ function PdfPreview({
   fileName,
   height,
   onLoaded,
+  expand = false,
 }: {
   src: string;
   fileName?: string | null;
   height: number;
   onLoaded?: () => void;
+  expand?: boolean;
 }) {
   const loadedRef = useRef(onLoaded);
   loadedRef.current = onLoaded;
@@ -95,7 +108,7 @@ function PdfPreview({
         </a>
       </div>
       <div className="p-2">
-        <PdfDocumentView src={src} onLoaded={handleLoaded} height={height} />
+        <PdfDocumentView src={src} onLoaded={handleLoaded} height={height} expand={expand} />
       </div>
     </div>
   );
@@ -113,10 +126,12 @@ function WordPreview({
   src,
   fileName,
   height,
+  expand = false,
 }: {
   src: string;
   fileName?: string | null;
   height: number;
+  expand?: boolean;
 }) {
   const [html, setHtml] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
@@ -189,8 +204,8 @@ function WordPreview({
             <ZoomControls scale={scale} setScale={setScale} min={0.7} max={2.5} step={0.1} />
           </div>
           <div
-            className="word-preview overflow-auto px-4 py-3 leading-relaxed"
-            style={{ maxHeight: height, fontSize: `${scale}rem` }}
+            className={`word-preview px-4 py-3 leading-relaxed ${expand ? "" : "overflow-auto"}`}
+            style={expand ? { fontSize: `${scale}rem` } : { maxHeight: height, fontSize: `${scale}rem` }}
             // The HTML comes from the uploaded document and is stripped of
             // scripts, handlers and links by `sanitizeDocumentHtml` first.
             dangerouslySetInnerHTML={{ __html: html ?? "" }}

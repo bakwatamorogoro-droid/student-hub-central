@@ -37,11 +37,20 @@ export function AssignmentAnnotator({
   fileName,
   value,
   onChange,
+  expand = false,
 }: {
   src: string;
   fileName?: string | null;
   value: Annotation[];
   onChange: (next: Annotation[]) => void;
+  /**
+   * Let the work take its full height instead of scrolling in its own box.
+   *
+   * The admin's review dialog is already a scroll region. Without this, the
+   * document's own scroller swallows the wheel and stops at its end while the
+   * reader is still partway down the page.
+   */
+  expand?: boolean;
 }) {
   const [kind, setKind] = useState<AnnotationKind>("tick");
   const [page, setPage] = useState(1);
@@ -125,7 +134,7 @@ export function AssignmentAnnotator({
 
       {isWord ? (
         <>
-          <FilePreview src={src} fileName={fileName} />
+          <FilePreview src={src} fileName={fileName} expand={expand} />
           <Button
             type="button"
             size="sm"
@@ -144,6 +153,7 @@ export function AssignmentAnnotator({
           onPageChange={setPage}
           onPageClick={canPlace ? place : undefined}
           onLoaded={onLoaded}
+          expand={expand}
           overlay={(p) => (
             <AnnotationLayer
               items={annotationsForPage(value, p)}

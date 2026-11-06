@@ -26,6 +26,8 @@ export type PdfPageViewProps = {
   /** Drawn over the page, positioned with the same fractions. */
   overlay?: (page: number) => React.ReactNode;
   height?: number;
+  /** Grow to the page's full height instead of scrolling inside a fixed box. */
+  expand?: boolean;
 };
 
 type PdfDoc = { numPages: number; getPage: (n: number) => Promise<PdfPage> };
@@ -164,10 +166,20 @@ export function PdfDocumentView({
   src,
   onLoaded,
   height = 460,
+  expand = false,
 }: {
   src: string;
   onLoaded?: (pages: number) => void;
   height?: number;
+  /**
+   * Grow to the full document instead of scrolling inside a fixed box.
+   *
+   * Inside a dialog that already scrolls, a second scroller here is a trap: the
+   * wheel is captured by the inner box, which hits its own end while the reader
+   * is still only halfway down the page. `expand` removes the box so the
+   * dialog's body is the one and only scroll region.
+   */
+  expand?: boolean;
 }) {
   const { doc, pages, busy, error } = usePdfDocument(src, onLoaded);
   const [scale, setScale] = useState(1.1);
@@ -183,8 +195,10 @@ export function PdfDocumentView({
         <ZoomControls scale={scale} setScale={setScale} />
       </div>
       <div
-        className="relative overflow-auto rounded-xl border border-border bg-muted/30 p-2"
-        style={{ maxHeight: height }}
+        className={`relative rounded-xl border border-border bg-muted/30 p-2 ${
+          expand ? "" : "overflow-auto"
+        }`}
+        style={expand ? undefined : { maxHeight: height }}
       >
         <div className="mx-auto w-fit space-y-2">
           {doc &&
@@ -310,6 +324,7 @@ export function PdfPageView({
   onLoaded,
   overlay,
   height = 460,
+  expand = false,
 }: PdfPageViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const taskRef = useRef<{ cancel: () => void } | null>(null);
@@ -406,8 +421,10 @@ export function PdfPageView({
       </div>
 
       <div
-        className="relative overflow-auto rounded-xl border border-border bg-muted/30 p-2"
-        style={{ maxHeight: height }}
+        className={`relative rounded-xl border border-border bg-muted/30 p-2 ${
+          expand ? "" : "overflow-auto"
+        }`}
+        style={expand ? undefined : { maxHeight: height }}
       >
         <div
           className={`relative mx-auto w-fit ${onPageClick ? "cursor-crosshair" : ""}`}

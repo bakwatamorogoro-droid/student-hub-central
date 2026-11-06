@@ -1,18 +1,31 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
 import { Upload, FileText, CheckCircle2, Clock, Sparkles, AlertCircle, ArrowLeft, Pencil } from "lucide-react";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
+import { OpenAssignmentPicker } from "@/components/OpenAssignmentPicker";
 import { matchesAcademicTarget } from "@/lib/academicTargeting";
 import { storageGet, storageSet } from "@/lib/safe-storage";
 import { GROUP_SUBMISSION_STATUS } from "@/lib/groupAssignmentSubmission";
+import {
+  forIndividualPage,
+  openAssignmentsFromRows,
+  visibleForStudent,
+} from "@/lib/openAssignments";
+import {
+  assignmentKindLabel,
+  encodeSubmissionKind,
+  submissionKindFromText,
+  type AssignmentKind,
+} from "@/lib/assignmentKind";
 
 type Search = { a?: string };
 
@@ -37,11 +50,43 @@ function Page() {
   const [checking, setChecking] = useState(false);
   const [assignments, setAssignments] = useState<any[]>([]);
   const [active, setActive] = useState<any | null>(null);
+  /** The id chosen in the dropdown, before the work opens. */
+  const [pickedId, setPickedId] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [mySubs, setMySubs] = useState<any[]>([]);
 
-  const visibleAssignments = student ? assignments.filter((assignment) => matchesAcademicTarget(assignment, student)) : [];
+  const openAssignments = useMemo(() => openAssignmentsFromRows(assignments), [assignments]);
+
+  const visibleAssignments = student ? visibleForStudent(openAssignments, student) : [];
+  const visibleIndividual = useMemo(
+    () => forIndividualPage(visibleAssignments),
+    [visibleAssignments],
+  );
+
+  /** Which kind the student already sent for each assignment. */
+  const submittedKindById = useMemo(() => {
+    const out: Record<string, AssignmentKind | undefined> = {};
+    for (const s of mySubs) {
+      if (!s?.assignment_id) continue;
+      out[s.assignment_id] = submissionKindFromText(s.ai_extracted_text);
+    }
+    return out;
+  }, [mySubs]);
+
+  /**
+   * The kind to record for the work being opened.
+   *
+   * The definition's kind is the default, but a row already on file wins: if the
+   * admin changed the kind after the student sent the work, a re-save must not
+   * silently relabel the student's submission.
+   */
+  const activeKind: AssignmentKind = useMemo(() => {
+    if (!active) return "individual";
+    const stored = submittedKindById[active.id];
+    if (stored) return stored;
+    return openAssignments.find((a) => a.id === active.id)?.kind ?? "individual";
+  }, [active, submittedKindById, openAssignments]);
 
   useEffect(() => {
     supabase.from("exam_pdfs" as any).select("*").eq("is_assignment", true).eq("active", true).order("created_at", { ascending: false })
@@ -50,7 +95,7 @@ function Page() {
         setAssignments(list);
         if (aParam) {
           const found = list.find((x) => x.id === aParam);
-          if (found) setActive(found);
+          if (found) { setActive(found); setPickedId(found.id); }
         }
       });
     const saved = storageGet("student_reg");
@@ -116,6 +161,9 @@ function Page() {
       file_name: file.name,
       max_score: active.points || 100,
       status: "pending",
+      // The kind of the assignment this answers, so the admin's list can label it
+      // and a re-read after the fact agrees with what the student chose.
+      ai_extracted_text: encodeSubmissionKind(activeKind),
     }).select().single();
     if (error) { setUploading(false); toast.error(error.message); return; }
 
@@ -180,11 +228,14 @@ function Page() {
         ) : active ? (
           <Card className="border-2 border-primary/40">
             <CardHeader>
-              <button onClick={() => setActive(null)} className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1 mb-2">
+              <button onClick={() => { setActive(null); setPickedId(null); }} className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1 mb-2">
                 <ArrowLeft className="h-3 w-3" /> Rudi kwenye orodha
               </button>
               <CardTitle className="text-xl">{active.title}</CardTitle>
               <div className="flex items-center gap-2 text-xs flex-wrap mt-1">
+                <Badge variant="secondary" className="font-normal">
+                  {assignmentKindLabel(activeKind)}
+                </Badge>
                 <span className="px-2 py-0.5 rounded bg-primary/20 text-primary font-bold">{active.points} alama</span>
                 {active.due_at && (
                   <span className="inline-flex items-center gap-1 text-muted-foreground">
@@ -235,28 +286,46 @@ function Page() {
               </CardContent>
             </Card>
 
-            <h2 className="text-lg font-bold">Kazi za mwaka wako ({visibleAssignments.length})</h2>
-            {visibleAssignments.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">Hakuna kazi ya mwaka wako kwa sasa. Subiri mwalimu apandishe.</p>
-            ) : (
+            <h2 className="text-lg font-bold">
+              Kazi zilizo wazi ({visibleIndividual.length})
+            </h2>
+            <OpenAssignmentPicker
+              assignments={visibleIndividual}
+              value={pickedId}
+              onChange={(id) => {
+                const found = visibleIndividual.find((a) => a.id === id);
+                if (!found) return;
+                setPickedId(id);
+                setActive(found.row);
+              }}
+              submittedKindById={submittedKindById}
+              submittedLabel="Umeshatuma"
+              emptyLabel="Hakuna kazi ya mwaka wako kwa sasa. Subiri mwalimu afungue."
+            />
+            {visibleIndividual.length > 0 && (
               <div className="grid gap-3">
-                {visibleAssignments.map((a) => {
+                {visibleIndividual.map((a) => {
                   const done = mySubs.find((s) => s.assignment_id === a.id);
-                  const overdue = a.due_at && Date.now() > new Date(a.due_at).getTime();
+                  const overdue = a.dueAt && Date.now() > new Date(a.dueAt).getTime();
                   const canEdit = done && !done.teacher_confirmed;
                   return (
-                    <Card key={a.id} className="hover:shadow-lg transition cursor-pointer" onClick={() => (!done || canEdit) && setActive(a)}>
+                    <Card key={a.id} className="hover:shadow-lg transition cursor-pointer" onClick={() => (!done || canEdit) && (setActive(a.row), setPickedId(a.id))}>
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <div className="font-bold">{a.title}</div>
-                            {a.assignment_text && <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{a.assignment_text}</p>}
+                            <div className="font-bold flex items-center gap-2">
+                              {a.title}
+                              <Badge variant="secondary" className="font-normal">
+                                {assignmentKindLabel(submittedKindById[a.id] ?? a.kind)}
+                              </Badge>
+                            </div>
+                            {a.text && <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{a.text}</p>}
                             <div className="flex items-center gap-2 text-[11px] mt-1 flex-wrap">
                               <span className="px-1.5 py-0.5 rounded bg-primary/20 text-primary font-bold">{a.points} alama</span>
-                              {a.due_at && (
+                              {a.dueAt && (
                                 <span className={`inline-flex items-center gap-1 ${overdue ? "text-destructive font-bold" : "text-muted-foreground"}`}>
                                   {overdue ? <AlertCircle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
-                                  {new Date(a.due_at).toLocaleString("sw-TZ")}
+                                  {new Date(a.dueAt).toLocaleString("sw-TZ")}
                                 </span>
                               )}
                             </div>
@@ -280,7 +349,7 @@ function Page() {
                             ) : null}
                             {!done && <Button size="sm">Fanya</Button>}
                             {canEdit && (
-                              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setActive(a); }}>
+                              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setActive(a.row); setPickedId(a.id); }}>
                                 <Pencil className="h-3 w-3 mr-1" /> Hariri
                               </Button>
                             )}
