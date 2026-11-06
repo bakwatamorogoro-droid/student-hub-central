@@ -411,3 +411,21 @@
   color: var(--muted-foreground);
 }
 
+/*
+ * A dialog that fits the *visible* screen.
+ *
+ * `vh` on a phone measures the tallest the viewport ever gets — with the address
+ * bar hidden. A `max-h-[92vh]` box is therefore taller than the screen while the
+ * bar is showing, so its bottom edge (and the send button on it) sits below the
+ * fold and cannot be scrolled to. `dvh` tracks the bar as it comes and goes.
+ *
+ * `vh` is written first as the fallback for the browsers that never learned
+ * `dvh`; the newer ones take the second line. `svh` is the small viewport — the
+ * smallest it ever is, bar always showing — which is the safe height to *fit
+ * inside* rather than merely not exceed.
+ */
+.dialog-fit-viewport {
+  max-height: 92vh;
+  max-height: 92dvh;
+}
+

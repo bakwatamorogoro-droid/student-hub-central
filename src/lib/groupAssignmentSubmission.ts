@@ -23,6 +23,11 @@
 
 import { formatMark } from "./assignmentMarks.ts";
 import { parseAnnotations, type Annotation } from "./assignmentAnnotations.ts";
+import {
+  DEFAULT_ASSIGNMENT_KIND,
+  normalizeAssignmentKind,
+  type AssignmentKind,
+} from "./assignmentKind.ts";
 
 export const GROUP_SUBMISSION_STATUS = "group_submitted";
 
@@ -47,6 +52,17 @@ export type EnvelopePerson = { reg_no: string; full_name: string };
 /** The JSON stored in `pdf_submissions.ai_extracted_text` for a group row. */
 export type GroupEnvelope = {
   kind: "group_assignment";
+  /**
+   * Which of the three assignments this is: a presentation, a normal group
+   * assignment, or one person's own work.
+   *
+   * Named `assignment_kind` rather than `kind` because `kind` already holds the
+   * envelope's own discriminator, and a second `kind` would overwrite it.
+   * Absent on rows written before the three types existed, which is why reading
+   * it always goes through `normalizeAssignmentKind` and lands on
+   * `presentation_group`.
+   */
+  assignment_kind?: AssignmentKind;
   semina: string;
   gender: string;
   group: string;
@@ -154,6 +170,9 @@ export function parseEnvelope(raw: string | null | undefined): GroupEnvelope | n
     }
     // Optional fields are only added when the row actually carries them, so a
     // round-trip does not grow the object with `undefined` keys.
+    if (parsed.assignment_kind != null) {
+      env.assignment_kind = normalizeAssignmentKind(String(parsed.assignment_kind));
+    }
     if (parsed.submitted_by) env.submitted_by = parsed.submitted_by;
     if (parsed.answer != null) env.answer = String(parsed.answer);
     if (parsed.answer_signature != null) env.answer_signature = String(parsed.answer_signature);
@@ -298,6 +317,11 @@ export type GroupSubmission = {
   row: GroupSubmissionRow;
   key: GroupKey;
   label: string;
+  /**
+   * Which of the three assignments this is. Always a real value: a row written
+   * before the types existed normalises to `presentation_group`.
+   */
+  kind: AssignmentKind;
   presenters: string[];
   question: string;
   answer: string | null;
@@ -329,6 +353,7 @@ export function toGroupSubmission(row: GroupSubmissionRow): GroupSubmission {
     row,
     key,
     label: groupLabel(key),
+    kind: normalizeAssignmentKind(env?.assignment_kind ?? DEFAULT_ASSIGNMENT_KIND),
     presenters: env?.presenters ?? [],
     question: env?.question ?? "",
     answer: env?.answer ?? (row.feedback ? String(row.feedback) : null),

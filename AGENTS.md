@@ -1860,3 +1860,31 @@ return a `no_phone` reason when the roster row has no number, so the page can sa
 hashes Reg Namba + phone and `deriveVerificationCode` maps the digest onto a
 vowel-free alphabet, so the code cannot spell a word and reads cleanly aloud. It
 proves the two details were accepted together; it guards nothing.
+
+**An assignment has exactly three kinds.** `assignmentKind.ts` is the single
+source: `presentation_group` (the default, because every row that predates the
+kinds is a presentation), `normal_group`, and `individual`. The owner was explicit
+that a fourth must not appear, so the list is frozen and `ASSIGNMENT_KINDS` is the
+only place to change it. A group submission records its kind in the
+`GroupEnvelope.assignment_kind` key; an individual submission records it as a tiny
+JSON object in `pdf_submissions.ai_extracted_text`, the one free text column it
+does not otherwise use. An assignment *definition* stores its kind in
+`exam_pdfs.uploaded_by`, which held the constant "admin" and had no readers.
+
+**The submission's kind wins over the definition's.** Both readers
+(`assignmentKindFromUploadedBy`, `submissionKindFromText`) fall back to the default
+rather than throwing, so an old row and a damaged value both read as a presentation
+and nothing on screen ever breaks. When the two disagree — the admin changed the
+kind after the student sent work — the stored submission is the fact and the label
+follows it.
+
+**The project cannot run DDL.** Every Supabase SQL RPC (`exec_sql`, `run_sql`,
+`execute_sql`, `sql`, `query`) returns 404 on the live project, so a new column
+cannot be added. New per-row data must reuse a column that is present and unused,
+as `uploaded_by` and `ai_extracted_text` do above. Confirm a column is unused in
+both `src/` and `supabase/functions/` before taking it.
+
+**A dialog holds one scroll region.** `dialog-fit-viewport` caps a `DialogContent`
+at `92dvh` (with a `vh` fallback), and the body is `flex min-h-0 flex-1
+overflow-y-auto` under a `shrink-0` header. Nested scrollers trap the wheel and a
+bare `vh` hides the footer behind the browser's own bars on a phone.

@@ -29,6 +29,14 @@ import {
 import { ACADEMIC_YEARS, STUDY_YEARS, SEMESTERS, isSemesterActive } from "@/lib/academicTargeting";
 import { isMissingColumnError } from "@/lib/studentProfile";
 import { GROUP_SUBMISSION_STATUS } from "@/lib/groupAssignmentSubmission";
+import { AssignmentKindSelect } from "@/components/AssignmentKindSelect";
+import {
+  DEFAULT_ASSIGNMENT_KIND,
+  assignmentKindFromUploadedBy,
+  assignmentKindLabel,
+  encodeAssignmentKind,
+  type AssignmentKind,
+} from "@/lib/assignmentKind";
 
 export const Route = createFileRoute("/admin/pdf")({ component: Page });
 
@@ -66,6 +74,8 @@ function Page() {
   const [targetSemester, setTargetSemester] = useState("all");
   /** "assignment" = kazi ya nyumbani, "semester" = swali la mtihani (PDF). */
   const [paperKind, setPaperKind] = useState<"assignment" | "semester">("assignment");
+  /** Which of the three kinds the open assignment is. */
+  const [assignmentKind, setAssignmentKind] = useState<AssignmentKind>("presentation_group");
 
   const isAssignment = paperKind === "assignment";
 
@@ -200,7 +210,9 @@ function Page() {
       title: pdfTitle,
       file_url: fileUrl,
       file_name: fileName,
-      uploaded_by: "admin",
+      // The kind of assignment rides here: the live project cannot add a column
+      // to `exam_pdfs`, and this one had a constant "admin" and no readers.
+      uploaded_by: encodeAssignmentKind(assignmentKind),
       is_assignment: isAssignment,
       active: true,
       target_study_year: targetStudyYear === "all" ? null : Number(targetStudyYear),
@@ -236,6 +248,7 @@ function Page() {
     setTargetStudyYear("all");
     setTargetAcademicYear("all");
     setTargetSemester("all");
+    setAssignmentKind(DEFAULT_ASSIGNMENT_KIND);
     load();
   };
 
@@ -307,6 +320,15 @@ function Page() {
           </div>
           {isAssignment && (
             <>
+              <div>
+                <Label htmlFor="assignment-kind">Aina ya Kazi</Label>
+                <AssignmentKindSelect
+                  id="assignment-kind"
+                  value={assignmentKind}
+                  onChange={setAssignmentKind}
+                  className="mt-1"
+                />
+              </div>
               <div>
                 <Label>Swali / Maelekezo</Label>
                 <Textarea
@@ -424,6 +446,11 @@ function Page() {
                         {p.target_semester ? ` • ${p.target_semester}` : ""} •{" "}
                         {p.target_academic_year || "yote"}]
                       </span>
+                      {p.is_assignment && (
+                        <span className="ml-1 text-[10px] font-bold text-violet-700 dark:text-violet-300">
+                          {assignmentKindLabel(assignmentKindFromUploadedBy(p.uploaded_by))}
+                        </span>
+                      )}
                     </span>
 
                     <div className="flex items-center gap-1 shrink-0">
@@ -569,14 +596,14 @@ function Page() {
       </Card>
 
       <Dialog open={!!grading} onOpenChange={(o) => !o && setGrading(null)}>
-        <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="dialog-fit-viewport flex max-w-3xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b border-border px-6 py-4">
             <DialogTitle>Sahihisha — {grading?.full_name}</DialogTitle>
           </DialogHeader>
           {grading && (
-            <div className="space-y-3">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4">
               {grading.file_url ? (
-                <FilePreview src={grading.file_url} fileName={grading.file_name} height={360} />
+                <FilePreview src={grading.file_url} fileName={grading.file_name} height={360} expand />
               ) : (
                 <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
                   Kazi hii haikuwa na faili.

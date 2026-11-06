@@ -46,6 +46,9 @@ import {
   type GroupSubmissionRow,
 } from "@/lib/groupAssignmentSubmission";
 import { gradeLabel, markPercent } from "@/lib/assignmentMarks";
+import { OpenAssignmentPicker } from "@/components/OpenAssignmentPicker";
+import { forGroupPage, loadOpenAssignments, type OpenAssignment } from "@/lib/openAssignments";
+import { DEFAULT_ASSIGNMENT_KIND, assignmentKindLabel, type AssignmentKind } from "@/lib/assignmentKind";
 import {
   AlertCircle,
   ArrowLeft,
@@ -100,9 +103,47 @@ function Page() {
   const [step, setStep] = useState(0);
   /** Every group submission, so a person's one turn can be checked. */
   const [turnRows, setTurnRows] = useState<GroupSubmissionRow[]>([]);
+  /** The assignments the admin has opened, and which one is chosen. */
+  const [openAssignments, setOpenAssignments] = useState<OpenAssignment[]>([]);
+  const [assignmentId, setAssignmentId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const members = useGroupMembers(roster, confirmedKey);
+
+  /**
+   * The group assignments the admin has opened, for the student to choose from.
+   *
+   * Only the group kinds are offered here; an individual assignment belongs on
+   * `/pdf-quiz`, and showing it here would invite a group to submit for one
+   * person's work.
+   */
+  useEffect(() => {
+    let live = true;
+    loadOpenAssignments()
+      .then((rows) => {
+        if (live) setOpenAssignments(forGroupPage(rows));
+      })
+      .catch(() => {
+        if (live) setOpenAssignments([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const chosenAssignment = useMemo(
+    () => openAssignments.find((a) => a.id === assignmentId) ?? null,
+    [openAssignments, assignmentId],
+  );
+
+  /**
+   * The kind that will be recorded.
+   *
+   * Read from the chosen assignment, and the default when none is chosen (or the
+   * admin has not opened any yet) so a submission is never written without a
+   * kind.
+   */
+  const assignmentKind: AssignmentKind = chosenAssignment?.kind ?? DEFAULT_ASSIGNMENT_KIND;
 
   /**
    * The student's own group, read from their registration.
@@ -317,6 +358,7 @@ function Page() {
       res = await submitGroupAssignment({
         key: confirmedKey,
         question,
+        kind: assignmentKind,
         presenters,
         presenterRegs: members
           .filter((m) => selected.has(m.id))
@@ -443,6 +485,30 @@ function Page() {
               <SentCard row={existing} onChangeGroup={changeGroup} />
             ) : (
               <>
+                <Card className="border-primary/25">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+                      <FileText className="h-4 w-4 text-primary" /> Aina ya Kazi
+                      <Badge variant="secondary" className="font-normal">
+                        {assignmentKindLabel(assignmentKind)}
+                      </Badge>
+                    </CardTitle>
+                    <p className="text-xs text-muted-foreground">
+                      Chagua kazi iliyofunguliwa na mwalimu. Aina ya kazi inaonekana kwa mwalimu
+                      pamoja na kazi yenu.
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <OpenAssignmentPicker
+                      assignments={openAssignments}
+                      value={assignmentId}
+                      onChange={setAssignmentId}
+                      submittedLabel="Umeshatuma"
+                      emptyLabel="Mwalimu hajafungua kazi ya group bado — unaweza kutuma, na itahesabiwa kama Presentation Assignment (Group)."
+                    />
+                  </CardContent>
+                </Card>
+
                 <WizardProgress
                   steps={wizardSteps}
                   current={step}
@@ -671,6 +737,9 @@ function SentCard({ row, onChangeGroup }: { row: GroupSubmissionRow; onChangeGro
       <CardContent className="space-y-3 text-sm">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary">{groupLabel(sub.key)}</Badge>
+          <Badge variant="secondary" className="font-normal">
+            {assignmentKindLabel(sub.kind)}
+          </Badge>
           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
             <Clock className="h-3 w-3" /> {submittedMessage(sub.submittedAt)}
           </span>

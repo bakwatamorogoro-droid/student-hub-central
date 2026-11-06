@@ -16,6 +16,7 @@ import {
   type GroupSubmissionRow,
 } from "@/lib/groupAssignmentSubmission";
 import { canonicalRegNo } from "@/lib/regNo";
+import type { AssignmentKind } from "@/lib/assignmentKind";
 
 /**
  * The Supabase half of the group assignment feature.
@@ -95,6 +96,14 @@ function safeFileName(name: string): string {
 export type SubmitGroupInput = {
   key: GroupKey;
   question: string;
+  /**
+   * Which of the three kinds this work is.
+   *
+   * The student picks the open assignment and its kind travels with the
+   * submission, so the admin's list can label the work without re-reading the
+   * definition (which the admin may since have changed).
+   */
+  kind: AssignmentKind;
   /** Names of the members who presented, as shown on screen. */
   presenters: string[];
   /** The registration numbers behind `presenters`, in the same order. */
@@ -144,6 +153,10 @@ export async function submitGroupAssignment(input: SubmitGroupInput): Promise<Su
     group: input.key.group,
     presenters: input.presenters,
     question: input.question,
+    // Recorded with the work, not read from the definition later: the admin may
+    // change an assignment's kind, and the submission is what the student
+    // actually did.
+    assignment_kind: input.kind,
   };
   if (input.presenterRegs?.length) envelope.presenter_regs = input.presenterRegs;
   if (input.submittedBy) envelope.submitted_by = input.submittedBy;

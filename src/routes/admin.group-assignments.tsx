@@ -13,6 +13,7 @@ import { AssignmentAnnotator, AnnotationTally } from "@/components/AssignmentAnn
 import { toast } from "@/lib/toast";
 import { confirmAction } from "@/lib/alerts";
 import { annotationSummary, type Annotation } from "@/lib/assignmentAnnotations";
+import { assignmentKindLabel } from "@/lib/assignmentKind";
 import {
   DEFAULT_MARK_MAX,
   allMarksRows,
@@ -615,7 +616,10 @@ function SubmissionCard({
         <CardTitle className="flex items-start justify-between gap-2 text-base">
           <span className="min-w-0">
             <span className="block truncate font-bold">{sub.label}</span>
-            <span className="mt-0.5 flex items-center gap-1 text-[11px] font-normal text-muted-foreground">
+            <span className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] font-normal text-muted-foreground">
+              <Badge variant="secondary" className="font-normal">
+                {assignmentKindLabel(sub.kind)}
+              </Badge>
               <Clock className="h-3 w-3" /> {submittedMessage(sub.submittedAt)}
             </span>
           </span>
@@ -817,43 +821,56 @@ function ReviewDialog({
 
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <FileText className="h-4 w-4 text-primary" /> {sub.label}
+      <DialogContent className="dialog-fit-viewport flex max-w-4xl flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 border-b border-border px-6 py-4">
+          <DialogTitle className="flex flex-wrap items-center gap-2 pr-8">
+            <FileText className="h-4 w-4 shrink-0 text-primary" /> {sub.label}
+            <Badge variant="secondary" className="font-normal">
+              {assignmentKindLabel(sub.kind)}
+            </Badge>
           </DialogTitle>
         </DialogHeader>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-3">
-            <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm">
-              <div className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                Swali lao
+        {/* The one scroll region. A fixed header plus a single body is what makes
+            the whole work reachable: with the body itself scrolling, the wheel
+            never gets trapped in a nested box and the bottom controls stay in
+            reach on a phone, where `vh` includes the browser's own bars. */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-3">
+              <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm">
+                <div className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                  Aina ya Kazi
+                </div>
+                <p className="mt-0.5 font-semibold">{assignmentKindLabel(sub.kind)}</p>
+                <div className="mt-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                  Swali lao
+                </div>
+                <p className="mt-0.5 whitespace-pre-wrap">{sub.question || "—"}</p>
+                <div className="mt-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                  Mliopresent
+                </div>
+                <p className="mt-0.5">{sub.presenters.length ? sub.presenters.join(", ") : "—"}</p>
+                <div className="mt-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                  Ilitumwa
+                </div>
+                <p className="mt-0.5">{submittedMessage(sub.submittedAt)}</p>
               </div>
-              <p className="mt-0.5 whitespace-pre-wrap">{sub.question || "—"}</p>
-              <div className="mt-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                Mliopresent
-              </div>
-              <p className="mt-0.5">{sub.presenters.length ? sub.presenters.join(", ") : "—"}</p>
-              <div className="mt-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                Ilitumwa
-              </div>
-              <p className="mt-0.5">{submittedMessage(sub.submittedAt)}</p>
-            </div>
 
-            {sub.row.file_url ? (
-              <AssignmentAnnotator
-                src={sub.row.file_url}
-                fileName={sub.row.file_name}
-                value={annotations}
-                onChange={setAnnotations}
-              />
-            ) : (
-              <p className="rounded-xl border border-dashed border-border p-4 text-xs text-muted-foreground">
-                Group hili halikuambatanisha faili.
-              </p>
-            )}
-          </div>
+              {sub.row.file_url ? (
+                <AssignmentAnnotator
+                  src={sub.row.file_url}
+                  fileName={sub.row.file_name}
+                  value={annotations}
+                  onChange={setAnnotations}
+                  expand
+                />
+              ) : (
+                <p className="rounded-xl border border-dashed border-border p-4 text-xs text-muted-foreground">
+                  Group hili halikuambatanisha faili.
+                </p>
+              )}
+            </div>
 
           <div className="space-y-3">
             <div>
@@ -948,6 +965,7 @@ function ReviewDialog({
               <PenLine className="h-3 w-3" /> Sahihi na alama zinaonekana kwa group pamoja na jibu
               lako.
             </p>
+          </div>
           </div>
         </div>
       </DialogContent>
