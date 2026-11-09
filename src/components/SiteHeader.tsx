@@ -11,6 +11,7 @@ import {
   CalendarCheck,
   Newspaper,
   Users,
+  GraduationCap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
@@ -54,6 +55,11 @@ export function SiteHeader() {
           <nav className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-2xl border border-primary/10 bg-background/60 p-1 text-sm shadow-inner backdrop-blur [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {[
               { to: "/", label: t("home"), icon: <Home className="h-3.5 w-3.5" /> },
+              {
+                to: "/elessons",
+                label: t("nav_elearning"),
+                icon: <GraduationCap className="h-3.5 w-3.5" />,
+              },
               { to: "/register", label: t("register") },
               { to: "/exams", label: t("nav_exams") },
               { to: "/quiz", label: t("nav_quiz") },

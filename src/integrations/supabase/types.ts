@@ -194,6 +194,63 @@ export type Database = {
         };
         Relationships: [];
       };
+      elessons: {
+        Row: {
+          active: boolean;
+          category: string;
+          created_at: string;
+          description: string | null;
+          description_en: string | null;
+          embed_url: string;
+          id: string;
+          provider: string;
+          quiz: Json;
+          source_meta: Json | null;
+          thumbnail_url: string | null;
+          title: string;
+          title_en: string | null;
+          updated_at: string;
+          url: string;
+          video_id: string | null;
+        };
+        Insert: {
+          active?: boolean;
+          category?: string;
+          created_at?: string;
+          description?: string | null;
+          description_en?: string | null;
+          embed_url: string;
+          id?: string;
+          provider: string;
+          quiz?: Json;
+          source_meta?: Json | null;
+          thumbnail_url?: string | null;
+          title: string;
+          title_en?: string | null;
+          updated_at?: string;
+          url: string;
+          video_id?: string | null;
+        };
+        Update: {
+          active?: boolean;
+          category?: string;
+          created_at?: string;
+          description?: string | null;
+          description_en?: string | null;
+          embed_url?: string;
+          id?: string;
+          provider?: string;
+          quiz?: Json;
+          source_meta?: Json | null;
+          thumbnail_url?: string | null;
+          title?: string;
+          title_en?: string | null;
+          updated_at?: string;
+          url?: string;
+          video_id?: string | null;
+        };
+        Relationships: [];
+      };
       exam_pdfs: {
         Row: {
           active: boolean;

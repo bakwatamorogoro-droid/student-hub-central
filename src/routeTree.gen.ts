@@ -14,6 +14,7 @@ import { Route as AccountRouteImport } from './routes/account'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AttendanceRouteImport } from './routes/attendance'
 import { Route as CrRouteImport } from './routes/cr'
+import { Route as ElessonsRouteImport } from './routes/elessons'
 import { Route as ExamsRouteImport } from './routes/exams'
 import { Route as NewsRouteImport } from './routes/news'
 import { Route as PdfQuizRouteImport } from './routes/pdf-quiz'
@@ -25,6 +26,7 @@ import { Route as StudentRouteImport } from './routes/student'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminAttendanceRouteImport } from './routes/admin.attendance'
 import { Route as AdminDuplicatesRouteImport } from './routes/admin.duplicates'
+import { Route as AdminElessonsRouteImport } from './routes/admin.elessons'
 import { Route as AdminExamsRouteImport } from './routes/admin.exams'
 import { Route as AdminGroupAssignmentsRouteImport } from './routes/admin.group-assignments'
 import { Route as AdminGroupsRouteImport } from './routes/admin.groups'
@@ -60,6 +62,11 @@ const AttendanceRoute = AttendanceRouteImport.update({
 const CrRoute = CrRouteImport.update({
   id: '/cr',
   path: '/cr',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ElessonsRoute = ElessonsRouteImport.update({
+  id: '/elessons',
+  path: '/elessons',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ExamsRoute = ExamsRouteImport.update({
@@ -115,6 +122,11 @@ const AdminAttendanceRoute = AdminAttendanceRouteImport.update({
 const AdminDuplicatesRoute = AdminDuplicatesRouteImport.update({
   id: '/duplicates',
   path: '/duplicates',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminElessonsRoute = AdminElessonsRouteImport.update({
+  id: '/elessons',
+  path: '/elessons',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminExamsRoute = AdminExamsRouteImport.update({
@@ -179,6 +191,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/attendance': typeof AttendanceRoute
   '/cr': typeof CrRoute
+  '/elessons': typeof ElessonsRoute
   '/exams': typeof ExamsRoute
   '/news': typeof NewsRoute
   '/pdf-quiz': typeof PdfQuizRoute
@@ -189,6 +202,7 @@ export interface FileRoutesByFullPath {
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/duplicates': typeof AdminDuplicatesRoute
+  '/admin/elessons': typeof AdminElessonsRoute
   '/admin/exams': typeof AdminExamsRoute
   '/admin/group-assignments': typeof AdminGroupAssignmentsRoute
   '/admin/groups': typeof AdminGroupsRoute
@@ -207,6 +221,7 @@ export interface FileRoutesByTo {
   '/account': typeof AccountRoute
   '/attendance': typeof AttendanceRoute
   '/cr': typeof CrRoute
+  '/elessons': typeof ElessonsRoute
   '/exams': typeof ExamsRoute
   '/news': typeof NewsRoute
   '/pdf-quiz': typeof PdfQuizRoute
@@ -217,6 +232,7 @@ export interface FileRoutesByTo {
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/duplicates': typeof AdminDuplicatesRoute
+  '/admin/elessons': typeof AdminElessonsRoute
   '/admin/exams': typeof AdminExamsRoute
   '/admin/group-assignments': typeof AdminGroupAssignmentsRoute
   '/admin/groups': typeof AdminGroupsRoute
@@ -237,6 +253,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/attendance': typeof AttendanceRoute
   '/cr': typeof CrRoute
+  '/elessons': typeof ElessonsRoute
   '/exams': typeof ExamsRoute
   '/news': typeof NewsRoute
   '/pdf-quiz': typeof PdfQuizRoute
@@ -247,6 +264,7 @@ export interface FileRoutesById {
   '/student': typeof StudentRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/duplicates': typeof AdminDuplicatesRoute
+  '/admin/elessons': typeof AdminElessonsRoute
   '/admin/exams': typeof AdminExamsRoute
   '/admin/group-assignments': typeof AdminGroupAssignmentsRoute
   '/admin/groups': typeof AdminGroupsRoute
@@ -268,6 +286,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/attendance'
     | '/cr'
+    | '/elessons'
     | '/exams'
     | '/news'
     | '/pdf-quiz'
@@ -278,6 +297,7 @@ export interface FileRouteTypes {
     | '/student'
     | '/admin/attendance'
     | '/admin/duplicates'
+    | '/admin/elessons'
     | '/admin/exams'
     | '/admin/group-assignments'
     | '/admin/groups'
@@ -296,6 +316,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/attendance'
     | '/cr'
+    | '/elessons'
     | '/exams'
     | '/news'
     | '/pdf-quiz'
@@ -306,6 +327,7 @@ export interface FileRouteTypes {
     | '/student'
     | '/admin/attendance'
     | '/admin/duplicates'
+    | '/admin/elessons'
     | '/admin/exams'
     | '/admin/group-assignments'
     | '/admin/groups'
@@ -325,6 +347,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/attendance'
     | '/cr'
+    | '/elessons'
     | '/exams'
     | '/news'
     | '/pdf-quiz'
@@ -335,6 +358,7 @@ export interface FileRouteTypes {
     | '/student'
     | '/admin/attendance'
     | '/admin/duplicates'
+    | '/admin/elessons'
     | '/admin/exams'
     | '/admin/group-assignments'
     | '/admin/groups'
@@ -355,6 +379,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   AttendanceRoute: typeof AttendanceRoute
   CrRoute: typeof CrRoute
+  ElessonsRoute: typeof ElessonsRoute
   ExamsRoute: typeof ExamsRoute
   NewsRoute: typeof NewsRoute
   PdfQuizRoute: typeof PdfQuizRoute
@@ -402,6 +427,13 @@ declare module '@tanstack/react-router' {
       path: '/cr'
       fullPath: '/cr'
       preLoaderRoute: typeof CrRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/elessons': {
+      id: '/elessons'
+      path: '/elessons'
+      fullPath: '/elessons'
+      preLoaderRoute: typeof ElessonsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/exams': {
@@ -479,6 +511,13 @@ declare module '@tanstack/react-router' {
       path: '/duplicates'
       fullPath: '/admin/duplicates'
       preLoaderRoute: typeof AdminDuplicatesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/elessons': {
+      id: '/admin/elessons'
+      path: '/elessons'
+      fullPath: '/admin/elessons'
+      preLoaderRoute: typeof AdminElessonsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/exams': {
@@ -564,6 +603,7 @@ declare module '@tanstack/react-router' {
 interface AdminRouteChildren {
   AdminAttendanceRoute: typeof AdminAttendanceRoute
   AdminDuplicatesRoute: typeof AdminDuplicatesRoute
+  AdminElessonsRoute: typeof AdminElessonsRoute
   AdminExamsRoute: typeof AdminExamsRoute
   AdminGroupAssignmentsRoute: typeof AdminGroupAssignmentsRoute
   AdminGroupsRoute: typeof AdminGroupsRoute
@@ -579,6 +619,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAttendanceRoute: AdminAttendanceRoute,
   AdminDuplicatesRoute: AdminDuplicatesRoute,
+  AdminElessonsRoute: AdminElessonsRoute,
   AdminExamsRoute: AdminExamsRoute,
   AdminGroupAssignmentsRoute: AdminGroupAssignmentsRoute,
   AdminGroupsRoute: AdminGroupsRoute,
@@ -599,6 +640,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   AttendanceRoute: AttendanceRoute,
   CrRoute: CrRoute,
+  ElessonsRoute: ElessonsRoute,
   ExamsRoute: ExamsRoute,
   NewsRoute: NewsRoute,
   PdfQuizRoute: PdfQuizRoute,
