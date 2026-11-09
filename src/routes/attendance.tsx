@@ -89,12 +89,13 @@ function Page() {
       <SiteHeader />
       <main className="container mx-auto max-w-4xl space-y-5 px-4 py-8">
         <div className="relative overflow-hidden rounded-3xl border-2 border-primary/25 bg-gradient-to-br from-primary/12 via-card to-secondary/15 p-6 text-center shadow-lg">
-          <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-primary/15 blur-3xl" />
+          <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-primary/20 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-24 -left-20 h-56 w-56 rounded-full bg-secondary/20 blur-3xl" />
           <div className="relative">
-            <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-primary">
+            <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/12 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-primary shadow-[var(--shadow-edge)]">
               <CalendarCheck className="h-3 w-3" /> {t("att_title")}
             </div>
-            <h1 className="mt-3 bg-gradient-to-r from-primary to-secondary bg-clip-text text-3xl font-black tracking-tight text-transparent md:text-4xl">
+            <h1 className="mt-3 bg-gradient-to-r from-primary to-secondary bg-clip-text text-display font-black text-transparent">
               {t("att_one_tap")}
             </h1>
             <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">{t("att_sub")}</p>
@@ -143,7 +144,7 @@ function Page() {
 
         {!loading && token && <FridayLectureCard onCheckedIn={reload} />}
 
-          {!loading && token && open.length > 0 && (
+        {!loading && token && open.length > 0 && (
           <Card className="border-teal-500/40 bg-gradient-to-br from-teal-500/10 to-transparent">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-base">
@@ -159,8 +160,8 @@ function Page() {
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold">{s.title}</div>
                     <div className="text-[11px] text-muted-foreground">
-                        {s.kind === "lecture" ? "Wanafunzi wote" : s.semina || "—"}
-                      </div>
+                      {s.kind === "lecture" ? "Wanafunzi wote" : s.semina || "—"}
+                    </div>
                   </div>
                   <Badge className="shrink-0 bg-teal-600 text-[10px] uppercase">Live</Badge>
                 </div>

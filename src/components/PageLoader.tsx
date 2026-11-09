@@ -9,7 +9,9 @@ const PHRASES = [
 ];
 
 export function PageLoader() {
-  const isLoading = useRouterState({ select: (s) => s.isLoading || (s as { isTransitioning?: boolean }).isTransitioning });
+  const isLoading = useRouterState({
+    select: (s) => s.isLoading || (s as { isTransitioning?: boolean }).isTransitioning,
+  });
   const [show, setShow] = useState(false);
   const [phrase, setPhrase] = useState(PHRASES[0]);
 
@@ -40,7 +42,7 @@ export function PageLoader() {
       }`}
       style={{
         background:
-          "radial-gradient(ellipse at top, color-mix(in oklab, var(--primary) 25%, transparent), transparent 60%), radial-gradient(ellipse at bottom, color-mix(in oklab, var(--secondary) 30%, transparent), transparent 60%), color-mix(in oklab, var(--background) 92%, transparent)",
+          "radial-gradient(ellipse at top, rgb(var(--wash-1) / 0.25), transparent 60%), radial-gradient(ellipse at bottom, rgb(var(--wash-2) / 0.3), transparent 60%), rgb(var(--loader-tint) / 0.92)",
         backdropFilter: "blur(14px)",
         WebkitBackdropFilter: "blur(14px)",
       }}
@@ -51,7 +53,10 @@ export function PageLoader() {
         <div className="absolute bottom-1/4 right-1/5 w-72 h-72 rounded-full bg-secondary/30 blur-3xl animate-pulse [animation-duration:4s] [animation-delay:0.6s]" />
       </div>
 
-      <div className="relative flex flex-col items-center gap-7 animate-fade-in" style={{ perspective: "800px" }}>
+      <div
+        className="relative flex flex-col items-center gap-7 animate-fade-in"
+        style={{ perspective: "800px" }}
+      >
         {/* 3D rotating cube */}
         <div
           className="relative"
@@ -72,7 +77,7 @@ export function PageLoader() {
           ].map((f, i) => (
             <div
               key={i}
-              className={`absolute inset-0 rounded-xl bg-gradient-to-br ${f.g} border border-white/20 shadow-[0_0_40px_color-mix(in_oklab,var(--primary)_40%,transparent)]`}
+              className={`absolute inset-0 rounded-xl bg-gradient-to-br ${f.g} border border-white/20 shadow-[0_0_40px_rgb(var(--shadow-brand)/0.4)]`}
               style={{ transform: f.t, opacity: 0.85 }}
             />
           ))}
@@ -84,7 +89,7 @@ export function PageLoader() {
             className="text-2xl md:text-3xl font-extrabold tracking-wide bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent"
             style={{
               textShadow:
-                "0 1px 0 color-mix(in oklab, var(--primary) 30%, transparent), 0 2px 0 color-mix(in oklab, var(--primary) 22%, transparent), 0 4px 12px color-mix(in oklab, var(--secondary) 40%, transparent)",
+                "0 1px 0 rgb(var(--shadow-brand) / 0.3), 0 2px 0 rgb(var(--shadow-brand) / 0.22), 0 4px 12px rgb(var(--wash-2) / 0.4)",
               animation: "pl-float 2.4s ease-in-out infinite",
             }}
           >
