@@ -1585,6 +1585,46 @@ but the JS target is `es2020` (Chrome 87 / Safari 14) because
 than `es2020` needs an API polyfill, not a syntax downlevel, so do not lower
 `build.target` without adding one.
 
+### `color-mix()` with a `var()` argument downlevels to the bare variable
+
+The downlevel above only produces a sane fallback when the colour is a literal.
+When the argument is a custom property, lightningcss cannot resolve it and emits
+the variable **alone**, dropping the mix and its alpha:
+
+```
+/* source */
+--shadow-soft: 0 1px 2px -1px color-mix(in oklch, var(--foreground) 14%, transparent);
+/* what an old browser gets */
+--shadow-soft: 0 1px 2px -1px var(--foreground);
+```
+
+So a shadow written that way is fully opaque — a hard dark rectangle under every
+card — on exactly the older Android and iOS devices most students use. New
+browsers are fine, because they take the `color-mix()` from the `@supports`
+block, which is why this is easy to miss on a desktop browser.
+
+The same rewrite happens to Tailwind's own opacity utilities (`bg-card/70` ships
+`background-color: var(--card)` first), but there the solid value is at least the
+intended colour, so it only loses the translucency. A shadow has no such excuse.
+
+Fix: keep the colour's channels in a token and put the alpha in the shadow, e.g.
+`--shadow-tint: 0 29 47` and `0 1px 2px -1px rgb(var(--shadow-tint) / 0.16)`.
+`rgb()` with a `/ <alpha>` is understood by every target browser, so there is
+nothing to downlevel and the alpha always survives. `--shadow-tint`,
+`--shadow-brand`, `--wash-1`, `--wash-2`, `--grid-tint`, `--glass-tint`,
+`--loader-tint` and `--inset-tint` in `styles.css` are these channel triplets;
+they are derived from the palette, not new colours.
+
+Two related traps:
+
+- In dark mode a shadow tint must not come from `--foreground`, which is
+  near-white there and renders as a pale halo. Use the dark background hue pushed
+  down in lightness (`--shadow-tint: 0 4 10`).
+- `color-mix()` in a React `style={{}}` is never processed by the build at all,
+  so an old browser drops the whole declaration rather than a value in it. The
+  loader backdrop in `PageLoader.tsx` used `color-mix()` that way and lost its
+  entire background; it uses the channel tokens now.
+
 Three other things that were fixed at the same time, all worth keeping:
 
 - Do not add `background-attachment: fixed`. It forces a viewport repaint on every
@@ -1936,4 +1976,34 @@ host after every hop, and refuses a landing that is a login page or that has no
 video path. It never returns a response body, so it cannot be used as an open
 proxy. A failed hop is not fatal: the admin sees a message telling them to paste
 the link from the video's address bar, which always works.
+
+## The visual layer: polish, and the rule against new colours
+
+`styles.css` is the only place the design system lives. `@theme inline` maps
+custom properties to Tailwind utilities, `:root` and `.dark` hold the colour
+values, and `@layer base` / `@layer components` hold the rest. The palette was
+chosen deliberately (sea blue + green, no black, no yellow) and is **not** a
+free variable: visual work means radius, shadows, easing, type scale, spacing,
+texture, and motion — not hue.
+
+Concretely, do not change a value in `:root` or `.dark`, and do not swap a solid
+fill for a tinted one to make something look softer. Two edits were made and
+reverted for exactly this reason: pill-shaped badges with a translucent fill,
+and a tooltip with a tinted background. Both are still pills/solids, and the
+shape and shadow do the work instead.
+
+The tokens worth reusing, rather than writing new arbitrary values:
+
+- Radius: `--radius-sm` through `--radius-4xl`, derived from `--radius`.
+- Shadow: `--shadow-soft` (resting card), `--shadow-float` (lifted, brand hue),
+  `--shadow-lift` (hover), `--shadow-edge` (top hairline that catches light),
+  `--shadow-inset` (recessed field). Compose them, e.g.
+  `shadow-[var(--shadow-soft),var(--shadow-edge)]`.
+- Easing: `--ease-out-quint` for entrances and presses.
+- Utilities: `.page-shell`, `.surface-raised`, `.text-display`, `.grain-layer`,
+  `.skeleton-shimmer`, `.sheen-on-hover`, `.pulse-ring`, `.stagger-grid`.
+
+The `--shadow-*` tokens are built from channel triplets for the reason in the
+section above; if you add one, follow that pattern instead of reaching for
+`color-mix()`.
 
