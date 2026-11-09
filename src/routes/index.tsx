@@ -12,6 +12,8 @@ import {
   Eye,
   ArrowRight,
   CalendarCheck,
+  GraduationCap,
+  PlayCircle,
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { supabase } from "@/integrations/supabase/client";
@@ -147,6 +149,37 @@ function Index() {
       <SiteHeader />
       <main className="container mx-auto px-4 py-6 max-w-6xl">
         <RealPhotoHero fallback={<HomeAnimationHero />} />
+
+        {/* E-LEARNING — the owner asked for this in front of the page, so it
+            sits above everything else a student sees on arrival. */}
+        <div className="animate-fade-in mb-4">
+          <Link to="/elessons" className="group block">
+            <Card className="relative h-full overflow-hidden border-2 border-primary/40 bg-gradient-to-br from-primary via-primary/85 to-secondary text-primary-foreground shadow-xl transition-all hover:-translate-y-1 hover:shadow-2xl">
+              <div className="absolute -right-10 -top-10 h-44 w-44 rounded-full bg-white/15 blur-2xl" />
+              <div className="absolute -bottom-12 -left-8 h-40 w-40 rounded-full bg-secondary/30 blur-2xl" />
+              <CardContent className="relative flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/20 shadow-lg backdrop-blur">
+                    <GraduationCap className="h-7 w-7" />
+                  </div>
+                  <div>
+                    <div className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/15 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest backdrop-blur">
+                      <PlayCircle className="h-3 w-3" /> {t("el_kicker")}
+                    </div>
+                    <h2 className="mt-2 text-2xl font-extrabold tracking-tight">
+                      {t("elearning")}
+                    </h2>
+                    <p className="mt-1 max-w-md text-sm text-white/90">{t("el_sub")}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-sm font-bold sm:shrink-0">
+                  {t("el_watch")}
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
 
         {/* Update Taarifa — the self-service flow, one tap from the dashboard */}
         <div className="animate-fade-in mb-4">

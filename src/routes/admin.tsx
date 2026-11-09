@@ -16,6 +16,7 @@ import {
   FileUp,
   UsersRound,
   Copy,
+  Film,
 } from "lucide-react";
 import {
   Sidebar,
@@ -36,6 +37,7 @@ export const Route = createFileRoute("/admin")({ component: AdminLayout });
 const NAV = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/admin/exams", label: "Mitihani", icon: FileText },
+  { to: "/admin/elessons", label: "E-Learning", icon: Film },
   { to: "/admin/students", label: "Wanafunzi", icon: Users },
   { to: "/admin/duplicates", label: "Usajili wa Marudio", icon: Copy },
   { to: "/admin/groups", label: "Magroup na Semina", icon: UsersRound },
