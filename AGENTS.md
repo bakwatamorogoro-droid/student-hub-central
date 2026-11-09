@@ -1888,3 +1888,29 @@ both `src/` and `supabase/functions/` before taking it.
 at `92dvh` (with a `vh` fallback), and the body is `flex min-h-0 flex-1
 overflow-y-auto` under a `shrink-0` header. Nested scrollers trap the wheel and a
 bare `vh` hides the footer behind the browser's own bars on a phone.
+
+**E-Learning lessons are a table, not a column trick.** `public.elessons`
+(`supabase/migrations/20261105120000_elessons.sql`) is the one place a lesson
+lives: the pasted link plus the provider, video id, embed URL and thumbnail the
+app derives from it, the bilingual title/description, and a `quiz jsonb`. It was
+created through the Management API like any other table, so the "cannot run DDL"
+note below does **not** apply — that note is about the Supabase SQL *RPC
+functions* (`exec_sql` and friends) returning 404, which is a different thing.
+
+**Lesson questions are derived from the lesson's own words, never from the
+video.** There is no AI key at runtime (`LOVABLE_API_KEY` is unset and the edge
+functions are not deployed), so nothing can watch or transcribe a video. Rather
+than invent questions, `buildLessonQuiz` (`src/lib/elessonQuiz.ts`) matches the
+lesson's title and description against the existing Islamic Studies knowledge
+bank (`islamic-knowledge.ts`, 28 topics with Swahili/English/Arabic synonyms) and
+emits bilingual questions with the key points a good answer should name. The
+admin edits them before saving. Keep it that way: if an AI gateway is ever
+deployed, the honest upgrade is to *add* transcript-derived questions, not to
+replace this fallback, because the fallback is what works when the key is absent.
+
+**A lesson link is parsed once, into the fields the player needs.** `parseLessonLink`
+(`src/lib/elesson.ts`) accepts scheme-less links (`youtu.be/…`) because phones paste
+them that way, and `isPlayableLessonLink` gates the admin's save button. YouTube
+thumbnails come from `i.ytimg.com/vi/<id>/hqdefault.jpg` with no API call; titles
+and authors come from the provider's oEmbed endpoint when it answers, and the
+lesson still saves when it does not.
