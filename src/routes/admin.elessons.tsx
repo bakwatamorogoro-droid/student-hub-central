@@ -11,8 +11,10 @@ import { LessonThumb } from "@/components/LessonPlayer";
 import {
   PROVIDER_LABELS,
   lessonLinkHint,
+  needsLinkResolution,
   parseLessonLink,
   type LessonProvider,
+  type ParsedLessonLink,
 } from "@/lib/elesson";
 import { buildLessonQuiz, lessonTopicLabel, type LessonQuestion } from "@/lib/elessonQuiz";
 import {
@@ -23,6 +25,7 @@ import {
   fetchLessonPreview,
   isMissingLessonsTable,
   loadAllLessons,
+  resolveLessonShareLink,
   setLessonActive,
   updateLesson,
   type Lesson,
@@ -109,21 +112,9 @@ function Page() {
     void load();
   }, [load]);
 
-  /** Read the pasted link and fill in whatever the provider will tell us. */
-  const checkLink = useCallback(
-    async (raw: string) => {
-      const url = raw.trim();
-      if (!url) {
-        setLinkNote({ ok: false, text: t("el_admin_need_link") });
-        return;
-      }
-      const parsed = parseLessonLink(url);
-      if (!parsed) {
-        setLinkNote({ ok: false, text: lessonLinkHint(url) });
-        setDraft((d) => ({ ...d, url, provider: null, videoId: null, embedUrl: "" }));
-        return;
-      }
-
+  /** Fill the draft from a link we have already parsed, and fetch its preview. */
+  const applyParsedLink = useCallback(
+    async (url: string, parsed: ParsedLessonLink) => {
       setLinkNote({
         ok: true,
         text: `${t("el_admin_ready")} — ${PROVIDER_LABELS[parsed.provider]}`,
@@ -139,7 +130,6 @@ function Page() {
 
       // The provider's own title fills a blank field; it never overwrites what
       // the admin has typed.
-      setChecking(true);
       try {
         const preview = await fetchLessonPreview({
           provider: parsed.provider,
@@ -161,6 +151,48 @@ function Page() {
       }
     },
     [t],
+  );
+
+  /** Read the pasted link and fill in whatever the provider will tell us. */
+  const checkLink = useCallback(
+    async (raw: string) => {
+      const url = raw.trim();
+      if (!url) {
+        setLinkNote({ ok: false, text: t("el_admin_need_link") });
+        return;
+      }
+
+      setChecking(true);
+
+      // A share short link (`facebook.com/share/v/<code>`, `fb.watch/<code>`,
+      // `vm.tiktok.com/<code>`) has no video id in it and the player refuses it.
+      // Follow it to the real address first; the browser cannot, so the hop is
+      // made server-side. A failed hop falls through to the normal refusal, so
+      // the admin still learns the link will not play.
+      let effective = url;
+      if (needsLinkResolution(url)) {
+        setLinkNote({ ok: true, text: t("el_admin_resolving") });
+        const resolved = await resolveLessonShareLink(url);
+        if (!resolved) {
+          setChecking(false);
+          setLinkNote({ ok: false, text: t("el_admin_resolve_failed") });
+          setDraft((d) => ({ ...d, url, provider: null, videoId: null, embedUrl: "" }));
+          return;
+        }
+        effective = resolved;
+      }
+
+      const parsed = parseLessonLink(effective);
+      if (!parsed) {
+        setChecking(false);
+        setLinkNote({ ok: false, text: lessonLinkHint(effective) });
+        setDraft((d) => ({ ...d, url, provider: null, videoId: null, embedUrl: "" }));
+        return;
+      }
+
+      await applyParsedLink(effective, parsed);
+    },
+    [t, applyParsedLink],
   );
 
   const generateQuiz = useCallback(() => {

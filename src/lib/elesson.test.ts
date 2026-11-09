@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   isPlayableLessonLink,
   lessonLinkHint,
+  needsLinkResolution,
   parseLessonLink,
   youtubeThumbnail,
 } from "./elesson.ts";
@@ -115,4 +116,51 @@ test("the hint names the provider that failed", () => {
   assert.ok(lessonLinkHint("https://www.youtube.com/").toLowerCase().includes("youtube"));
   assert.ok(lessonLinkHint("https://vimeo.com/123").toLowerCase().includes("youtube"));
   assert.equal(lessonLinkHint(""), "");
+});
+
+test("a Facebook share link is refused by the parser", () => {
+  // It carries no video id, so nothing can be built from it directly.
+  assert.equal(parseLessonLink("https://www.facebook.com/share/v/1JSoQAX5hD/"), null);
+});
+
+test("a Facebook share link is flagged for resolution", () => {
+  assert.equal(needsLinkResolution("https://www.facebook.com/share/v/1JSoQAX5hD/"), true);
+  assert.equal(
+    needsLinkResolution("https://www.facebook.com/share/v/1JSoQAX5hD/?mibextid=wwXIfr"),
+    true,
+  );
+  assert.equal(needsLinkResolution("https://www.facebook.com/share/r/abc123/"), true);
+  assert.equal(needsLinkResolution("https://m.facebook.com/share/v/1JSoQAX5hD/"), true);
+});
+
+test("an fb.watch short link is flagged for resolution", () => {
+  assert.equal(needsLinkResolution("https://fb.watch/1JSoQAX5hD/"), true);
+  assert.equal(needsLinkResolution("fb.watch/1JSoQAX5hD"), true);
+  // The bare host is not a link to anything.
+  assert.equal(needsLinkResolution("https://fb.watch/"), false);
+});
+
+test("a TikTok short link is flagged for resolution", () => {
+  assert.equal(needsLinkResolution("https://vm.tiktok.com/ZMabc123/"), true);
+  assert.equal(needsLinkResolution("https://vt.tiktok.com/ZSabc123/"), true);
+});
+
+test("a canonical link is never flagged for resolution", () => {
+  // Resolving these would be a pointless round trip; they already play.
+  assert.equal(needsLinkResolution("https://www.facebook.com/reel/1064357103048488"), false);
+  assert.equal(needsLinkResolution("https://www.facebook.com/watch/?v=10153231379946729"), false);
+  assert.equal(
+    needsLinkResolution("https://www.tiktok.com/@user/video/7123456789012345678"),
+    false,
+  );
+  assert.equal(needsLinkResolution("https://youtu.be/dQw4w9WgXcQ"), false);
+  assert.equal(needsLinkResolution("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), false);
+});
+
+test("a lookalike host is not flagged for resolution", () => {
+  assert.equal(needsLinkResolution("https://evil.example/share/v/abc"), false);
+  assert.equal(needsLinkResolution("https://notfb.watch/abc"), false);
+  assert.equal(needsLinkResolution("https://vimeo.com/123"), false);
+  assert.equal(needsLinkResolution(""), false);
+  assert.equal(needsLinkResolution("not a link"), false);
 });

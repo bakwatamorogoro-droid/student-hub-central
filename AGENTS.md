@@ -1914,3 +1914,26 @@ them that way, and `isPlayableLessonLink` gates the admin's save button. YouTube
 thumbnails come from `i.ytimg.com/vi/<id>/hqdefault.jpg` with no API call; titles
 and authors come from the provider's oEmbed endpoint when it answers, and the
 lesson still saves when it does not.
+
+**A share link has no video id, so it is followed to its real address first.**
+Facebook's share button hands out `facebook.com/share/v/<code>` and
+`fb.watch/<code>`, and TikTok's hands out `vm.tiktok.com/<code>`. None of those
+carry an id and the embed player answers "Video Unavailable" for all of them —
+Facebook's own `plugins/video.php` does, too. The redirect has to be followed,
+and **the browser cannot do it**: the request is cross-origin, Facebook sends no
+CORS header on the redirect, and `fetch` throws before `Location` can be read
+(`no-cors` returns an opaque response with an empty `url`). So the hop is made
+by `api/resolve-link.ts`, a Vercel edge function, and `resolveLessonShareLink`
+(`src/lib/elessonsApi.ts`) calls it from `checkLink`. `needsLinkResolution`
+decides when to bother; a canonical link is never sent on the round trip. The
+resolver's user-agent is deliberately *not* a browser — Facebook hands a
+non-browser client the redirect, and a browser user-agent a login wall or a 400.
+`vercel.json`'s catch-all rewrite excludes `/api/` so the function is reached
+rather than swallowed by the SPA.
+
+The resolver returns a URL only for the providers' own hosts, checks the landing
+host after every hop, and refuses a landing that is a login page or that has no
+video path. It never returns a response body, so it cannot be used as an open
+proxy. A failed hop is not fatal: the admin sees a message telling them to paste
+the link from the video's address bar, which always works.
+
