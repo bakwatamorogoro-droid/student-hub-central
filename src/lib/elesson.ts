@@ -217,6 +217,45 @@ export function isPlayableLessonLink(raw: string): boolean {
   return parseLessonLink(raw) !== null;
 }
 
+/**
+ * True when the link is a provider *share* short link that carries no video id
+ * and has to be followed to its real address before it can play.
+ *
+ * Facebook's share button gives `facebook.com/share/v/<code>` and
+ * `fb.watch/<code>`; TikTok's gives `vm.tiktok.com/<code>`. The player cannot
+ * play any of them — it answers "Video Unavailable" — so the app follows the
+ * redirect first (see `resolveLessonShareLink` in `elessonsApi.ts`).
+ *
+ * This is deliberately about the *shape* of the link, not a parse failure: a
+ * broken `youtube.com/watch` link should still be refused outright rather than
+ * sent off to be resolved.
+ */
+export function needsLinkResolution(raw: string): boolean {
+  const host = hostOf(raw);
+  if (!host) return false;
+
+  const path = (() => {
+    try {
+      return new URL(/^https?:\/\//i.test(raw.trim()) ? raw.trim() : `https://${raw.trim()}`)
+        .pathname;
+    } catch {
+      return "";
+    }
+  })();
+
+  // Facebook: /share/v/<code>, /share/r/<code>, or the fb.watch short host.
+  if (host === "fb.watch") return path.split("/").filter(Boolean).length > 0;
+  if (isFacebookHost(host) && /^\/share\//i.test(path)) return true;
+
+  // TikTok: the vm./vt. short hosts. The id is opaque and only the redirect
+  // knows the real /@user/video/<id> address.
+  if (host === "vm.tiktok.com" || host === "vt.tiktok.com") {
+    return path.split("/").filter(Boolean).length > 0;
+  }
+
+  return false;
+}
+
 /** "YouTube", "TikTok", "Facebook" — for a badge. */
 export const PROVIDER_LABELS: Record<LessonProvider, string> = {
   youtube: "YouTube",

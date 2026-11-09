@@ -625,6 +625,14 @@ const dict: Record<string, { sw: string; en: string }> = {
   },
   el_admin_check: { sw: "Angalia link", en: "Check the link" },
   el_admin_ready: { sw: "Link imekubaliwa", en: "Link accepted" },
+  el_admin_resolving: {
+    sw: "Inafungua link ya kushiriki...",
+    en: "Opening the share link...",
+  },
+  el_admin_resolve_failed: {
+    sw: "Link hii ya kushiriki haikufunguka. Fungua video kisha bandika link ya kwenye upau wa anwani.",
+    en: "This share link could not be opened. Open the video and paste the link from the address bar.",
+  },
   el_admin_title_sw: { sw: "Jina la somo (Kiswahili)", en: "Lesson title (Swahili)" },
   el_admin_title_en: { sw: "Jina la somo (Kiingereza)", en: "Lesson title (English)" },
   el_admin_desc_sw: { sw: "Maelezo (Kiswahili)", en: "Description (Swahili)" },

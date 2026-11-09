@@ -264,6 +264,32 @@ export async function fetchLessonPreview(input: {
 }
 
 /**
+ * Follow a provider *share* short link to its real address.
+ *
+ * Facebook's share button gives `facebook.com/share/v/<code>` and
+ * `fb.watch/<code>`, and TikTok's gives `vm.tiktok.com/<code>`. The id is not
+ * in those links and the embed player refuses them, so the redirect has to be
+ * followed first — which the browser cannot do itself, because Facebook sends
+ * no CORS header on the redirect and `fetch` throws before `Location` can be
+ * read. The hop is done by `/api/resolve-link` instead.
+ *
+ * Returns the canonical URL, or null when the hop failed. A null is not fatal:
+ * the admin can still paste the canonical link, or the lesson can be saved from
+ * the provider's own share page. Callers should treat it as "type the link from
+ * the video's address bar".
+ */
+export async function resolveLessonShareLink(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(`/api/resolve-link?url=${encodeURIComponent(url)}`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { url?: string };
+    return data.url?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * True when the lesson table is missing.
  *
  * The page uses this to explain the situation rather than showing a raw
