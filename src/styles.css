@@ -28,9 +28,41 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
-  --animate-fade-in: fade-in 600ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-fade-in: fade-in 600ms var(--ease-out-quint) both;
   --animate-float: float 7s ease-in-out infinite;
-  --animate-fade-in-up: fade-in-up 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-fade-in-up: fade-in-up 700ms var(--ease-out-quint) both;
+  --animate-reveal: modern-rise 700ms var(--ease-out-quint) both;
+  --animate-shimmer: shimmer 2.6s linear infinite;
+  --animate-pulse-ring: pulse-ring 2.6s var(--ease-out-quint) infinite;
+
+  /*
+   * One easing vocabulary, used everywhere.
+   *
+   * The app used to spell `cubic-bezier(0.2, 0.8, 0.2, 1)` out in a dozen
+   * places, so a component's motion depended on who wrote it. These four are
+   * the only curves the interface needs: a decisive settle, a long glide for
+   * large surfaces, a slight overshoot for small affordances, and a symmetric
+   * one for things that open and close.
+   */
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /*
+   * A fluid display scale.
+   *
+   * The page titles were set at one fixed size and then patched per breakpoint
+   * with `md:text-4xl`-style classes. `clamp()` gets the same result from a
+   * single class and never lands on a size that is too large for the phone it
+   * is read on.
+   */
+  --text-display: clamp(1.9rem, 1.28rem + 2.5vw, 3.1rem);
+  --text-display--line-height: 1.06;
+  --text-display--letter-spacing: -0.028em;
+  --text-title: clamp(1.35rem, 1.16rem + 0.8vw, 1.75rem);
+  --text-title--line-height: 1.18;
+  --text-title--letter-spacing: -0.02em;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -64,13 +96,52 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --shadow-soft: 0 12px 40px -20px color-mix(in oklch, var(--foreground) 28%, transparent);
-  --shadow-float: 0 22px 60px -28px color-mix(in oklch, var(--primary) 55%, transparent);
-  --shadow-lift: 0 18px 48px -24px color-mix(in oklch, var(--foreground) 34%, transparent);
+  /*
+   * Shadows are built from two layers each: a tight contact shadow that seats
+   * the surface, and a wide ambient one that gives it depth. A single big blur
+   * reads as a grey smear; the pair reads as an object with a height above the
+   * page.
+   *
+   * The tint is a bare sRGB channel triplet held in `--shadow-tint` (and
+   * `--shadow-brand`) rather than an inline `color-mix()`. The build downlevels
+   * CSS for older Android and iOS, and `color-mix(in oklch, var(--x) 14%,
+   * transparent)` downlevels to plain `var(--x)` — a fully opaque shadow, i.e. a
+   * hard black rectangle under every card on exactly the devices most students
+   * use. `rgb(var(--shadow-tint) / 0.16)` is understood by every target browser,
+   * so there is nothing to downlevel and the alpha always survives.
+   */
+  --shadow-soft:
+    0 1px 2px -1px rgb(var(--shadow-tint) / 0.16), 0 12px 40px -20px rgb(var(--shadow-tint) / 0.3);
+  --shadow-float:
+    0 2px 4px -2px rgb(var(--shadow-brand) / 0.22), 0 22px 60px -28px rgb(var(--shadow-brand) / 0.5);
+  --shadow-lift:
+    0 1px 2px -1px rgb(var(--shadow-tint) / 0.14), 0 18px 48px -24px rgb(var(--shadow-tint) / 0.34);
+  /* A hairline that catches light along the top edge of a raised surface. */
+  --shadow-edge: inset 0 1px 0 0 rgb(255 255 255 / var(--shadow-edge-alpha));
+  --shadow-inset:
+    inset 0 1px 2px rgb(var(--shadow-tint) / 0.1), inset 0 0 0 1px rgb(var(--inset-tint) / 0.06);
 }
 
 :root {
   --radius: 0.75rem;
+  /*
+   * Shadow tints, as bare sRGB channels (space-separated, no `rgb()` wrapper).
+   * These are not palette colours: they are derived from the palette below so
+   * that `rgb(var(--shadow-tint) / <alpha>)` in the shadow tokens has a real
+   * alpha to downlevel to. `--shadow-tint` is the light `--foreground` and
+   * `--shadow-brand` is the light `--primary`; see the note on `--shadow-soft`.
+   */
+  --shadow-tint: 0 29 47;
+  --shadow-brand: 0 110 184;
+  /* The page wash, the grid lines, and the glass fill, as channels. Same rule
+     as the shadow tints: the palette below is the source of these values. */
+  --wash-1: 0 110 184;
+  --wash-2: 0 182 121;
+  --grid-tint: 206 222 229;
+  --glass-tint: 255 255 255;
+  --loader-tint: 240 250 255;
+  --inset-tint: 0 29 47;
+  --shadow-edge-alpha: 0.42;
   /* Sea Blue + Green palette (no black, no yellow) */
   --background: oklch(0.98 0.012 225);
   --foreground: oklch(0.22 0.05 240);
@@ -107,6 +178,21 @@
 }
 
 .dark {
+  /*
+   * In dark mode a shadow cannot be mixed from `--foreground`, because that is
+   * a near-white value: the "shadow" would come out as a pale halo. The tint is
+   * the dark background hue pushed down in lightness instead, so it reads as a
+   * shadow while staying in the same blue family.
+   */
+  --shadow-tint: 0 4 10;
+  --shadow-brand: 0 177 218;
+  --wash-1: 0 177 218;
+  --wash-2: 0 170 111;
+  --grid-tint: 255 255 255;
+  --glass-tint: 7 45 61;
+  --loader-tint: 0 30 45;
+  --inset-tint: 255 255 255;
+  --shadow-edge-alpha: 0.12;
   /* Deep sea blue + green (no pure black) */
   --background: oklch(0.22 0.05 230);
   --foreground: oklch(0.96 0.02 220);
@@ -147,27 +233,28 @@
     border-color: var(--color-border);
   }
 
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
+    /* Figtree's default spacing is a touch tight at small sizes; the extra
+       tracking keeps Swahili's long words from crowding. */
+    font-feature-settings: "cv11", "ss01";
+    font-variant-ligatures: contextual;
+    letter-spacing: -0.006em;
     min-width: 320px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
     background-image:
-      radial-gradient(
-        circle at 10% 0%,
-        color-mix(in oklch, var(--primary) 16%, transparent),
-        transparent 30rem
-      ),
-      radial-gradient(
-        circle at 92% 12%,
-        color-mix(in oklch, var(--secondary) 14%, transparent),
-        transparent 30rem
-      ),
-      radial-gradient(
-        circle at 50% 100%,
-        color-mix(in oklch, var(--primary) 7%, transparent),
-        transparent 34rem
-      );
+      radial-gradient(circle at 10% 0%, rgb(var(--wash-1) / 0.16), transparent 30rem),
+      radial-gradient(circle at 92% 12%, rgb(var(--wash-2) / 0.14), transparent 30rem),
+      radial-gradient(circle at 50% 100%, rgb(var(--wash-1) / 0.07), transparent 34rem);
     /* Deliberately not `background-attachment: fixed`. That forces a repaint of
        the whole viewport on every scroll frame, which is the most expensive
        thing on the page on a mid-range Android; iOS ignores the property
@@ -182,11 +269,59 @@
   h5,
   h6 {
     font-family: var(--font-display);
-    letter-spacing: 0;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  /* Long Swahili paragraphs break better with a narrower measure. */
+  p {
+    text-wrap: pretty;
+  }
+
+  /*
+   * A focus ring that is visible on both the pale background and the deep
+   * primary surfaces. The offset ring is drawn in the page colour, so it reads
+   * as a gap rather than a second border.
+   */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
   }
 
   ::selection {
-    background: color-mix(in oklch, var(--primary) 28%, transparent);
+    background: rgb(var(--wash-1) / 0.28);
+  }
+
+  /*
+   * A thin, self-effacing scrollbar. The default one is a grey slab that fights
+   * every surface it sits on; this one is the border colour and only shows a
+   * solid thumb while the pointer is over the scrollable area.
+   */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--shadow-tint) / 0.22) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--shadow-tint) / 0.18);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--shadow-tint) / 0.32);
+    background-clip: content-box;
   }
 }
 
@@ -203,32 +338,51 @@
     z-index: -1;
     pointer-events: none;
     background-image:
-      linear-gradient(
-        to right,
-        color-mix(in oklch, var(--border) 22%, transparent) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        to bottom,
-        color-mix(in oklch, var(--border) 22%, transparent) 1px,
-        transparent 1px
-      );
+      linear-gradient(to right, rgb(var(--grid-tint) / 0.22) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(var(--grid-tint) / 0.22) 1px, transparent 1px);
     background-size: 48px 48px;
     mask-image: linear-gradient(to bottom, black, transparent 60%);
   }
 
+  /*
+   * Glass, done so it stays legible.
+   *
+   * `backdrop-filter` alone gives a milky panel that washes out over a busy
+   * background, so the surface is layered: a tinted fill for contrast, a
+   * hairline for an edge, and a slight desaturation of whatever is behind it so
+   * the content on top never competes with it.
+   */
   .glass-panel {
-    border: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
-    background: color-mix(in oklch, var(--card) 78%, transparent);
-    box-shadow: var(--shadow-soft);
-    backdrop-filter: blur(18px);
+    border: 1px solid rgb(var(--grid-tint) / 0.72);
+    background: rgb(var(--glass-tint) / 0.78);
+    box-shadow: var(--shadow-soft), var(--shadow-edge);
+    backdrop-filter: blur(18px) saturate(150%);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+  }
+
+  /*
+   * A faint grain, layered over the page wash.
+   *
+   * A pure gradient background bands visibly on the 8-bit panels most of these
+   * students read on; a few percent of noise breaks the bands up without
+   * reading as a texture. It is a data URI rather than a request, so it costs
+   * nothing on the first paint. `pointer-events: none` keeps it out of the way
+   * of every click underneath it.
+   */
+  .grain-layer {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
   .interactive-lift {
     transition:
-      transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1),
-      box-shadow 300ms ease,
-      border-color 300ms ease;
+      transform 320ms var(--ease-out-quint),
+      box-shadow 320ms var(--ease-out-quint),
+      border-color 320ms ease;
   }
 
   .interactive-lift:hover {
@@ -236,8 +390,18 @@
     box-shadow: var(--shadow-float);
   }
 
+  /*
+   * A raised surface: the card treatment, extracted so a page can opt in
+   * without reaching for a component.
+   */
+  .surface-raised {
+    background: linear-gradient(to bottom, var(--card), rgb(var(--glass-tint) / 0.92));
+    border: 1px solid rgb(var(--grid-tint) / 0.6);
+    box-shadow: var(--shadow-soft), var(--shadow-edge);
+  }
+
   .stagger-grid > * {
-    animation: modern-rise 600ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation: modern-rise 600ms var(--ease-out-quint) both;
   }
 
   .stagger-grid > *:nth-child(2) {
@@ -254,6 +418,52 @@
   }
   .stagger-grid > *:nth-child(6) {
     animation-delay: 400ms;
+  }
+
+  /*
+   * A sheen that crosses a surface on hover — used on the primary call-to-action
+   * cards so the whole block feels lit rather than merely coloured.
+   */
+  .sheen-on-hover {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .sheen-on-hover::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      100deg,
+      transparent 30%,
+      rgb(255 255 255 / 0.22) 50%,
+      transparent 70%
+    );
+    transform: translateX(-120%);
+    opacity: 0;
+  }
+
+  .sheen-on-hover:hover::after {
+    opacity: 1;
+    animation: sheen 900ms var(--ease-out-quint);
+  }
+
+  /*
+   * A skeleton bar that reads as "loading" rather than "broken". A flat pulse
+   * on a tinted block looks like a disabled control; a moving highlight reads
+   * as work in progress.
+   */
+  .skeleton-shimmer {
+    background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgb(255 255 255 / 0.45) 50%,
+      transparent 100%
+    );
+    background-size: 180% 100%;
+    background-repeat: no-repeat;
+    animation: shimmer 1.8s linear infinite;
   }
 }
 
@@ -297,6 +507,40 @@
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+/*
+ * A loading sweep. `background-position` is animated rather than `transform`
+ * because the element that needs it is usually a text line whose gradient has
+ * to stay in place — but it is only ever applied to a small skeleton bar, so
+ * the cost is a paint on that bar and nothing else.
+ */
+@keyframes shimmer {
+  from {
+    background-position: -180% 0;
+  }
+  to {
+    background-position: 180% 0;
+  }
+}
+
+/*
+ * The halo on a live indicator. Scaling the ring outward while fading it out
+ * reads as a broadcast pulse; `animate-ping` alone pops a hard-edged circle.
+ */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.7;
+  }
+  70% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
   }
 }
 
@@ -393,7 +637,7 @@
 
 .word-preview th,
 .word-preview td {
-  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border: 1px solid rgb(var(--grid-tint) / 0.8);
   padding: 0.35rem 0.5rem;
   text-align: left;
   vertical-align: top;
@@ -405,7 +649,7 @@
 }
 
 .word-preview blockquote {
-  border-left: 3px solid color-mix(in oklch, var(--primary) 55%, transparent);
+  border-left: 3px solid rgb(var(--shadow-brand) / 0.55);
   margin: 0.6rem 0;
   padding-left: 0.75rem;
   color: var(--muted-foreground);
@@ -428,4 +672,3 @@
   max-height: 92vh;
   max-height: 92dvh;
 }
-
