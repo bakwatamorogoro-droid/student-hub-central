@@ -904,8 +904,14 @@ migration that production may not have yet.
   (no seminar or group filter). The geofence reuses `checkArea`/`effectiveDistanceM` from
   `@/lib/geo`, so a coarse GPS fix widens the fence instead of locking students out.
 
-  The student card is `src/components/FridayLectureCard.tsx`, mounted on `/attendance`. The
-  admin counter is `src/components/LiveAttendanceCard.tsx` with `src/lib/useLiveAttendance.ts`,
+  There is **no one-tap student card.** `FridayLectureCard.tsx` was deleted: it wrote a
+  check-in straight from a button, with no face step, which is the bypass the owner removed.
+  The Friday lecture is now just a row in the four-step wizard's open-session list — tapping
+  it carries the session id and the student still goes through the face step. `checkIn`
+  accepts that id and creates the lecture row on first tap, which is why the row can be tapped
+  before the lecture has been written.
+
+  The admin counter is `src/components/LiveAttendanceCard.tsx` with `src/lib/useLiveAttendance.ts`,
   mounted on the dashboard. The counter subscribes to Realtime and also polls, because a phone
   that slept through the socket event still has to see the true count.
 
@@ -1612,8 +1618,9 @@ Fix: keep the colour's channels in a token and put the alpha in the shadow, e.g.
 `rgb()` with a `/ <alpha>` is understood by every target browser, so there is
 nothing to downlevel and the alpha always survives. `--shadow-tint`,
 `--shadow-brand`, `--wash-1`, `--wash-2`, `--grid-tint`, `--glass-tint`,
-`--loader-tint` and `--inset-tint` in `styles.css` are these channel triplets;
-they are derived from the palette, not new colours.
+`--glass-scrim-tint`, `--glass-scrim-text`, `--loader-tint` and `--inset-tint`
+in `styles.css` are these channel triplets; they are derived from the palette,
+not new colours.
 
 Two related traps:
 
@@ -1624,6 +1631,17 @@ Two related traps:
   so an old browser drops the whole declaration rather than a value in it. The
   loader backdrop in `PageLoader.tsx` used `color-mix()` that way and lost its
   entire background; it uses the channel tokens now.
+- A prefixed/unprefixed pair is merged by lightningcss and it keeps whichever
+  property comes **last**. For `backdrop-filter` the correct order is therefore
+  `-webkit-backdrop-filter` first and the unprefixed `backdrop-filter` last;
+  with the unprefixed one first the build emitted only the `-webkit-` form, so
+  Chrome and Firefox got no blur. `.glass-panel` carries a comment saying so.
+- A frosted panel that sits *over a photograph* needs a dark scrim, not the
+  white `--glass-tint`. A white pill under the near-white `--primary-foreground`
+  copy measured 1.5:1 — white on white on a bright photo. `.glass-panel` uses
+  `--glass-scrim-tint` / `--glass-scrim-text` (4.4:1 at worst, 5.5:1 typical)
+  and adds a `@supports not (backdrop-filter)` opaque fallback, because without
+  the blur the translucent fill alone is too thin to read.
 
 Three other things that were fixed at the same time, all worth keeping:
 
@@ -2201,8 +2219,11 @@ To check the floor after a change: build, then grep the entry chunk for `\?\.`,
 
 The student flow on `/attendance` is fixed, and the order carries meaning.
 
-1. **Scan the QR.** The session's code comes from the poster or the teacher's
+1. **Pick the session.** The session's code comes from the poster or the teacher's
    screen. A scan or a typed code only says *which* session — it never says who.
+   The open sessions are also listed as tappable rows, which is how the Friday
+   lecture is reached now that its one-tap card is gone; a tap carries the
+   session id and still enters the face step.
 2. **Reg Namba, then the details.** `findStudentsByQuery` resolves the number and
    the page shows the name, the Reg Namba and the course before asking for
    anything else, so a mistyped number is caught while it is the only thing on

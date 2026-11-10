@@ -621,7 +621,7 @@ export async function checkIn(input: {
   studentToken: string;
   token?: string | null;
   joinCode?: string | null;
-  /** A session the student picked directly, e.g. the Friday lecture card. */
+  /** A session the student tapped directly, e.g. the Friday lecture row. */
   sessionId?: string | null;
   /** The phone's fix, or null when GPS is off, refused or unavailable. */
   lat: number | null;

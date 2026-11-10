@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { QrAttendanceCheckIn } from "@/components/QrAttendanceCheckIn";
-import { FridayLectureCard } from "@/components/FridayLectureCard";
 import {
   fetchMyCheckIns,
   listOpenSessions,
@@ -96,7 +95,7 @@ function Page() {
               <CalendarCheck className="h-3 w-3" /> {t("att_title")}
             </div>
             <h1 className="mt-3 bg-gradient-to-r from-primary to-secondary bg-clip-text text-display font-black text-transparent">
-              {t("att_one_tap")}
+              {t("att_heading")}
             </h1>
             <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">{t("att_sub")}</p>
           </div>
@@ -140,34 +139,6 @@ function Page() {
               </CardContent>
             </Card>
           </div>
-        )}
-
-        {!loading && token && <FridayLectureCard onCheckedIn={reload} />}
-
-        {!loading && token && open.length > 0 && (
-          <Card className="border-teal-500/40 bg-gradient-to-br from-teal-500/10 to-transparent">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Radio className="h-4 w-4 text-teal-600" /> {t("att_sessions_open")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {open.map((s) => (
-                <div
-                  key={s.id}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-teal-500/25 bg-background/70 px-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold">{s.title}</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      {s.kind === "lecture" ? "Wanafunzi wote" : s.semina || "—"}
-                    </div>
-                  </div>
-                  <Badge className="shrink-0 bg-teal-600 text-[10px] uppercase">Live</Badge>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
         )}
 
         {!loading && token && open.length === 0 && (
