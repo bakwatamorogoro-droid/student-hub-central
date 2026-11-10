@@ -13,6 +13,7 @@ import { Trash2, Upload, FileText, Lock, Copy, Unlock, AlertTriangle } from "luc
 import { eatLocalInputToUtcIso, utcIsoToEatLocalInput } from "@/lib/time";
 import { retryWithoutMissingColumns } from "@/lib/schema-retry";
 import { ACADEMIC_YEARS, SEMESTERS, isSemesterActive } from "@/lib/academicTargeting";
+import { uploadContentType } from "@/lib/uploadContentType";
 import {
   Select,
   SelectContent,
@@ -165,7 +166,7 @@ function Page() {
     const path = `announcements/${Date.now()}-${file.name.replace(/[^a-z0-9.\-_]/gi, "_")}`;
     const { error } = await supabase.storage
       .from("exam-media")
-      .upload(path, file, { upsert: false, contentType: file.type });
+      .upload(path, file, { upsert: false, contentType: uploadContentType(file) });
     if (error) {
       toast.error(error.message);
       setUploading(false);
@@ -181,7 +182,7 @@ function Page() {
     const path = `announcements/img-${Date.now()}-${file.name.replace(/[^a-z0-9.\-_]/gi, "_")}`;
     const { error } = await supabase.storage
       .from("exam-media")
-      .upload(path, file, { upsert: false, contentType: file.type });
+      .upload(path, file, { upsert: false, contentType: uploadContentType(file) });
     if (error) {
       toast.error(error.message);
       setUploadingImg(false);
