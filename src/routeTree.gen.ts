@@ -23,6 +23,7 @@ import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ResultsRouteImport } from './routes/results'
 import { Route as SemesterQuestionsRouteImport } from './routes/semester-questions'
 import { Route as StudentRouteImport } from './routes/student'
+import { Route as TutorRouteImport } from './routes/tutor'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminAttendanceRouteImport } from './routes/admin.attendance'
 import { Route as AdminDuplicatesRouteImport } from './routes/admin.duplicates'
@@ -107,6 +108,11 @@ const SemesterQuestionsRoute = SemesterQuestionsRouteImport.update({
 const StudentRoute = StudentRouteImport.update({
   id: '/student',
   path: '/student',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TutorRoute = TutorRouteImport.update({
+  id: '/tutor',
+  path: '/tutor',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -200,6 +206,7 @@ export interface FileRoutesByFullPath {
   '/results': typeof ResultsRoute
   '/semester-questions': typeof SemesterQuestionsRoute
   '/student': typeof StudentRoute
+  '/tutor': typeof TutorRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/duplicates': typeof AdminDuplicatesRoute
   '/admin/elessons': typeof AdminElessonsRoute
@@ -230,6 +237,7 @@ export interface FileRoutesByTo {
   '/results': typeof ResultsRoute
   '/semester-questions': typeof SemesterQuestionsRoute
   '/student': typeof StudentRoute
+  '/tutor': typeof TutorRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/duplicates': typeof AdminDuplicatesRoute
   '/admin/elessons': typeof AdminElessonsRoute
@@ -262,6 +270,7 @@ export interface FileRoutesById {
   '/results': typeof ResultsRoute
   '/semester-questions': typeof SemesterQuestionsRoute
   '/student': typeof StudentRoute
+  '/tutor': typeof TutorRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/duplicates': typeof AdminDuplicatesRoute
   '/admin/elessons': typeof AdminElessonsRoute
@@ -295,6 +304,7 @@ export interface FileRouteTypes {
     | '/results'
     | '/semester-questions'
     | '/student'
+    | '/tutor'
     | '/admin/attendance'
     | '/admin/duplicates'
     | '/admin/elessons'
@@ -325,6 +335,7 @@ export interface FileRouteTypes {
     | '/results'
     | '/semester-questions'
     | '/student'
+    | '/tutor'
     | '/admin/attendance'
     | '/admin/duplicates'
     | '/admin/elessons'
@@ -356,6 +367,7 @@ export interface FileRouteTypes {
     | '/results'
     | '/semester-questions'
     | '/student'
+    | '/tutor'
     | '/admin/attendance'
     | '/admin/duplicates'
     | '/admin/elessons'
@@ -388,6 +400,7 @@ export interface RootRouteChildren {
   ResultsRoute: typeof ResultsRoute
   SemesterQuestionsRoute: typeof SemesterQuestionsRoute
   StudentRoute: typeof StudentRoute
+  TutorRoute: typeof TutorRoute
   ExamExamIdRoute: typeof ExamExamIdRoute
   RSlugRoute: typeof RSlugRoute
 }
@@ -490,6 +503,13 @@ declare module '@tanstack/react-router' {
       path: '/student'
       fullPath: '/student'
       preLoaderRoute: typeof StudentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tutor': {
+      id: '/tutor'
+      path: '/tutor'
+      fullPath: '/tutor'
+      preLoaderRoute: typeof TutorRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/': {
@@ -649,6 +669,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResultsRoute: ResultsRoute,
   SemesterQuestionsRoute: SemesterQuestionsRoute,
   StudentRoute: StudentRoute,
+  TutorRoute: TutorRoute,
   ExamExamIdRoute: ExamExamIdRoute,
   RSlugRoute: RSlugRoute,
 }

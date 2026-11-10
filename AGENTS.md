@@ -2007,3 +2007,99 @@ The `--shadow-*` tokens are built from channel triplets for the reason in the
 section above; if you add one, follow that pattern instead of reaching for
 `color-mix()`.
 
+
+## OpenTutor, and the rule against inventing scripture
+
+`/tutor` (`src/routes/tutor.tsx`) answers a student's Islamic Studies question
+from two sources and no others:
+
+- `src/lib/openTutor.ts` — works out the topic and assembles the material. It
+  is pure, so `node --test` covers it.
+- `src/lib/quranApi.ts` — fetches Qur'an text from `api.quran.com`.
+
+The rule that governs both: **this app never writes scripture or commentary.**
+Attributing a sentence to the Qur'an that is not in it, or a hadith to the
+Prophet he did not say, is a serious harm in front of a class, and a confident
+wrong answer is worse than a link.
+
+So, concretely:
+
+- Explanations come from the knowledge bank, not from a model. The prose in
+  `TOPIC_SUMMARY` describes what a topic covers, using the same rubric the
+  grader marks against.
+- Qur'an text is never stored in the repo. `TUTOR_VERSES` holds `sura:aya`
+  keys only, and the page fetches the text. **Before adding a key, fetch it and
+  confirm it returns text** — `api.quran.com/api/v4/verses/by_key/<sura>:<aya>`
+  needs a browser-like `User-Agent` and a `fields=text_uthmani` parameter, or
+  it returns 403 or an empty verse. A key that fails to resolve renders as a
+  link, never as a quote.
+- There are no hadith citations, because none could be verified against a
+  source. Do not add one without one.
+- An unrecognised question says so and lists the known topics. It does not
+  guess. Same choice `elessonQuiz.ts` made, for the same reason.
+
+The API needs no key and sends `access-control-allow-origin: *`, so this runs
+from the browser with no edge function and no secret. The project has neither
+deployed today, and OpenTutor does not depend on them.
+
+### Ranking topics: the tie-break is load-bearing
+
+`topicsForQuestion` orders by, in turn: an exact topic-name match, the longest
+matching term, then the total length of the matches. The first of those exists
+because of a bug the tests caught: "sunnah" matched `hadith`, since the word
+"sunnah" also appears in the hadith rubric, and the tie was broken by
+`Object.entries` order — that is, by luck. If you change the ordering, keep the
+exact-name step first, and keep the test that covers it.
+
+
+## The AI layer: OpenRouter on the free tier
+
+The tutor and grader call OpenRouter through `supabase/functions/_shared/openrouter.ts`.
+Three facts about that account drive most of the design, and each was learned the
+hard way.
+
+### It is the free tier: 50 requests per day, and that is all
+
+The account shows a $50 balance, but no credits were purchased, so paid models are
+rejected. Only `:free` models work, and the free tier allows **50 requests per day
+shared across everything**. A failed request still counts against it.
+
+That is why `_shared/aiCache.ts` exists. Every grading or tutor request hashes its
+inputs and is served from `ai_grade_cache` on a repeat, so a class resubmitting the
+same assignment costs one request, not thirty. `ai_usage` tracks the day's spend and
+`spend()` refuses new calls a few requests before the cap, leaving room for retries.
+Both tables are written with the service-role key, which the edge runtime provides.
+
+Do not remove the cache, and do not raise `DAILY_REQUEST_LIMIT` to match the raw 50:
+the reserve is what stops a run of failures from eating the day.
+
+### Most free models return no answer at all
+
+Of the thirteen `:free` models this account can reach, most are reasoning models:
+they spend the entire token budget in a hidden `reasoning` field and return
+`content: null` with `finish_reason: length`. Asking for more tokens does not help.
+
+So `MODELS` lists only models that were *probed and returned real content*.
+`chat()` reads `message.content` and nothing else — an earlier version fell back to
+`message.reasoning`, which put raw chain-of-thought ("The user is asking about…
+1. Explain in my own words") in front of students. It also treats
+`finish_reason: length` as a failure and tries the next model, because half a
+sentence is worse than an honest "not found".
+
+`cohere/north-mini-code` is deliberately excluded even though it always returns
+text: asked about the fiqh term *Ijtihad* it wrote a fluent Swahili answer about
+Christian doctrine. Invented content in an Islamic Studies tutor is the exact harm
+the prompt guards against. **Before adding a model to `MODELS`, probe it on a
+real Swahili Islamic Studies question and read the answer.**
+
+### The knowledge bank always wins
+
+`src/lib/openTutor.ts` answers 28 topics offline and instantly from
+`islamic-knowledge.ts`. The AI is only reached when `planTutorAnswer(q).matched` is
+false, and the page renders the two differently. The bank's answers are grounded in
+the course material; a model's are not. Keep that order.
+
+`src/lib/tutorAiParse.ts` splits the model's reply into sections. It must cope with
+what free models actually send: `**MAELEZO:**` rather than the bare `MAELEZO:` the
+prompt asks for, `##` headings, and no labels at all. A reply it cannot parse is
+shown whole as the explanation rather than dropped.
