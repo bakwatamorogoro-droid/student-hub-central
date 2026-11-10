@@ -2103,3 +2103,34 @@ the course material; a model's are not. Keep that order.
 what free models actually send: `**MAELEZO:**` rather than the bare `MAELEZO:` the
 prompt asks for, `##` headings, and no labels at all. A reply it cannot parse is
 shown whole as the explanation rather than dropped.
+
+### Web search is not available on this account
+
+OpenRouter's web search — both the `:online` model suffix and the `plugins: [{id:
+"web"}]` request body — returns `402 Insufficient credits`. The account shows a
+$50 balance but has never purchased credits, and web search is billed per result,
+so it is refused even while `:free` chat models still answer. Probing it again is
+not worth a round trip; if a feature needs live web sources, the answer is a
+different provider, not a different OpenRouter parameter.
+
+Because of that, **no answer in this app may be presented as a web result.** The
+Qur'an links go to `quran.com` through `sura:aya` keys the app verifies, and
+everything else comes from the class's own bank. A citation the app cannot verify
+is a citation it must not show.
+
+### A teacher may write only the question
+
+`src/lib/referenceAnswer.ts` produces the model answer and the marking scheme for
+a question with no `correct_answer`. It calls `buildReferenceAnswer()` first —
+offline, from the bank — and only reaches `ai-answer` when the bank cannot place
+the question. `source` (`bank` / `ai` / `none`) records which layer answered, and
+the UI states it, so a model's words are never shown as the bank's.
+
+The concepts it returns are **whole synonym clusters joined into one string**
+(`"ngawila malipo kutoa"`, not `"ngawila"`), because `ai-grader.ts` marks a concept
+met when *any* word in it appears in the student's answer. Collapsing a cluster to
+one word is what would mark a correct paraphrase wrong.
+
+Both the exam page and the results page build the reference answer through this
+module. They must not diverge: a recomputed mark that disagrees with the stored one
+is a mark the student cannot trust.
