@@ -60,7 +60,9 @@ type Done = {
   faceMethod: string;
 };
 
-/** What the Reg Namba lookup found, shown so the student confirms it is them. */
+/**
+ * What the Reg Namba lookup found, shown so the student confirms it is them.
+ */
 type Identity = {
   fullName: string;
   regNo: string;
@@ -68,6 +70,14 @@ type Identity = {
   semina: string | null;
   studentGroup: string | null;
 };
+
+/**
+ * The session the student means.
+ *
+ * `session` is a tap on one of the listed open sessions, including the Friday
+ * lecture, which `checkIn` accepts by id and creates on first tap.
+ */
+type Chosen = ScannedAttendance | { kind: "session"; sessionId: string; label: string };
 
 /**
  * `onCheckedIn` fires after a successful check-in so a host page can refresh
@@ -105,8 +115,11 @@ export function QrAttendanceCheckIn({
   const [sessions, setSessions] = useState<OpenSession[]>([]);
   const [studentToken, setTokenState] = useState<string | null>(() => getStudentToken());
 
-  /** The session the student scanned, or the code typed instead of a scan. */
-  const [chosen, setChosen] = useState<ScannedAttendance | null>(
+  /**
+   * The session the student picked, whether by scanning, typing a code, or
+   * tapping one of the open sessions listed on the page.
+   */
+  const [chosen, setChosen] = useState<Chosen | null>(
     initialToken
       ? { kind: "token", token: initialToken }
       : initialJoinCode
@@ -140,11 +153,11 @@ export function QrAttendanceCheckIn({
 
   const refreshSessions = useCallback(async () => {
     const token = getStudentToken();
-    if (!token) {
-      setSessions([]);
-      return;
-    }
-    setSessions(await listOpenSessions(token));
+    const list = await listOpenSessions(token ?? undefined);
+    // Without a token the student's group is unknown, so only the sessions that
+    // are open to everyone (the Friday lecture) are offered for a tap. The
+    // group-filtered ones still appear once they have signed in.
+    setSessions(token ? list : list.filter((s) => s.openToAll));
   }, []);
 
   useEffect(() => {
@@ -216,13 +229,21 @@ export function QrAttendanceCheckIn({
                 lng: fix.lng,
                 accuracy: fix.accuracy,
               })
-            : checkIn({
-                studentToken: st,
-                token: chosen.token,
-                lat: fix.lat,
-                lng: fix.lng,
-                accuracy: fix.accuracy,
-              }),
+            : chosen.kind === "session"
+              ? checkIn({
+                  studentToken: st,
+                  sessionId: chosen.sessionId,
+                  lat: fix.lat,
+                  lng: fix.lng,
+                  accuracy: fix.accuracy,
+                })
+              : checkIn({
+                  studentToken: st,
+                  token: chosen.token,
+                  lat: fix.lat,
+                  lng: fix.lng,
+                  accuracy: fix.accuracy,
+                }),
         method,
       );
     },
@@ -230,11 +251,12 @@ export function QrAttendanceCheckIn({
   );
 
   /**
-   * Step 1 → step 2. A scan or a typed code records which session the student
-   * means and moves them on; the check-in itself waits for the face step.
+   * Step 1 → step 2. A scan, a typed code or a tapped session records which
+   * session the student means and moves them on; the check-in itself waits for
+   * the face step.
    */
-  const chooseSession = useCallback((scanned: ScannedAttendance) => {
-    setChosen(scanned);
+  const chooseSession = useCallback((picked: Chosen) => {
+    setChosen(picked);
     setFailure(null);
     setScanning(false);
     setStep(1);
@@ -260,6 +282,18 @@ export function QrAttendanceCheckIn({
     }
     chooseSession({ kind: "join", joinCode: code.trim() });
   }, [code, chooseSession]);
+
+  /**
+   * A tap on one of the listed open sessions — a class session or the Friday
+   * lecture. It carries the id, which is the one thing `checkIn` needs, so the
+   * student still goes through the face step rather than around it.
+   */
+  const chooseListedSession = useCallback(
+    (s: OpenSession) => {
+      chooseSession({ kind: "session", sessionId: s.id, label: s.title });
+    },
+    [chooseSession],
+  );
 
   /**
    * Step 2: look the Reg Namba up and show who it belongs to.
@@ -325,13 +359,22 @@ export function QrAttendanceCheckIn({
       setStudentToken(res.token);
       setTokenState(res.token);
       toast.success(`Karibu ${res.fullName}`);
+      // Now that the student is known, the group-filtered sessions can be
+      // listed too, not just the ones open to everyone.
+      void refreshSessions();
       setStep(2);
     } finally {
       setSigningIn(false);
     }
-  }, [identity]);
+  }, [identity, refreshSessions]);
 
-  const chosenLabel = chosen ? (chosen.kind === "join" ? chosen.joinCode : "QR ya kipindi") : "";
+  const chosenLabel = chosen
+    ? chosen.kind === "join"
+      ? chosen.joinCode
+      : chosen.kind === "session"
+        ? chosen.label
+        : "QR ya kipindi"
+    : "";
 
   // ---------------------------------------------------------------
   // Step 4: the congratulations screen
@@ -463,18 +506,20 @@ export function QrAttendanceCheckIn({
             {sessions.length > 0 && !scanning && (
               <div className="space-y-1.5">
                 <p className="text-xs font-medium text-muted-foreground">
-                  Vipindi vinavyoendelea sasa
+                  Vipindi vinavyoendelea sasa — bofya kimoja kuhudhuria
                 </p>
                 {sessions.map((s) => (
-                  <div
+                  <button
                     key={s.id}
-                    className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2 text-sm"
+                    type="button"
+                    onClick={() => chooseListedSession(s)}
+                    className="flex w-full items-center justify-between rounded-lg border border-border bg-muted/60 px-3 py-2 text-left text-sm transition-colors hover:border-primary/40 hover:bg-primary/5"
                   >
                     <span className="truncate font-medium">{s.title}</span>
                     <span className="ml-2 shrink-0 text-xs text-muted-foreground">
                       {s.studentGroup || "Wote"} • {s.radiusM}m
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}

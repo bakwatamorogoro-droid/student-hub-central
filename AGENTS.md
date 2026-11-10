@@ -904,8 +904,14 @@ migration that production may not have yet.
   (no seminar or group filter). The geofence reuses `checkArea`/`effectiveDistanceM` from
   `@/lib/geo`, so a coarse GPS fix widens the fence instead of locking students out.
 
-  The student card is `src/components/FridayLectureCard.tsx`, mounted on `/attendance`. The
-  admin counter is `src/components/LiveAttendanceCard.tsx` with `src/lib/useLiveAttendance.ts`,
+  There is **no one-tap student card.** `FridayLectureCard.tsx` was deleted: it wrote a
+  check-in straight from a button, with no face step, which is the bypass the owner removed.
+  The Friday lecture is now just a row in the four-step wizard's open-session list — tapping
+  it carries the session id and the student still goes through the face step. `checkIn`
+  accepts that id and creates the lecture row on first tap, which is why the row can be tapped
+  before the lecture has been written.
+
+  The admin counter is `src/components/LiveAttendanceCard.tsx` with `src/lib/useLiveAttendance.ts`,
   mounted on the dashboard. The counter subscribes to Realtime and also polls, because a phone
   that slept through the socket event still has to see the true count.
 
@@ -2201,8 +2207,11 @@ To check the floor after a change: build, then grep the entry chunk for `\?\.`,
 
 The student flow on `/attendance` is fixed, and the order carries meaning.
 
-1. **Scan the QR.** The session's code comes from the poster or the teacher's
+1. **Pick the session.** The session's code comes from the poster or the teacher's
    screen. A scan or a typed code only says *which* session — it never says who.
+   The open sessions are also listed as tappable rows, which is how the Friday
+   lecture is reached now that its one-tap card is gone; a tap carries the
+   session id and still enters the face step.
 2. **Reg Namba, then the details.** `findStudentsByQuery` resolves the number and
    the page shows the name, the Reg Namba and the course before asking for
    anything else, so a mistyped number is caught while it is the only thing on

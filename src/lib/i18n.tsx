@@ -216,7 +216,10 @@ const dict: Record<string, { sw: string; en: string }> = {
     sw: "Hakuna kipindi kinachoendelea kwa sasa. Subiri mwalimu afungue kipindi.",
     en: "No session is open right now. Wait for your teacher to start one.",
   },
-  att_one_tap: { sw: "Hudhuria kwa Mbofyo Mmoja", en: "One-tap check-in" },
+  att_heading: {
+    sw: "Hudhuria kwa QR, Reg Namba na Sura",
+    en: "Check in with QR, Reg Namba and face",
+  },
   att_scan_qr: { sw: "Scan QR", en: "Scan QR" },
   att_enter_code: { sw: "Weka Msimbo", en: "Enter code" },
   att_code_placeholder: { sw: "Mfano: ABC-123", en: "e.g. ABC-123" },
