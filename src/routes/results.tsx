@@ -21,6 +21,8 @@ import {
   MapPin,
 } from "lucide-react";
 import { gradeShortAnswer } from "@/lib/grading.functions";
+import { buildReferenceAnswer } from "@/lib/referenceAnswer";
+import { quranUrl } from "@/lib/quranApi";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { verifyStudentByPhone } from "@/lib/studentAccount";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
@@ -29,6 +31,23 @@ import { toast } from "@/lib/toast";
 import { storageGet, storageSet } from "@/lib/safe-storage";
 
 type QA = { q: any; given: any; correct: boolean; partial?: number };
+
+/**
+ * The model answer and the evidence for a question the student is reviewing.
+ *
+ * Both come from the knowledge bank, so this is the class's own material rather
+ * than a model's words. It is shown after the exam precisely so the student can
+ * see what a full answer contains and where it is grounded.
+ */
+function referenceFor(q: any): { answer: string; meaning: string; verses: string[] } | null {
+  if (q.question_type !== "short_answer") return null;
+  const known = buildReferenceAnswer(String(q.body || ""));
+  if (!known.matched) {
+    const teacher = String(q.correct_answer || "").trim();
+    return teacher ? { answer: teacher, meaning: "", verses: [] } : null;
+  }
+  return { answer: known.answer, meaning: known.meaning, verses: known.verseRefs };
+}
 
 export const Route = createFileRoute("/results")({
   component: ResultsPage,
@@ -98,15 +117,28 @@ function ResultsPage() {
             }
           } else if (q.question_type === "short_answer") {
             try {
+              // Same reference answer and same concepts as the exam page, so a
+              // recomputed mark here cannot disagree with the stored one. When
+              // the bank knows the topic it supplies both; the teacher's own
+              // answer is used when the bank does not.
+              const known = buildReferenceAnswer(String(q.body || ""));
+              const reference = known.matched
+                ? known.answer
+                : String(q.correct_answer || "").trim();
+              const concepts = known.matched && known.concepts.length
+                ? known.concepts
+                : Array.isArray(q.concepts)
+                  ? (q.concepts as string[])
+                  : undefined;
               const r = await grade({
                 question: q.body,
-                correctAnswer: String(q.correct_answer),
+                correctAnswer: reference,
                 studentAnswer: String(ans || ""),
                 points: Number(q.points),
-                concepts: Array.isArray(q.concepts) ? (q.concepts as string[]) : undefined,
+                concepts,
               });
               aiScore += r.score;
-              feedback[q.id] = { ...r, points: Number(q.points) };
+              feedback[q.id] = { ...r, points: Number(q.points), source: known.source };
             } catch {
               feedback[q.id] = { score: 0, feedback: "AI imeshindwa", points: Number(q.points) };
             }
@@ -670,6 +702,38 @@ function ResultsPage() {
                                   <b>Sababu (AI):</b> {fb.feedback}
                                 </div>
                               )}
+                              {(() => {
+                                const ref = referenceFor(e.q);
+                                if (!ref) return null;
+                                return (
+                                  <div className="mt-2 text-xs rounded-md bg-primary/5 border border-primary/20 p-2 space-y-1">
+                                    <div className="font-bold text-primary">
+                                      Maana halisi ya jibu
+                                    </div>
+                                    <p className="text-foreground/80">
+                                      {ref.meaning || ref.answer}
+                                    </p>
+                                    {ref.verses.length > 0 && (
+                                      <div className="flex flex-wrap items-center gap-1 pt-1">
+                                        <span className="text-muted-foreground">
+                                          Vyanzo vya Qur'an:
+                                        </span>
+                                        {ref.verses.map((v) => (
+                                          <a
+                                            key={v}
+                                            href={quranUrl(v)}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="underline text-primary"
+                                          >
+                                            {v}
+                                          </a>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           );
                         })}

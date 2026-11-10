@@ -20,6 +20,7 @@ import {
   QUESTION_TYPE_HINTS,
 } from "@/lib/examQuestions";
 import { TypeBadge } from "@/components/ExamAnswerField";
+import { generateReferenceAnswer } from "@/lib/grading.functions";
 
 export const Route = createFileRoute("/admin/exams")({ component: Page });
 
@@ -214,6 +215,9 @@ function Page() {
 function QuestionsPanel({ examId }: { examId: string }) {
   const [qs, setQs] = useState<any[]>([]);
   const [editing, setEditing] = useState<any | null>(null);
+  // Reference-answer generation. The toast names the source, because a teacher
+  // must not mistake a model's words for the bank's.
+  const [aiBusy, setAiBusy] = useState(false);
   const load = async () => {
     const { data } = await supabase.from("questions").select("*").eq("exam_id", examId).order("position");
     setQs(data || []);
@@ -368,6 +372,43 @@ function QuestionsPanel({ examId }: { examId: string }) {
               )}
               {editing.question_type === "short_answer" && (
                 <>
+                  <div className="rounded-md border border-primary/30 bg-primary/5 p-3 space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Andika swali pekee, kisha bofya hapa — mfumo utatafuta jibu na maana yake
+                      (kanzi ya Islamic Studies kwanza, AI inasaidia pale tu kanzi haijui).
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="w-full"
+                      disabled={aiBusy || !String(editing.body || "").trim()}
+                      onClick={async () => {
+                        setAiBusy(true);
+                        try {
+                          const r = await generateReferenceAnswer(String(editing.body || ""));
+                          if (!r.answer) {
+                            toast.error("Kanzi haikupata jibu la swali hili. Andika jibu mwenyewe.");
+                            return;
+                          }
+                          setEditing((prev: any) => ({
+                            ...prev,
+                            correct_answer: r.answer,
+                            concepts: r.concepts.length ? r.concepts.join("\n") : prev.concepts,
+                          }));
+                          toast.success(
+                            r.source === "bank"
+                              ? `Jibu limetoka kanzi ya maarifa${r.topicName ? " (" + r.topicName.sw + ")" : ""}.`
+                              : "Jibu limetoka kwa AI — liangalie kabla ya kuhifadhi.",
+                          );
+                        } finally {
+                          setAiBusy(false);
+                        }
+                      }}
+                    >
+                      {aiBusy ? "Inatafuta…" : "Tengeneza jibu + maana (AI)"}
+                    </Button>
+                  </div>
                   <div><Label>Jibu sahihi / muundo (AI italinganisha kwa maana)</Label><Textarea value={editing.correct_answer || ""} onChange={(e) => setEditing({...editing, correct_answer: e.target.value})} /></div>
                   <div>
                     <Label>Mawazo Muhimu / Concepts (mstari mmoja kila wazo)</Label>
