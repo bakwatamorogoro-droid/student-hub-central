@@ -2007,3 +2007,47 @@ The `--shadow-*` tokens are built from channel triplets for the reason in the
 section above; if you add one, follow that pattern instead of reaching for
 `color-mix()`.
 
+
+## OpenTutor, and the rule against inventing scripture
+
+`/tutor` (`src/routes/tutor.tsx`) answers a student's Islamic Studies question
+from two sources and no others:
+
+- `src/lib/openTutor.ts` — works out the topic and assembles the material. It
+  is pure, so `node --test` covers it.
+- `src/lib/quranApi.ts` — fetches Qur'an text from `api.quran.com`.
+
+The rule that governs both: **this app never writes scripture or commentary.**
+Attributing a sentence to the Qur'an that is not in it, or a hadith to the
+Prophet he did not say, is a serious harm in front of a class, and a confident
+wrong answer is worse than a link.
+
+So, concretely:
+
+- Explanations come from the knowledge bank, not from a model. The prose in
+  `TOPIC_SUMMARY` describes what a topic covers, using the same rubric the
+  grader marks against.
+- Qur'an text is never stored in the repo. `TUTOR_VERSES` holds `sura:aya`
+  keys only, and the page fetches the text. **Before adding a key, fetch it and
+  confirm it returns text** — `api.quran.com/api/v4/verses/by_key/<sura>:<aya>`
+  needs a browser-like `User-Agent` and a `fields=text_uthmani` parameter, or
+  it returns 403 or an empty verse. A key that fails to resolve renders as a
+  link, never as a quote.
+- There are no hadith citations, because none could be verified against a
+  source. Do not add one without one.
+- An unrecognised question says so and lists the known topics. It does not
+  guess. Same choice `elessonQuiz.ts` made, for the same reason.
+
+The API needs no key and sends `access-control-allow-origin: *`, so this runs
+from the browser with no edge function and no secret. The project has neither
+deployed today, and OpenTutor does not depend on them.
+
+### Ranking topics: the tie-break is load-bearing
+
+`topicsForQuestion` orders by, in turn: an exact topic-name match, the longest
+matching term, then the total length of the matches. The first of those exists
+because of a bug the tests caught: "sunnah" matched `hadith`, since the word
+"sunnah" also appears in the hadith rubric, and the tie was broken by
+`Object.entries` order — that is, by luck. If you change the ordering, keep the
+exact-name step first, and keep the test that covers it.
+
