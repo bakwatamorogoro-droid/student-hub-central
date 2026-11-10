@@ -165,8 +165,14 @@
         //    not depend on how slow the connection is. Selected by type rather than
         //    by id because the production build rewrites this tag and drops any id
         //    on it; this inline script sits after it, so the element is already
-        //    parsed by the time we look.
-        var moduleScript = document.querySelector('script[type="module"]');
+        //    parsed by the time we look. The dev server also injects its own module
+        //    script (`/@vite/client`), so pick the last one that is not internal.
+        var moduleScript = null;
+        var scripts = document.querySelectorAll('script[type="module"]');
+        for (var i = 0; i < scripts.length; i++) {
+          var src = scripts[i].getAttribute("src") || "";
+          if (src.indexOf("/@") !== 0) moduleScript = scripts[i];
+        }
         if (moduleScript) moduleScript.addEventListener("error", showNotice);
 
         // 3. A throw during boot. Resource errors (a failed image or font) also
