@@ -48,6 +48,13 @@ import {
   type CameraVerdict,
   type GpsSample,
 } from "@/lib/proctoring";
+import {
+  faceVerdictLabel,
+  isFaceDetectionSupported,
+  monitorFaces,
+  type FaceVerdict,
+} from "@/lib/proctorFaces";
+import { monitorAudio, talkingShare, type AudioVerdict } from "@/lib/proctorAudio";
 import { storageGet, storageRemove, storageSet } from "@/lib/safe-storage";
 import { touchSubmission } from "@/lib/liveExamsApi";
 import {
@@ -106,6 +113,14 @@ function ExamPage() {
   // call or a notification legitimately drops fullscreen for a moment.
   const [fsLost, setFsLost] = useState(0);
   const [camVerdict, setCamVerdict] = useState<CameraVerdict | null>(null);
+  // Audio and face state. Both are reported, never enforced: the teacher judges,
+  // the system only records. `audioTalkingPct` is the share of the readings that
+  // counted as speech, which distinguishes "a word was heard" from "a
+  // conversation happened".
+  const [audioVerdict, setAudioVerdict] = useState<AudioVerdict | null>(null);
+  const [audioTalkingPct, setAudioTalkingPct] = useState(0);
+  const [faceVerdict, setFaceVerdict] = useState<FaceVerdict | null>(null);
+  const [faceCount, setFaceCount] = useState(0);
   const [gpsFlags, setGpsFlags] = useState<string[]>([]);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [gpsLive, setGpsLive] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
@@ -362,6 +377,39 @@ function ExamPage() {
     });
     return stop;
   }, [started, camOk]);
+
+  // Faces: how many, and is the student looking at the screen. This is the
+  // "people around him" half of the request. Chromium-only — when the browser
+  // has no detector we say so in the strip rather than showing a check that
+  // silently never runs.
+  useEffect(() => {
+    if (!started || !camOk || !streamRef.current) return;
+    if (!isFaceDetectionSupported()) return;
+    const stop = monitorFaces(streamRef.current, {
+      intervalMs: 4000,
+      window: 2,
+      onVerdict: (verdict, count) => {
+        setFaceVerdict(verdict);
+        setFaceCount(count);
+      },
+    });
+    return stop;
+  }, [started, camOk]);
+
+  // Audio: whether anyone is talking in the room. The analyser reads one
+  // loudness number per tick and the sample is thrown away — nothing is
+  // recorded and nothing is transcribed, so this reports a pattern rather than
+  // a conversation. See the note at the top of `proctorAudio.ts`.
+  useEffect(() => {
+    if (!started || !audioOk || !streamRef.current) return;
+    const stop = monitorAudio(streamRef.current, {
+      intervalMs: 2000,
+      window: 3,
+      onVerdict: (verdict, _level) => setAudioVerdict(verdict),
+      onHistory: (levels) => setAudioTalkingPct(Math.round(talkingShare(levels) * 100)),
+    });
+    return stop;
+  }, [started, audioOk]);
 
   // GPS, kept fresh: one fix at the start proves where the student was then, not
   // where they are now. Samples accumulate so the teacher can see the spread.
@@ -758,6 +806,11 @@ function ExamPage() {
         fullscreen_exits: fsLost,
         camera: camVerdict,
         gps_flags: gpsFlags,
+        audio: audioVerdict,
+        audio_talking_pct: audioTalkingPct,
+        faces: faceVerdict,
+        face_count: faceCount,
+        face_detection: isFaceDetectionSupported() ? "supported" : "unsupported",
       },
     }));
     // The columns the geofence writes (`gps_distance_m`, `gps_radius_m`) and the
@@ -964,6 +1017,17 @@ function ExamPage() {
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700">
                 ⚠️ Copy, Paste na Right-click vimezuiwa wakati wa mtihani.
               </div>
+              {(exam.require_audio || exam.require_camera) && (
+                <div className="rounded-xl border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+                  <p className="font-semibold text-foreground">Faragha yako</p>
+                  <p className="mt-1">
+                    Kamera na maikrofoni hazirekodiwi na hazitumwi popote. Mfumo
+                    unapima tu kama kuna uso mmoja unaoonekana, na kama kuna
+                    sauti inayozungumzwa — kwa nambari, sio maneno. Hakuna picha
+                    wala sauti inayohifadhiwa.
+                  </p>
+                </div>
+              )}
               <Button onClick={beginExam} className="w-full" size="lg">
                 {blockers > 0 ? "Anza Mtihani (Ruhusu kwanza)" : "Anza Mtihani"}
               </Button>
@@ -1051,6 +1115,38 @@ function ExamPage() {
               {f}
             </span>
           ))}
+          {camOk && (
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold ${
+                faceVerdict && faceVerdict !== "ok"
+                  ? "bg-amber-500/15 text-amber-700"
+                  : "bg-emerald-500/15 text-emerald-700"
+              }`}
+            >
+              <Camera className="h-3 w-3" />
+              {!isFaceDetectionSupported()
+                ? "Uso: hauwezi kupimwa kwenye kivinjari hiki"
+                : faceVerdict
+                  ? faceVerdictLabel(faceVerdict, "sw")
+                  : "Inapima uso…"}
+            </span>
+          )}
+          {audioOk && (
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold ${
+                audioVerdict === "talking"
+                  ? "bg-amber-500/15 text-amber-700"
+                  : "bg-emerald-500/15 text-emerald-700"
+              }`}
+            >
+              <Mic className="h-3 w-3" />
+              {audioVerdict === "talking"
+                ? `Sauti: kuna mtu anazungumza${audioTalkingPct > 0 ? ` (${audioTalkingPct}%)` : ""}`
+                : audioVerdict === "noisy"
+                  ? "Sauti: kelele za mazingira"
+                  : "Sauti: kimya"}
+            </span>
+          )}
         </div>
       )}
       <main className="container mx-auto px-4 py-6 max-w-3xl space-y-4">

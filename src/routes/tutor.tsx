@@ -10,6 +10,7 @@ import { toast } from "@/lib/toast";
 import { useI18n } from "@/lib/i18n";
 import { loadLiveLessons, type Lesson } from "@/lib/elessonsApi";
 import { planTutorAnswer, rankLessons, type LessonMatch, type TutorPlan } from "@/lib/openTutor";
+import { askTutorAi, type TutorSections } from "@/lib/tutorAi";
 import { resolveVerses, quranUrl, type ResolvedVerse } from "@/lib/quranApi";
 import {
   BookOpen,
@@ -55,6 +56,10 @@ type Answered = {
   plan: TutorPlan;
   verses: (ResolvedVerse | null)[];
   lessons: LessonMatch[];
+  /** Set when the bank recognised nothing and the AI answered instead. */
+  ai: TutorSections | null;
+  /** True while the AI answer is still on its way, so the page can say so. */
+  aiLoading: boolean;
 };
 
 function Page() {
@@ -94,10 +99,31 @@ function Page() {
           ? await resolveVerses(plan.verseRefs, controller.signal)
           : [];
         if (controller.signal.aborted) return;
-        setAnswer({ plan, verses, lessons: rankLessons(plan, lessons) });
+        const ranked = rankLessons(plan, lessons);
+        setAnswer({ plan, verses, lessons: ranked, ai: null, aiLoading: !plan.matched });
+
+        // Only when the bank recognised nothing. The bank's answers are
+        // grounded in the course material, so they always win; the AI is here
+        // for the questions the bank cannot place at all. It arrives after the
+        // grounded answer is already on screen, so the student never waits on a
+        // model to see something.
+        if (!plan.matched) {
+          const ai = await askTutorAi(q, {
+            keyPoints: plan.keyPoints,
+            signal: controller.signal,
+          });
+          if (controller.signal.aborted) return;
+          setAnswer((prev) => (prev ? { ...prev, ai, aiLoading: false } : prev));
+        }
       } catch {
         if (!controller.signal.aborted) {
-          setAnswer({ plan, verses: [], lessons: rankLessons(plan, lessons) });
+          setAnswer({
+            plan,
+            verses: [],
+            lessons: rankLessons(plan, lessons),
+            ai: null,
+            aiLoading: false,
+          });
         }
       } finally {
         if (!controller.signal.aborted) setBusy(false);
@@ -206,16 +232,24 @@ function Page() {
         {answer && (
           <div className="stagger-grid space-y-4">
             <AnswerCard answer={answer} />
+            {answer.ai && <AiAnswerCard sections={answer.ai} />}
+            {answer.aiLoading && !answer.ai && <AiThinkingCard />}
             {answer.plan.verseRefs.length > 0 && (
               <VersesCard refs={answer.plan.verseRefs} verses={answer.verses} />
             )}
             <LessonsCard matches={answer.lessons} failed={lessonsFailed} total={lessons.length} />
-            <FollowUpsCard plan={answer.plan} onPick={(q) => void ask(q)} />
+            {answer.plan.matched && (
+              <FollowUpsCard plan={answer.plan} onPick={(q) => void ask(q)} />
+            )}
             <p className="flex items-start gap-2 px-1 text-xs text-muted-foreground">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              {lang === "sw"
-                ? "Maelezo haya yanatokana na kanzi ya maarifa ya mfumo na maandishi ya Qur'an kutoka quran.com. Ni msaada wa kujifunza — hakikisha na mwalimu wako."
-                : "These explanations come from the system's knowledge bank and Qur'an text from quran.com. This is a study aid — check with your teacher."}
+              {answer.ai
+                ? lang === "sw"
+                  ? "Jibu hili limetolewa na AI kwa kuwa kanzi ya maarifa ya mfumo haikuipata mada hii. Ni msaada wa kujifunza — hakikisha na mwalimu wako."
+                  : "This answer came from the AI because the system's knowledge bank did not know this topic. It is a study aid — check with your teacher."
+                : lang === "sw"
+                  ? "Maelezo haya yanatokana na kanzi ya maarifa ya mfumo na maandishi ya Qur'an kutoka quran.com. Ni msaada wa kujifunza — hakikisha na mwalimu wako."
+                  : "These explanations come from the system's knowledge bank and Qur'an text from quran.com. This is a study aid — check with your teacher."}
             </p>
           </div>
         )}
@@ -240,6 +274,68 @@ function LoadingCards() {
   );
 }
 
+function AiThinkingCard() {
+  const { lang } = useI18n();
+  return (
+    <Card className="surface-raised">
+      <CardContent className="flex items-center gap-3 p-5 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+        {lang === "sw"
+          ? "Kanzi ya maarifa haikuipata mada hii — AI inajaribu kujibu…"
+          : "The knowledge bank did not know this topic — the AI is trying to answer…"}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AiAnswerCard({ sections }: { sections: TutorSections }) {
+  const { lang } = useI18n();
+  return (
+    <Card className="surface-raised border-primary/30">
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Sparkles className="h-5 w-5 text-primary" />
+            {lang === "sw" ? "Jibu la AI" : "AI answer"}
+          </CardTitle>
+          <Badge variant="secondary" className="font-normal">
+            {lang === "sw" ? "AI" : "AI"}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm leading-relaxed text-foreground/90">{sections.explanation}</p>
+
+        {sections.keyPoints.length > 0 && (
+          <div>
+            <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+              <ListChecks className="h-3.5 w-3.5" />
+              {lang === "sw" ? "Mambo ya kutaja" : "Points to name"}
+            </h3>
+            <ul className="flex flex-wrap gap-1.5">
+              {sections.keyPoints.map((p) => (
+                <li
+                  key={p}
+                  className="rounded-lg border border-border/60 bg-muted/40 px-2.5 py-1 text-xs font-medium text-foreground/85"
+                >
+                  {p}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {sections.caveat && (
+          <p className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-foreground/85">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+            {sections.caveat}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function AnswerCard({ answer }: { answer: Answered }) {
   const { lang } = useI18n();
   const { plan } = answer;
@@ -256,13 +352,13 @@ function AnswerCard({ answer }: { answer: Answered }) {
         <CardContent className="space-y-3 text-sm">
           <p className="text-muted-foreground">
             {lang === "sw"
-              ? "Sikupata mada ya Islamic Studies inayolingana na swali lako, kwa hiyo sitatoa jibu la kubahatisha. Jaribu kutaja mada yenyewe."
-              : "I did not find an Islamic Studies topic matching your question, so I will not guess. Try naming the topic itself."}
+              ? "Kanzi ya maarifa ya mfumo haikuipata mada hii. AI inajaribu kujibu kwa chini — kama haitafanikiwa, jaribu kutaja mada yenyewe."
+              : "The system's knowledge bank did not place this question. The AI is trying below — if that fails, try naming the topic itself."}
           </p>
           <p className="text-xs text-muted-foreground">
             {lang === "sw"
-              ? "Mada ninazojua: swala, zaka, saumu, hajj, tawhid, iman, nikah, talaq, mirath, sharia, wudu, malaika, jannah, jahannam, qiyama, hijra, khulafa, adabu, elimu, ibada, toba, dua, shukrani, saburi."
-              : "Topics I know: salah, zakah, fasting, hajj, tawhid, iman, nikah, talaq, mirath, sharia, wudu, angels, jannah, jahannam, qiyama, hijra, khulafa, adabu, elimu, ibada, toba, dua, shukrani, saburi."}
+              ? "Mada kanzi inazojua: swala, zaka, saumu, hajj, tawhid, iman, nikah, talaq, mirath, sharia, wudu, malaika, jannah, jahannam, qiyama, hijra, khulafa, adabu, elimu, ibada, toba, dua, shukrani, saburi."
+              : "Topics the bank knows: salah, zakah, fasting, hajj, tawhid, iman, nikah, talaq, mirath, sharia, wudu, angels, jannah, jahannam, qiyama, hijra, khulafa, adabu, elimu, ibada, toba, dua, shukrani, saburi."}
           </p>
         </CardContent>
       </Card>
