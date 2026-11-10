@@ -19,6 +19,13 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <!--
+      Classic script, in head, before the module: it must run first and must not
+      be transpiled. It fills in the APIs that are newer than the syntax the
+      bundle targets (replaceAll, Object.hasOwn, findLast, structuredClone and
+      friends). See the file itself for the list and the reasoning.
+    -->
+    <script src="/polyfills.js"></script>
     <meta
       name="description"
       content="Islamic Studies Test Online — fanya mitihani mtandaoni, angalia maswali ya semester, na fuatilia matokeo yako."
@@ -125,14 +132,68 @@
       </div>
     </noscript>
 
-    <script type="module" src="/src/main.tsx"></script>
+    <script id="app-module" type="module" src="/src/main.tsx"></script>
     <script>
-      // Runs before the module in engines that support modules, and runs *instead* of
-      // it in engines that do not. `noModule` in HTMLScriptElement is the one feature
-      // that separates "can run an ES module" from "cannot".
-      if (!("noModule" in HTMLScriptElement.prototype)) {
-        document.documentElement.setAttribute("data-unsupported", "");
-      }
+      // Classic JavaScript on purpose: it must run on engines that cannot parse a
+      // module, which is exactly the case it detects. It decides whether this
+      // engine can run the bundle, and stays armed until the app says it mounted,
+      // so a failure shows the notice instead of a white page.
+      (function () {
+        var root = document.documentElement;
+
+        function showNotice() {
+          root.setAttribute("data-unsupported", "");
+        }
+
+        // 1. Syntax. `noModule` separates "can run an ES module" from "cannot",
+        //    and async/await is the syntax the bundle actually ships (build.target
+        //    is es2017). Both are synchronous checks, so they never wait on the
+        //    network and can never produce a false alarm.
+        if (!("noModule" in HTMLScriptElement.prototype)) {
+          showNotice();
+          return;
+        }
+        try {
+          new Function("return async function () {}");
+        } catch (error) {
+          showNotice();
+          return;
+        }
+
+        // 2. The bundle itself. A 404 or a parse error fires `error` on the script
+        //    element, and this is the accurate signal — unlike a timeout, it does
+        //    not depend on how slow the connection is. Selected by type rather than
+        //    by id because the production build rewrites this tag and drops any id
+        //    on it; this inline script sits after it, so the element is already
+        //    parsed by the time we look.
+        var moduleScript = document.querySelector('script[type="module"]');
+        if (moduleScript) moduleScript.addEventListener("error", showNotice);
+
+        // 3. A throw during boot. Resource errors (a failed image or font) also
+        //    arrive here and must be ignored, or one broken thumbnail would claim
+        //    the browser is too old. A resource error has a target element and no
+        //    message; a script error has a message.
+        window.addEventListener(
+          "error",
+          function (event) {
+            var isResourceError = event.target && event.target !== window && !event.message;
+            if (isResourceError) return;
+            showNotice();
+          },
+          true,
+        );
+
+        // 4. Last resort, for a bundle that loads but never mounts and never
+        //    throws. Deliberately long: a slow mobile connection must not be
+        //    mistaken for an old browser, and mounting does not wait on Supabase.
+        var timer = setTimeout(showNotice, 30000);
+
+        // Called from main.tsx once React has mounted.
+        window.__markAppMounted = function () {
+          clearTimeout(timer);
+          root.removeAttribute("data-unsupported");
+        };
+      })();
     </script>
   </body>
 </html>

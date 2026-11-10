@@ -2152,3 +2152,46 @@ one word is what would mark a correct paraphrase wrong.
 Both the exam page and the results page build the reference answer through this
 module. They must not diverge: a recomputed mark that disagrees with the stored one
 is a mark the student cannot trust.
+
+## The browser floor: es2017 syntax plus runtime polyfills
+
+Two independent limits decide whether a browser can open the app, and a mismatch
+between them is invisible in development.
+
+**Syntax.** `build.target` in `vite.config.ts` is `es2017`. This is not a
+performance choice. es2020 keeps `?.` and `??` in the output, and those are a
+`SyntaxError` — not a fallback, not a slow path — on Chrome 61-79, Safari 10.1-13.0
+and Firefox 60-73. Those engines *can* run a module, so the `noModule` check in
+`index.html` stays quiet and the student gets a blank page with no message. es2017
+is the honest floor: async/await is native from Chrome 55 / Safari 10.1 / Firefox
+52, so lowering the target costs about 1% of the bundle and closes the whole gap.
+**Do not raise this target without re-checking `index.html`'s gate.**
+
+**APIs.** A browser can parse the bundle perfectly and still die on
+`str.replaceAll` (Chrome 85), `Object.hasOwn` (93), `findLast` (97),
+`structuredClone` (98) or `crypto.randomUUID` (92). `public/polyfills.js` fills
+those in. It is a classic script in `<head>` so it runs before the module and is
+never transpiled, and it is written in ES5 because an engine old enough to need a
+polyfill may also be old enough to choke on an arrow function.
+
+**Never a blank page.** `index.html` arms the `#unsupported` notice until the app
+says it mounted. Three signals: the syntax gate (synchronous, so it cannot produce
+a false alarm), an `error` listener on the module script itself (accurate for a 404
+or a parse failure, and independent of connection speed), and a window `error`
+listener for a throw during boot. That last one must ignore resource errors — a
+resource error has a target element and no message — or one broken thumbnail would
+claim the browser is too old. The 30s timer is a last resort only.
+
+`src/main.tsx` calls `window.__markAppMounted()` from an effect, not from after
+`render()`, because React 18 renders asynchronously and a call there would fire
+before anything was on screen.
+
+**The PDF chunk is not on the critical path.** `pdfjs-dist/legacy` and the `docx`
+bundle carry syntax and regex the rest of the app does not: BigInt literals, a
+lookbehind regex (`(?<={{` in docx), an async generator. Both are dynamic imports,
+so they cannot blank the page — the damage is limited to the feature that needed
+them. The legacy pdfjs build also bundles core-js and polyfills itself.
+
+To check the floor after a change: build, then grep the entry chunk for `\?\.`,
+`\?\?` and `{ ...` and confirm all three are zero. Then confirm
+`dist/polyfills.js` exists and `index.html` loads it before the module.
