@@ -2195,3 +2195,47 @@ them. The legacy pdfjs build also bundles core-js and polyfills itself.
 To check the floor after a change: build, then grep the entry chunk for `\?\.`,
 `\?\?` and `{ ...` and confirm all three are zero. Then confirm
 `dist/polyfills.js` exists and `index.html` loads it before the module.
+
+## Attendance is four steps: QR, Reg Namba, face, congratulations
+
+The student flow on `/attendance` is fixed, and the order carries meaning.
+
+1. **Scan the QR.** The session's code comes from the poster or the teacher's
+   screen. A scan or a typed code only says *which* session — it never says who.
+2. **Reg Namba, then the details.** `findStudentsByQuery` resolves the number and
+   the page shows the name, the Reg Namba and the course before asking for
+   anything else, so a mistyped number is caught while it is the only thing on
+   screen. The phone on file is still what mints the session
+   (`loginStudentByPhone`); it is asked for only after the name is on screen.
+3. **The face.** `FaceCheck` runs the liveness sequence and is the last thing
+   before the record is written, because it is the one check that has to happen
+   *at* the session with the student present.
+4. **Hongera.** The confirmation screen names the student, the course, the
+   distance and how the face was checked.
+
+**This is liveness, not recognition.** There is no stored photo of the student and
+there must not be — keeping a classroom of minors' faces to make "recognition"
+literal would be a worse problem than the one it solves. `faceLiveness.ts` instead
+requires movements a still image cannot perform: be centred, come closer, then
+turn. `closer` and `turn` are measured against the reading from the passing
+`centred` step, which is what makes "the face changed when instructed" the thing
+being tested — a printed photo held to the lens fails `closer`.
+
+**Two engines, and the badge says which is running.** `FaceDetector` is Chromium
+only, so Chrome/Edge/Android judge the three movements on the face's own geometry.
+Firefox and Safari have no detector; there the check falls back to
+`proctoring.ts`'s frame statistics — an uncovered lens with something in front of
+it, plus motion — which is a weaker claim. `faceCheckSupport()` reports which path
+is in play and `FaceCheck` prints it, because a check that quietly checks less
+than it appears to would be worse than no check. A browser with no camera at all
+is offered "Hudhuria bila kamera" and the record says `bila kamera`, so a student
+is never stranded and the teacher can see what was verified.
+
+**Nothing about the face is stored.** No frame is uploaded, no image is kept; the
+verdict and the method name are all that reach the record.
+
+Unit tests live in `faceLiveness.test.ts` and pin the judgements (the two-face
+refusal, the growth and travel thresholds, the two-sample motion rule) without a
+camera. That file imports through relative `./` paths, not `@/`, because
+`node --test` cannot resolve the alias — the same rule every testable lib module
+follows.
