@@ -461,6 +461,44 @@ export async function loginStudentByPhone(
 }
 
 /**
+ * Mints an attendance session from the Reg Namba alone.
+ *
+ * The owner removed the phone confirmation from the attendance flow: the QR says
+ * which session, the Reg Namba says who, and the face step proves a live person
+ * is there. The phone was the second secret, and without it the Reg Namba is the
+ * only thing between a stranger and this student's session.
+ *
+ * That is a deliberate trade the owner asked for, and it is worth stating plainly
+ * because it is a real weakening: anyone who knows a classmate's Reg Namba can
+ * mint a session for them. The face step does not close that gap — it is liveness,
+ * not recognition, so it proves a live person is present, not that the person is
+ * the student whose number was typed. What keeps it honest is the room: the QR
+ * rotates and is only available in the lecture, and the invigilator is watching.
+ *
+ * Kept separate from `loginStudentByPhone` so the phone path stays available and
+ * the weaker path is a thing someone chose, not a default that leaked everywhere.
+ */
+export async function loginStudentForAttendance(
+  regNoInput: string,
+): Promise<
+  | { ok: true; token: string; fullName: string }
+  | { ok: false; reason: "bad_credentials" | "not_ready" }
+> {
+  const regNo = regNoSchema.safeParse(regNoInput);
+  if (!regNo.success) return { ok: false, reason: "bad_credentials" };
+
+  const student = await findStudent(regNo.data);
+  if (!student) return { ok: false, reason: "bad_credentials" };
+
+  const session = await mintSession(
+    student,
+    await hashDeviceId(currentDeviceId(), "attendance-session"),
+  );
+  if (!session.ok) return { ok: false, reason: "not_ready" };
+  return { ok: true, token: session.token, fullName: session.fullName };
+}
+
+/**
  * Confirms a Reg Namba and the phone on file, without signing anyone in.
  *
  * The results page needs "is this really this student?" but must not create a

@@ -131,6 +131,35 @@ export function challengeSatisfied(
   }
 }
 
+/**
+ * Why a reading is not good enough, so the student can be told *what* to fix.
+ *
+ * The three movements need a face that is present, alone, close enough and in the
+ * middle. When one of those is missing, "hold still and follow the instructions"
+ * is the wrong thing to say — the student cannot see the camera, so they do not
+ * know their face is out of frame or that a classmate has wandered in behind
+ * them. Naming the fault is the whole point of this function; `FaceCheck` renders
+ * the matching instruction.
+ *
+ * `too_far` is reported before `off_centre`: a face too small to measure is also
+ * likely to be off centre, and "come closer" is the instruction that fixes both.
+ */
+export type FaceIssue = "none" | "absent" | "multiple" | "too_far" | "off_centre";
+
+export function faceIssue(reading: FaceReading): FaceIssue {
+  if (reading.count === 0) return "absent";
+  if (reading.count > 1) return "multiple";
+  if (reading.cx == null || reading.cy == null || reading.width == null) return "absent";
+  if (reading.width < MIN_FACE_WIDTH) return "too_far";
+  if (
+    Math.abs(reading.cx - 0.5) > CENTRED_TOLERANCE_X ||
+    Math.abs(reading.cy - 0.5) > CENTRED_TOLERANCE_Y
+  ) {
+    return "off_centre";
+  }
+  return "none";
+}
+
 // ---------------------------------------------------------------
 // The fallback: frame statistics, no detector
 // ---------------------------------------------------------------

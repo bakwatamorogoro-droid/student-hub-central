@@ -15,7 +15,7 @@ import {
   type AttendanceFailure,
   type OpenSession,
 } from "@/lib/attendance";
-import { loginStudentByPhone } from "@/lib/studentAccount";
+import { loginStudentForAttendance } from "@/lib/studentAccount";
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { getStudentToken, setStudentToken } from "@/lib/student-session";
 import { toast } from "@/lib/toast";
@@ -42,8 +42,7 @@ const FAILURE_TEXT: Record<AttendanceFailure, string> = {
   invalid_token: "QR au msimbo haitambuliki. Hakikisha ni wa kipindi kinachoendelea.",
   expired_token: "QR hii imeisha muda wake. Scan tena QR ya sasa.",
   session_closed: "Kipindi hiki kimefungwa. Huwezi kuhudhuria kipindi kilichofungwa.",
-  not_registered:
-    "Haujatambuliwa kama mwanafunzi. Weka Reg Namba na namba yako ya simu kisha ujaribu tena.",
+  not_registered: "Haujatambuliwa kama mwanafunzi. Weka Reg Namba yako sahihi, kisha ujaribu tena.",
   gps_required:
     "Umbali hauwezi kuthibitishwa. Ruhusu GPS, na hakikisha kipindi kina eneo la darasa.",
   outside_area: "Uko nje ya eneo lililoruhusiwa la darasa. Sogeza karibu na mwalimu.",
@@ -118,7 +117,6 @@ export function QrAttendanceCheckIn({
   // Identity, looked up from the Reg Namba so the student sees a name and a
   // course rather than a bare confirmation.
   const [regNo, setRegNo] = useState("");
-  const [phone, setPhone] = useState("");
   const [looking, setLooking] = useState(false);
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [signingIn, setSigningIn] = useState(false);
@@ -266,9 +264,9 @@ export function QrAttendanceCheckIn({
   /**
    * Step 2: look the Reg Namba up and show who it belongs to.
    *
-   * The lookup runs before the phone is asked for, so a mistyped Reg Namba is
-   * caught while it is still the only thing on screen — and so the student sees
-   * a name and a course, which is what makes "is this me?" answerable.
+   * The lookup is the only check now that the phone is gone, so it is worth
+   * showing the name and course back: that is what makes "is this me?"
+   * answerable, and it catches a mistyped Reg Namba before the face step.
    */
   const lookUp = useCallback(async () => {
     const wanted = regNo.trim();
@@ -305,36 +303,33 @@ export function QrAttendanceCheckIn({
   }, [regNo]);
 
   /**
-   * Signs the student in with the two details they already know: their Reg Namba
-   * and the phone the school holds. No PIN is needed here — the phone on file is
-   * the proof, and the session is minted exactly as a PIN sign-in would mint it.
+   * Step 2 → step 3. Signs the student in so the check-in has an identity to
+   * write against, then moves on to the face step.
+   *
+   * The Reg Namba alone is the identity here — the owner removed the phone
+   * confirmation. `loginStudentForAttendance` documents what that costs.
    */
   const signIn = useCallback(async () => {
     if (!identity) return;
-    if (!/^[0-9+\s-]{7,20}$/.test(phone.trim())) {
-      toast.error("Weka namba ya simu uliyojisajili nayo");
-      return;
-    }
     setSigningIn(true);
     try {
-      const res = await loginStudentByPhone(identity.regNo, phone.trim());
+      const res = await loginStudentForAttendance(identity.regNo);
       if (!res.ok) {
-        const msg =
-          res.reason === "no_phone"
-            ? "Hakuna namba ya simu kwenye taarifa zako. Nenda Akaunti uongeze namba, kisha ujaribu tena."
-            : "Reg Namba au namba ya simu si sahihi. Tumia namba uliyojisajili nayo.";
-        toast.error(msg);
+        toast.error(
+          res.reason === "not_ready"
+            ? "Mfumo haupatikani kwa sasa. Mwambie mwalimu au msimamizi, kisha ujaribu tena."
+            : "Reg Namba hii haipo kwenye mfumo. Angalia vizuri kisha ujaribu tena.",
+        );
         return;
       }
       setStudentToken(res.token);
       setTokenState(res.token);
-      setPhone("");
       toast.success(`Karibu ${res.fullName}`);
       setStep(2);
     } finally {
       setSigningIn(false);
     }
-  }, [identity, phone]);
+  }, [identity]);
 
   const chosenLabel = chosen ? (chosen.kind === "join" ? chosen.joinCode : "QR ya kipindi") : "";
 
@@ -549,8 +544,8 @@ export function QrAttendanceCheckIn({
                   <div className="text-sm">
                     <p className="font-medium">Weka Reg Namba yako</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      Tutaonyesha jina lako na kozi yako ili uthibitishe ni wewe, kisha uweke namba
-                      ya simu uliyojisajili nayo.
+                      Tutaonyesha jina lako na kozi yako ili uthibitishe ni wewe, kisha
+                      utathibitisha sura yako.
                     </p>
                   </div>
                 </div>
@@ -601,31 +596,11 @@ export function QrAttendanceCheckIn({
                   )}
                 </div>
 
-                <div className="space-y-1">
-                  <Label htmlFor="qr-phone" className="text-xs">
-                    Namba ya Simu (uliyojisajili nayo)
-                  </Label>
-                  <Input
-                    id="qr-phone"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value.replace(/[^0-9+\s-]/g, ""))}
-                    inputMode="tel"
-                    type="tel"
-                    placeholder="07XXXXXXXX"
-                    autoComplete="tel"
-                    maxLength={20}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") signIn();
-                    }}
-                  />
-                </div>
-
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
                     onClick={() => {
                       setIdentity(null);
-                      setPhone("");
                     }}
                   >
                     Badilisha
@@ -640,7 +615,7 @@ export function QrAttendanceCheckIn({
                   </Button>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Namba ya simu uliyojisajili nayo ndiyo uthibitisho — hakuna PIN inayohitajika.
+                  Kisha utathibitisha sura yako kwenye hatua inayofuata.
                 </p>
               </>
             )}

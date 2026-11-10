@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   challengeSatisfied,
+  faceIssue,
   motionInFrame,
   motionMoved,
   readFaces,
@@ -116,4 +117,28 @@ test("motionMoved needs two agreeing samples, so one noisy frame cannot carry it
       { brightness: 100, contrast: 20, motion: 0.1 },
     ]),
   );
+});
+
+test("faceIssue names the fault so the student can be told what to fix", () => {
+  assert.equal(faceIssue(face(0.4)), "none");
+  assert.equal(faceIssue(NO_FACE), "absent");
+  assert.equal(faceIssue({ count: 2, cx: 0.5, cy: 0.5, width: 0.4 }), "multiple");
+  // A face too small to measure.
+  assert.equal(faceIssue(face(0.05)), "too_far");
+  // In frame and close enough, but off to the side or high/low.
+  assert.equal(faceIssue(face(0.4, 0.95)), "off_centre");
+  assert.equal(faceIssue(face(0.4, 0.5, 0.95)), "off_centre");
+});
+
+test("faceIssue prefers 'come closer' over 'move to the middle'", () => {
+  // Too far *and* off centre: the distance is what makes it unmeasurable, so
+  // that is the instruction that fixes both.
+  assert.equal(faceIssue(face(0.05, 0.95)), "too_far");
+});
+
+test("faceIssue agrees with the centred step", () => {
+  // If centred passes, there is no issue to report, and vice versa.
+  for (const r of [face(0.4), face(0.05), face(0.4, 0.9), NO_FACE]) {
+    assert.equal(faceIssue(r) === "none", challengeSatisfied("centred", r, null));
+  }
 });
