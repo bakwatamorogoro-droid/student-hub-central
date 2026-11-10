@@ -1,11 +1,13 @@
 import { Sparkles, PlayCircle, ShieldCheck, Users } from "lucide-react";
-import { EXAM_HERO_VIDEO } from "@/lib/mediaAssets";
+import { EXAM_HERO_VIDEO, POSTER_EXAM } from "@/lib/mediaAssets";
 
 export function ExamVideoHero({ subtitle }: { subtitle?: string }) {
   return (
     <section className="group relative mb-8 overflow-hidden rounded-3xl border border-primary/25 bg-black shadow-2xl">
       <video
         src={EXAM_HERO_VIDEO}
+        /* See HomeAnimationHero: the poster stands in until the MP4 decodes. */
+        poster={POSTER_EXAM}
         autoPlay
         muted
         loop
@@ -27,21 +29,21 @@ export function ExamVideoHero({ subtitle }: { subtitle?: string }) {
             TEST ONLINE
           </span>
         </h1>
-            <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-              Mhadhiri: Dr. Jiba · Islamic Studies
-            </p>
+        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+          Mhadhiri: Dr. Jiba · Islamic Studies
+        </p>
         {subtitle && <p className="mt-3 max-w-xl text-sm text-white/80 md:text-base">{subtitle}</p>}
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
-          <div className="glass-panel flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-white">
+          <div className="glass-panel flex items-center gap-1.5 rounded-lg px-3 py-1.5">
             <PlayCircle className="h-3.5 w-3.5" />
             <span className="text-[11px] font-semibold">Video bila sauti</span>
           </div>
-          <div className="glass-panel flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-white">
+          <div className="glass-panel flex items-center gap-1.5 rounded-lg px-3 py-1.5">
             <ShieldCheck className="h-3.5 w-3.5" />
             <span className="text-[11px] font-semibold">Kamera · GPS · Sahihi</span>
           </div>
-          <div className="glass-panel hidden items-center gap-1.5 rounded-lg px-3 py-1.5 text-white sm:flex">
+          <div className="glass-panel hidden items-center gap-1.5 rounded-lg px-3 py-1.5 sm:flex">
             <Users className="h-3.5 w-3.5" />
             <span className="text-[11px] font-semibold">Mtu mmoja au Group</span>
           </div>
@@ -51,13 +53,23 @@ export function ExamVideoHero({ subtitle }: { subtitle?: string }) {
   );
 }
 
-export function BigSystemTitle({ label = "ISLAMIC STUDIES TEST ONLINE", sub }: { label?: string; sub?: string }) {
+export function BigSystemTitle({
+  label = "ISLAMIC STUDIES TEST ONLINE",
+  sub,
+}: {
+  label?: string;
+  sub?: string;
+}) {
   return (
     <div className="my-10 text-center">
       <h2 className="bg-gradient-to-b from-primary via-primary/80 to-primary/30 bg-clip-text text-4xl font-black leading-none tracking-tighter text-transparent md:text-7xl">
         {label}
       </h2>
-      {sub && <p className="mt-2 text-xs uppercase tracking-[0.35em] text-muted-foreground md:text-sm">{sub}</p>}
+      {sub && (
+        <p className="mt-2 text-xs uppercase tracking-[0.35em] text-muted-foreground md:text-sm">
+          {sub}
+        </p>
+      )}
     </div>
   );
 }

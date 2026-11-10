@@ -139,6 +139,14 @@
   --wash-2: 0 182 121;
   --grid-tint: 206 222 229;
   --glass-tint: 255 255 255;
+  /*
+   * The frosted panel that sits *over a photograph* (the hero badges) uses a
+   * dark scrim, not the white `--glass-tint`. A white pill under near-white
+   * `--primary-foreground` text measured 1.5:1 — white on white on a bright
+   * photo. The scrim keeps its copy light and legible whatever is behind it.
+   */
+  --glass-scrim-tint: 3 22 33;
+  --glass-scrim-text: 242 250 255;
   --loader-tint: 240 250 255;
   --inset-tint: 0 29 47;
   --shadow-edge-alpha: 0.42;
@@ -190,6 +198,8 @@
   --wash-2: 0 170 111;
   --grid-tint: 255 255 255;
   --glass-tint: 7 45 61;
+  --glass-scrim-tint: 2 14 21;
+  --glass-scrim-text: 242 250 255;
   --loader-tint: 0 30 45;
   --inset-tint: 255 255 255;
   --shadow-edge-alpha: 0.12;
@@ -353,11 +363,30 @@
    * the content on top never competes with it.
    */
   .glass-panel {
-    border: 1px solid rgb(var(--grid-tint) / 0.72);
-    background: rgb(var(--glass-tint) / 0.78);
+    border: 1px solid rgb(var(--glass-scrim-tint) / 0.3);
+    background: rgb(var(--glass-scrim-tint) / 0.62);
     box-shadow: var(--shadow-soft), var(--shadow-edge);
-    backdrop-filter: blur(18px) saturate(150%);
+    /*
+     * `-webkit-` first, unprefixed last, and the order is load-bearing.
+     * lightningcss merges the pair for the `safari13`/`chrome80` targets and
+     * keeps the property that comes *last*; with the unprefixed one first it
+     * dropped it, so Chrome and Firefox readers got no blur at all. This order
+     * makes it emit both. See the note in AGENTS.md.
+     */
     -webkit-backdrop-filter: blur(18px) saturate(150%);
+    backdrop-filter: blur(18px) saturate(150%);
+    /* The panel sits over photographs, so its copy is always light. */
+    color: rgb(var(--glass-scrim-text));
+  }
+
+  /*
+   * Without `backdrop-filter` the translucent fill alone is too thin to read
+   * against a bright photo, so fall back to an opaque scrim of the same hue.
+   */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass-panel {
+      background: rgb(var(--glass-scrim-tint) / 0.86);
+    }
   }
 
   /*

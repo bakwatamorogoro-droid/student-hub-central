@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   GraduationCap,
@@ -26,6 +26,14 @@ export function RealPhotoHero({ fallback }: { fallback: React.ReactNode }) {
   const [idx, setIdx] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  /*
+   * The slides are 1–2.6 MB PNGs, so on a slow connection the next one is often
+   * still in flight when the 5.2s timer fires. Switching to it then paints an
+   * empty frame, which reads as a broken image. Only slides that have actually
+   * decoded are eligible to be shown.
+   */
+  const readyIds = useRef(new Set<string>());
+  const [, forceReady] = useState(0);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -56,18 +64,37 @@ export function RealPhotoHero({ fallback }: { fallback: React.ReactNode }) {
 
   useEffect(() => {
     if (reducedMotion || photos.length < 2) return;
-    const advance = () => setIdx((i) => (i + 1) % photos.length);
+    const advance = () =>
+      setIdx((i) => {
+        // Walk forward to the first slide whose image has decoded, so the
+        // cross-fade never lands on an empty frame. Falls back to the current
+        // one when nothing else is ready yet.
+        for (let n = 1; n <= photos.length; n++) {
+          const j = (i + n) % photos.length;
+          if (readyIds.current.has(photos[j].id)) return j;
+        }
+        return i;
+      });
     const timer = setInterval(() => {
       if (!document.hidden) advance();
     }, 5200);
     return () => clearInterval(timer);
-  }, [reducedMotion, photos.length]);
+  }, [reducedMotion, photos]);
 
   // Nothing to show yet: keep the animated hero so the page never opens empty.
   if (!loaded || photos.length === 0) return <>{fallback}</>;
 
   const step = (delta: number) => setIdx((i) => (i + delta + photos.length) % photos.length);
   const current = photos[idx];
+
+  /** A gallery object can be missing or blocked; drop it rather than show a hole. */
+  const dropBroken = (id: string) => {
+    const next = photos.filter((p) => p.id !== id);
+    if (next.length === 0 || next.length === photos.length) return;
+    readyIds.current.delete(id);
+    setPhotos(next);
+    setIdx((i) => Math.min(i, next.length - 1));
+  };
 
   return (
     <section className="group relative mb-6 min-h-[340px] overflow-hidden rounded-3xl border border-primary/25 bg-foreground shadow-float md:min-h-[480px]">
@@ -77,7 +104,13 @@ export function RealPhotoHero({ fallback }: { fallback: React.ReactNode }) {
           src={p.image_url}
           alt={p.title || t("photos_title")}
           loading={i === 0 ? "eager" : "lazy"}
+          decoding="async"
           fetchPriority={i === 0 ? "high" : "low"}
+          onLoad={() => {
+            readyIds.current.add(p.id);
+            forceReady((n) => n + 1);
+          }}
+          onError={() => dropBroken(p.id)}
           className="absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ease-out"
           style={{
             opacity: i === idx ? 1 : 0,
@@ -130,7 +163,7 @@ export function RealPhotoHero({ fallback }: { fallback: React.ReactNode }) {
               {t("update_cta")}
               <ArrowRight className="h-4 w-4 transition-transform group-hover/cta:translate-x-1" />
             </Link>
-            <div className="glass-panel hidden items-center gap-2 rounded-xl px-3.5 py-2 text-primary-foreground sm:flex">
+            <div className="glass-panel hidden items-center gap-2 rounded-xl px-3.5 py-2 sm:flex">
               <GraduationCap className="h-4 w-4" />
               <span className="text-xs font-semibold md:text-sm">{t("badge_islamic")}</span>
             </div>

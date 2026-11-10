@@ -1618,8 +1618,9 @@ Fix: keep the colour's channels in a token and put the alpha in the shadow, e.g.
 `rgb()` with a `/ <alpha>` is understood by every target browser, so there is
 nothing to downlevel and the alpha always survives. `--shadow-tint`,
 `--shadow-brand`, `--wash-1`, `--wash-2`, `--grid-tint`, `--glass-tint`,
-`--loader-tint` and `--inset-tint` in `styles.css` are these channel triplets;
-they are derived from the palette, not new colours.
+`--glass-scrim-tint`, `--glass-scrim-text`, `--loader-tint` and `--inset-tint`
+in `styles.css` are these channel triplets; they are derived from the palette,
+not new colours.
 
 Two related traps:
 
@@ -1630,6 +1631,17 @@ Two related traps:
   so an old browser drops the whole declaration rather than a value in it. The
   loader backdrop in `PageLoader.tsx` used `color-mix()` that way and lost its
   entire background; it uses the channel tokens now.
+- A prefixed/unprefixed pair is merged by lightningcss and it keeps whichever
+  property comes **last**. For `backdrop-filter` the correct order is therefore
+  `-webkit-backdrop-filter` first and the unprefixed `backdrop-filter` last;
+  with the unprefixed one first the build emitted only the `-webkit-` form, so
+  Chrome and Firefox got no blur. `.glass-panel` carries a comment saying so.
+- A frosted panel that sits *over a photograph* needs a dark scrim, not the
+  white `--glass-tint`. A white pill under the near-white `--primary-foreground`
+  copy measured 1.5:1 — white on white on a bright photo. `.glass-panel` uses
+  `--glass-scrim-tint` / `--glass-scrim-text` (4.4:1 at worst, 5.5:1 typical)
+  and adds a `@supports not (backdrop-filter)` opaque fallback, because without
+  the blur the translucent fill alone is too thin to read.
 
 Three other things that were fixed at the same time, all worth keeping:
 

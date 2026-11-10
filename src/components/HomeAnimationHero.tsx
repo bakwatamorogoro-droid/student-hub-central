@@ -1,13 +1,19 @@
 import { GraduationCap, Sparkles } from "lucide-react";
-import { HOME_ANIMATION } from "@/lib/mediaAssets";
+import { HOME_ANIMATION, POSTER_HOME } from "@/lib/mediaAssets";
 import { useI18n } from "@/lib/i18n";
 
 export function HomeAnimationHero() {
   const { t } = useI18n();
   return (
     <section className="group relative mb-6 min-h-[320px] overflow-hidden rounded-3xl border border-primary/25 bg-foreground shadow-float md:min-h-[460px]">
+      {/*
+        The poster is the first frame, painted before the MP4 arrives. Without it
+        the hero is a black rectangle on a slow connection, which reads as a
+        broken image; the file already existed but was never wired up.
+      */}
       <video
         src={HOME_ANIMATION}
+        poster={POSTER_HOME}
         autoPlay
         muted
         loop
@@ -46,14 +52,14 @@ export function HomeAnimationHero() {
           </p>
 
           <div className="mt-5 flex flex-wrap items-center gap-2">
-            <div className="glass-panel flex items-center gap-2 rounded-xl px-3.5 py-2 text-primary-foreground">
+            <div className="glass-panel flex items-center gap-2 rounded-xl px-3.5 py-2">
               <GraduationCap className="h-4 w-4" />
               <span className="text-xs font-semibold md:text-sm">{t("badge_islamic")}</span>
             </div>
-            <div className="glass-panel rounded-xl px-3.5 py-2 text-primary-foreground">
+            <div className="glass-panel rounded-xl px-3.5 py-2">
               <span className="text-xs font-semibold md:text-sm">{t("badge_security")}</span>
             </div>
-            <div className="glass-panel hidden rounded-xl px-3.5 py-2 text-primary-foreground sm:block">
+            <div className="glass-panel hidden rounded-xl px-3.5 py-2 sm:block">
               <span className="text-xs font-semibold md:text-sm">{t("badge_instant")}</span>
             </div>
           </div>

@@ -14,6 +14,8 @@ const dict: Record<string, { sw: string; en: string }> = {
   home: { sw: "Mwanzo", en: "Home" },
   back: { sw: "Rudi", en: "Back" },
   forward: { sw: "Mbele", en: "Forward" },
+  scroll_nav_left: { sw: "Sogeza menyu kushoto", en: "Scroll menu left" },
+  scroll_nav_right: { sw: "Sogeza menyu kulia", en: "Scroll menu right" },
   register: { sw: "Jisajili", en: "Register" },
   exams: { sw: "Mitihani", en: "Exams" },
   results: { sw: "Matokeo", en: "Results" },
