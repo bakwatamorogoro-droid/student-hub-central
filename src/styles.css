@@ -667,8 +667,21 @@
  * `dvh`; the newer ones take the second line. `svh` is the small viewport — the
  * smallest it ever is, bar always showing — which is the safe height to *fit
  * inside* rather than merely not exceed.
+ *
+ * The two declarations are deliberately in *separate* rules. Written in one
+ * block the minifier collapses them to the last one — it drops `92vh` and keeps
+ * `92dvh` — so a browser without `dvh` support gets no `max-height` at all, the
+ * dialog grows to its content height, and the scrolling body inside it never
+ * becomes scrollable: the bottom of a long piece of work is unreachable. Since
+ * the CSS floor here is Chrome 80 / Safari 13, that is most of the phones the
+ * app is read on. Do not merge these rules back together.
  */
 .dialog-fit-viewport {
   max-height: 92vh;
-  max-height: 92dvh;
+}
+
+@supports (max-height: 92dvh) {
+  .dialog-fit-viewport {
+    max-height: 92dvh;
+  }
 }
