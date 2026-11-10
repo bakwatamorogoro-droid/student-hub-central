@@ -2107,16 +2107,34 @@ shown whole as the explanation rather than dropped.
 ### Web search is not available on this account
 
 OpenRouter's web search — both the `:online` model suffix and the `plugins: [{id:
-"web"}]` request body — returns `402 Insufficient credits`. The account shows a
-$50 balance but has never purchased credits, and web search is billed per result,
-so it is refused even while `:free` chat models still answer. Probing it again is
-not worth a round trip; if a feature needs live web sources, the answer is a
-different provider, not a different OpenRouter parameter.
+"web"}]` request body — returns `402 Insufficient credits`. This is not a
+configuration problem and no request parameter fixes it.
 
-Because of that, **no answer in this app may be presented as a web result.** The
-Qur'an links go to `quran.com` through `sura:aya` keys the app verifies, and
-everything else comes from the class's own bank. A citation the app cannot verify
-is a citation it must not show.
+The trap is that two numbers look like money and are not. `GET /api/v1/key`
+reports `limit: 1000` for the key, and the dashboard shows a balance, but
+`GET /api/v1/credits` reports `total_credits: 0` — the account has never purchased
+credits. A key's `limit` is a **spending cap**, not a balance, and the dashboard
+balance is not spendable. So web search is refused even while `:free` chat models
+still answer.
+
+The remedy is on OpenRouter's side: purchasing credits unlocks web search *and*
+raises the free-model allowance from 50 to 1000 requests/day. Until then, **no
+answer in this app may be presented as a web result.** The Qur'an links go to
+`quran.com` through `sura:aya` keys the app verifies, and everything else comes
+from the class's own bank. A citation the app cannot verify is a citation it must
+not show.
+
+### When every AI call starts failing, check the key before the code
+
+A rotated or revoked `OPENROUTER_API_KEY` makes every model call fail, and the
+symptom looks like a code fault rather than a credential one. `GET
+/api/v1/key` with the deployed key answers `401` in that case; with a live key it
+answers `200` and reports `free_model_daily_requests.remaining`. Rotate the secret
+with the Supabase Management API (`POST /v1/projects/<ref>/secrets`); the functions
+pick the new value up without a redeploy.
+
+Note that a second key for the same account shares the same 50/day free pool —
+a new key does not buy a new allowance. Only purchased credits raise it.
 
 ### A teacher may write only the question
 
