@@ -25,8 +25,9 @@ const SYSTEM_REFERENCE = `Wewe ni mwalimu wa Islamic Studies. Andika jibu la mar
 KANUNI:
 1. Jibu kwa Kiswahili, sentensi 1-3, sahihi na kamili.
 2. Jibu liwe la kiwango cha mtihani: mambo muhimu yote yaliyoulizwa, bila kuongeza mengi yasiyoulizwa.
-3. Usibuni ushahidi. Usitaje aya ya Qur'an au hadith ambayo hujui kwa hakika.
-4. Toa jibu tu, bila utangulizi kama "Jibu ni..."`;
+3. Kama nimekupa "Mambo muhimu", hakikisha jibu lako linashughulikia KILA moja — ni rubriki ya mada hii.
+4. Usibuni ushahidi. Usitaje aya ya Qur'an au hadith ambayo hujui kwa hakika.
+5. Toa jibu tu, bila utangulizi kama "Jibu ni..."`;
 
 const SYSTEM_ASSIST = `Wewe ni mwalimu msaidizi wa Islamic Studies. Mwanafunzi amekwama kwenye swali la mtihani.
 
@@ -47,6 +48,13 @@ Deno.serve(async (req) => {
   const question = String(body.question ?? "").trim();
   const context = String(body.context ?? "").trim();
   const studentAnswer = String(body.studentAnswer ?? "").trim();
+  // The knowledge bank's own rubric words, when the caller has them. Handing
+  // these in keeps the reference answer on the class's material instead of
+  // wandering into general Islamic knowledge — the same grounding the tutor
+  // uses. Empty for a question the bank could not place.
+  const keyPoints: string[] = Array.isArray(body.keyPoints)
+    ? body.keyPoints.map((k) => String(k)).filter(Boolean)
+    : [];
   const mode = body.mode === "assist" || studentAnswer ? "assist" : "reference";
 
   if (!question) return json({ error: "question is required" }, 400);
@@ -54,7 +62,7 @@ Deno.serve(async (req) => {
   // Reference answers are the same for every student who meets the question, so
   // this is the call the cache saves the most on: one request per question per
   // exam, not one per student.
-  const key = await cacheKey(`answer-${mode}`, { question, context, studentAnswer });
+  const key = await cacheKey(`answer-${mode}`, { question, context, studentAnswer, keyPoints });
   const hit = await readCache(key);
   if (hit) {
     void noteCacheHit();
@@ -93,7 +101,9 @@ Deno.serve(async (req) => {
       { role: "system", content: SYSTEM_REFERENCE },
       {
         role: "user",
-        content: `Swali: ${question}${context ? `\nMuktadha: ${context}` : ""}`,
+        content: `Swali: ${question}${context ? `\nMuktadha: ${context}` : ""}${
+          keyPoints.length ? `\nMambo muhimu: ${JSON.stringify(keyPoints)}` : ""
+        }`,
       },
     ],
     { maxTokens: 500 },

@@ -38,10 +38,16 @@ export default defineConfig({
   build: {
     outDir: "dist",
     sourcemap: false,
-    // es2020 (Chrome 87 / Safari 14 / Firefox 78) is the honest floor for the
-    // JS: `String.prototype.replaceAll` is used in the i18n layer and that is
-    // Chrome 85. Anything older needs an API polyfill, not a syntax downlevel.
-    target: "es2020",
+    // es2017, not es2020, and the difference is a blank page rather than a
+    // slower one. es2020 keeps `?.` and `??` in the output, and those throw a
+    // SyntaxError on Chrome 61-79, Safari 10.1-13.0 and Firefox 60-73. Those
+    // engines *can* run a module, so the `noModule` check in index.html stays
+    // quiet and the student gets a white screen with no explanation. es2017 is
+    // the honest floor: async/await is native from Chrome 55 / Safari 10.1 /
+    // Firefox 52, so it costs nothing but the `?.` rewrite (about 1% of the
+    // bundle) and it removes the whole gap. Anything below this needs an API
+    // polyfill, which public/polyfills.js supplies.
+    target: "es2017",
   },
   server: {
     host: "::",

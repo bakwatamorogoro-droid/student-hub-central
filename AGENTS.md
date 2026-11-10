@@ -2103,3 +2103,139 @@ the course material; a model's are not. Keep that order.
 what free models actually send: `**MAELEZO:**` rather than the bare `MAELEZO:` the
 prompt asks for, `##` headings, and no labels at all. A reply it cannot parse is
 shown whole as the explanation rather than dropped.
+
+### Web search is not available on this account
+
+OpenRouter's web search — both the `:online` model suffix and the `plugins: [{id:
+"web"}]` request body — returns `402 Insufficient credits`. This is not a
+configuration problem and no request parameter fixes it.
+
+The trap is that two numbers look like money and are not. `GET /api/v1/key`
+reports `limit: 1000` for the key, and the dashboard shows a balance, but
+`GET /api/v1/credits` reports `total_credits: 0` — the account has never purchased
+credits. A key's `limit` is a **spending cap**, not a balance, and the dashboard
+balance is not spendable. So web search is refused even while `:free` chat models
+still answer.
+
+The remedy is on OpenRouter's side: purchasing credits unlocks web search *and*
+raises the free-model allowance from 50 to 1000 requests/day. Until then, **no
+answer in this app may be presented as a web result.** The Qur'an links go to
+`quran.com` through `sura:aya` keys the app verifies, and everything else comes
+from the class's own bank. A citation the app cannot verify is a citation it must
+not show.
+
+### When every AI call starts failing, check the key before the code
+
+A rotated or revoked `OPENROUTER_API_KEY` makes every model call fail, and the
+symptom looks like a code fault rather than a credential one. `GET
+/api/v1/key` with the deployed key answers `401` in that case; with a live key it
+answers `200` and reports `free_model_daily_requests.remaining`. Rotate the secret
+with the Supabase Management API (`POST /v1/projects/<ref>/secrets`); the functions
+pick the new value up without a redeploy.
+
+Note that a second key for the same account shares the same 50/day free pool —
+a new key does not buy a new allowance. Only purchased credits raise it.
+
+### A teacher may write only the question
+
+`src/lib/referenceAnswer.ts` produces the model answer and the marking scheme for
+a question with no `correct_answer`. It calls `buildReferenceAnswer()` first —
+offline, from the bank — and only reaches `ai-answer` when the bank cannot place
+the question. `source` (`bank` / `ai` / `none`) records which layer answered, and
+the UI states it, so a model's words are never shown as the bank's.
+
+The concepts it returns are **whole synonym clusters joined into one string**
+(`"ngawila malipo kutoa"`, not `"ngawila"`), because `ai-grader.ts` marks a concept
+met when *any* word in it appears in the student's answer. Collapsing a cluster to
+one word is what would mark a correct paraphrase wrong.
+
+Both the exam page and the results page build the reference answer through this
+module. They must not diverge: a recomputed mark that disagrees with the stored one
+is a mark the student cannot trust.
+
+## The browser floor: es2017 syntax plus runtime polyfills
+
+Two independent limits decide whether a browser can open the app, and a mismatch
+between them is invisible in development.
+
+**Syntax.** `build.target` in `vite.config.ts` is `es2017`. This is not a
+performance choice. es2020 keeps `?.` and `??` in the output, and those are a
+`SyntaxError` — not a fallback, not a slow path — on Chrome 61-79, Safari 10.1-13.0
+and Firefox 60-73. Those engines *can* run a module, so the `noModule` check in
+`index.html` stays quiet and the student gets a blank page with no message. es2017
+is the honest floor: async/await is native from Chrome 55 / Safari 10.1 / Firefox
+52, so lowering the target costs about 1% of the bundle and closes the whole gap.
+**Do not raise this target without re-checking `index.html`'s gate.**
+
+**APIs.** A browser can parse the bundle perfectly and still die on
+`str.replaceAll` (Chrome 85), `Object.hasOwn` (93), `findLast` (97),
+`structuredClone` (98) or `crypto.randomUUID` (92). `public/polyfills.js` fills
+those in. It is a classic script in `<head>` so it runs before the module and is
+never transpiled, and it is written in ES5 because an engine old enough to need a
+polyfill may also be old enough to choke on an arrow function.
+
+**Never a blank page.** `index.html` arms the `#unsupported` notice until the app
+says it mounted. Three signals: the syntax gate (synchronous, so it cannot produce
+a false alarm), an `error` listener on the module script itself (accurate for a 404
+or a parse failure, and independent of connection speed), and a window `error`
+listener for a throw during boot. That last one must ignore resource errors — a
+resource error has a target element and no message — or one broken thumbnail would
+claim the browser is too old. The 30s timer is a last resort only.
+
+`src/main.tsx` calls `window.__markAppMounted()` from an effect, not from after
+`render()`, because React 18 renders asynchronously and a call there would fire
+before anything was on screen.
+
+**The PDF chunk is not on the critical path.** `pdfjs-dist/legacy` and the `docx`
+bundle carry syntax and regex the rest of the app does not: BigInt literals, a
+lookbehind regex (`(?<={{` in docx), an async generator. Both are dynamic imports,
+so they cannot blank the page — the damage is limited to the feature that needed
+them. The legacy pdfjs build also bundles core-js and polyfills itself.
+
+To check the floor after a change: build, then grep the entry chunk for `\?\.`,
+`\?\?` and `{ ...` and confirm all three are zero. Then confirm
+`dist/polyfills.js` exists and `index.html` loads it before the module.
+
+## Attendance is four steps: QR, Reg Namba, face, congratulations
+
+The student flow on `/attendance` is fixed, and the order carries meaning.
+
+1. **Scan the QR.** The session's code comes from the poster or the teacher's
+   screen. A scan or a typed code only says *which* session — it never says who.
+2. **Reg Namba, then the details.** `findStudentsByQuery` resolves the number and
+   the page shows the name, the Reg Namba and the course before asking for
+   anything else, so a mistyped number is caught while it is the only thing on
+   screen. The phone on file is still what mints the session
+   (`loginStudentByPhone`); it is asked for only after the name is on screen.
+3. **The face.** `FaceCheck` runs the liveness sequence and is the last thing
+   before the record is written, because it is the one check that has to happen
+   *at* the session with the student present.
+4. **Hongera.** The confirmation screen names the student, the course, the
+   distance and how the face was checked.
+
+**This is liveness, not recognition.** There is no stored photo of the student and
+there must not be — keeping a classroom of minors' faces to make "recognition"
+literal would be a worse problem than the one it solves. `faceLiveness.ts` instead
+requires movements a still image cannot perform: be centred, come closer, then
+turn. `closer` and `turn` are measured against the reading from the passing
+`centred` step, which is what makes "the face changed when instructed" the thing
+being tested — a printed photo held to the lens fails `closer`.
+
+**Two engines, and the badge says which is running.** `FaceDetector` is Chromium
+only, so Chrome/Edge/Android judge the three movements on the face's own geometry.
+Firefox and Safari have no detector; there the check falls back to
+`proctoring.ts`'s frame statistics — an uncovered lens with something in front of
+it, plus motion — which is a weaker claim. `faceCheckSupport()` reports which path
+is in play and `FaceCheck` prints it, because a check that quietly checks less
+than it appears to would be worse than no check. A browser with no camera at all
+is offered "Hudhuria bila kamera" and the record says `bila kamera`, so a student
+is never stranded and the teacher can see what was verified.
+
+**Nothing about the face is stored.** No frame is uploaded, no image is kept; the
+verdict and the method name are all that reach the record.
+
+Unit tests live in `faceLiveness.test.ts` and pin the judgements (the two-face
+refusal, the growth and travel thresholds, the two-sample motion rule) without a
+camera. That file imports through relative `./` paths, not `@/`, because
+`node --test` cannot resolve the alias — the same rule every testable lib module
+follows.

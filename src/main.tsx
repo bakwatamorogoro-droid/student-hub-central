@@ -6,11 +6,32 @@ import "@fontsource/figtree/400.css";
 import "@fontsource/figtree/500.css";
 import "@fontsource/figtree/600.css";
 import "@fontsource/figtree/700.css";
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
+
+declare global {
+  interface Window {
+    /** Set by the inline script in index.html; see the "unsupported" notice. */
+    __markAppMounted?: () => void;
+  }
+}
+
+/**
+ * Tells index.html that the bundle loaded and React mounted, which disarms the
+ * "this browser is not supported" notice. Without this the notice would stay up
+ * on every working browser. It is deliberately a component rather than a call
+ * after `render()`, because React 18 renders asynchronously and a call there
+ * would fire before anything was on screen.
+ */
+function AppMountedSignal() {
+  useEffect(() => {
+    window.__markAppMounted?.();
+  }, []);
+  return null;
+}
 
 const queryClient = new QueryClient();
 
@@ -29,6 +50,7 @@ declare module "@tanstack/react-router" {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
+    <AppMountedSignal />
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>
