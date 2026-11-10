@@ -17,6 +17,7 @@ import {
 } from "@/lib/groupAssignmentSubmission";
 import { canonicalRegNo } from "@/lib/regNo";
 import type { AssignmentKind } from "@/lib/assignmentKind";
+import { uploadContentType } from "@/lib/uploadContentType";
 
 /**
  * The Supabase half of the group assignment feature.
@@ -142,7 +143,7 @@ export async function submitGroupAssignment(input: SubmitGroupInput): Promise<Su
   const path = `assignments/groups/${safeFileName(groupKey(input.key))}/${Date.now()}-${safeFileName(input.file.name)}`;
   const { error: upErr } = await supabase.storage
     .from(BUCKET)
-    .upload(path, input.file, { contentType: input.file.type || "application/octet-stream" });
+    .upload(path, input.file, { contentType: uploadContentType(input.file) });
   if (upErr) return { ok: false, error: upErr.message };
   const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
 

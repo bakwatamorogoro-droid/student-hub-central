@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   GraduationCap,
@@ -32,8 +32,7 @@ export function RealPhotoHero({ fallback }: { fallback: React.ReactNode }) {
    * empty frame, which reads as a broken image. Only slides that have actually
    * decoded are eligible to be shown.
    */
-  const readyIds = useRef(new Set<string>());
-  const [, forceReady] = useState(0);
+  const [readyIds, setReadyIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -62,6 +61,21 @@ export function RealPhotoHero({ fallback }: { fallback: React.ReactNode }) {
     };
   }, []);
 
+  /** A gallery object can be missing or blocked; drop it rather than show a hole. */
+  const dropBroken = useCallback((id: string) => {
+    setPhotos((prev) => {
+      const next = prev.filter((p) => p.id !== id);
+      if (next.length === 0 || next.length === prev.length) return prev;
+      setReadyIds((s) => {
+        const n = new Set(s);
+        n.delete(id);
+        return n;
+      });
+      setIdx((i) => Math.min(i, next.length - 1));
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (reducedMotion || photos.length < 2) return;
     const advance = () =>
@@ -71,7 +85,7 @@ export function RealPhotoHero({ fallback }: { fallback: React.ReactNode }) {
         // one when nothing else is ready yet.
         for (let n = 1; n <= photos.length; n++) {
           const j = (i + n) % photos.length;
-          if (readyIds.current.has(photos[j].id)) return j;
+          if (readyIds.has(photos[j].id)) return j;
         }
         return i;
       });
@@ -79,22 +93,51 @@ export function RealPhotoHero({ fallback }: { fallback: React.ReactNode }) {
       if (!document.hidden) advance();
     }, 5200);
     return () => clearInterval(timer);
-  }, [reducedMotion, photos]);
+  }, [reducedMotion, photos, readyIds]);
+
+  /*
+   * Decode every slide off-screen. The render gate below withholds the photo
+   * layout until one slide is paintable, so the layout's own <img> elements are
+   * not mounted yet — without this preload nothing would ever load and the gate
+   * would never open. Loading through `Image()` also lets the first slide appear
+   * the moment it decodes instead of waiting for a second render pass.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    const markReady = (id: string) => setReadyIds((s) => (s.has(id) ? s : new Set(s).add(id)));
+    photos.forEach((p) => {
+      const img = new Image();
+      img.onload = () => {
+        if (!cancelled) markReady(p.id);
+      };
+      img.onerror = () => {
+        if (!cancelled) dropBroken(p.id);
+      };
+      img.src = p.image_url;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [photos, dropBroken]);
 
   // Nothing to show yet: keep the animated hero so the page never opens empty.
   if (!loaded || photos.length === 0) return <>{fallback}</>;
 
-  const step = (delta: number) => setIdx((i) => (i + delta + photos.length) % photos.length);
-  const current = photos[idx];
+  /*
+   * A 1–2.6 MB photo can still be in flight well after the query returns. The
+   * section background is dark and the gradient over it is near-black, so
+   * swapping to the photo layout before any image has decoded paints an empty
+   * dark box with text on it — on a slow phone that is the whole complaint.
+   * Hold the animated fallback until one slide is actually paintable, and open
+   * on that slide rather than assuming it is index 0.
+   */
+  const readyIdx = photos.findIndex((p) => readyIds.has(p.id));
+  if (readyIdx === -1) return <>{fallback}</>;
 
-  /** A gallery object can be missing or blocked; drop it rather than show a hole. */
-  const dropBroken = (id: string) => {
-    const next = photos.filter((p) => p.id !== id);
-    if (next.length === 0 || next.length === photos.length) return;
-    readyIds.current.delete(id);
-    setPhotos(next);
-    setIdx((i) => Math.min(i, next.length - 1));
-  };
+  const shownIdx = readyIds.has(photos[idx].id) ? idx : readyIdx;
+  const current = photos[shownIdx];
+
+  const step = (delta: number) => setIdx((i) => (i + delta + photos.length) % photos.length);
 
   return (
     <section className="group relative mb-6 min-h-[340px] overflow-hidden rounded-3xl border border-primary/25 bg-foreground shadow-float md:min-h-[480px]">
@@ -107,15 +150,14 @@ export function RealPhotoHero({ fallback }: { fallback: React.ReactNode }) {
           decoding="async"
           fetchPriority={i === 0 ? "high" : "low"}
           onLoad={() => {
-            readyIds.current.add(p.id);
-            forceReady((n) => n + 1);
+            setReadyIds((s) => (s.has(p.id) ? s : new Set(s).add(p.id)));
           }}
           onError={() => dropBroken(p.id)}
           className="absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ease-out"
           style={{
-            opacity: i === idx ? 1 : 0,
+            opacity: i === shownIdx ? 1 : 0,
             animation:
-              i === idx && !reducedMotion ? "heroKenBurns 9s ease-out forwards" : undefined,
+              i === shownIdx && !reducedMotion ? "heroKenBurns 9s ease-out forwards" : undefined,
           }}
         />
       ))}
@@ -133,7 +175,7 @@ export function RealPhotoHero({ fallback }: { fallback: React.ReactNode }) {
             <div className="inline-flex items-center gap-2 rounded-full border border-primary-foreground/25 bg-black/35 px-3 py-1.5 text-[11px] font-bold text-primary-foreground backdrop-blur-md">
               <Images className="h-3.5 w-3.5" />
               <span className="tabular-nums">
-                {idx + 1} / {photos.length}
+                {shownIdx + 1} / {photos.length}
               </span>
             </div>
           )}
@@ -197,7 +239,7 @@ export function RealPhotoHero({ fallback }: { fallback: React.ReactNode }) {
                 onClick={() => setIdx(i)}
                 aria-label={`${t("photos_title")} ${i + 1}`}
                 className={`h-1.5 rounded-full transition-all duration-300 ${
-                  i === idx ? "w-7 bg-primary" : "w-1.5 bg-white/55 hover:bg-white/85"
+                  i === shownIdx ? "w-7 bg-primary" : "w-1.5 bg-white/55 hover:bg-white/85"
                 }`}
               />
             ))}

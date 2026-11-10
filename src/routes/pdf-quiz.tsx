@@ -15,6 +15,7 @@ import { OpenAssignmentPicker } from "@/components/OpenAssignmentPicker";
 import { matchesAcademicTarget } from "@/lib/academicTargeting";
 import { storageGet, storageSet } from "@/lib/safe-storage";
 import { GROUP_SUBMISSION_STATUS } from "@/lib/groupAssignmentSubmission";
+import { uploadContentType } from "@/lib/uploadContentType";
 import {
   forIndividualPage,
   openAssignmentsFromRows,
@@ -141,7 +142,7 @@ function Page() {
     setUploading(true);
     const safeName = file.name.replace(/[^\w.\-]+/g, "_");
     const path = `assignments/${active.id}/${student.reg_no}/${Date.now()}-${safeName}`;
-    const { error: upErr } = await supabase.storage.from("exam-media").upload(path, file, { contentType: file.type || "application/octet-stream" });
+    const { error: upErr } = await supabase.storage.from("exam-media").upload(path, file, { contentType: uploadContentType(file) });
     if (upErr) { setUploading(false); toast.error(upErr.message); return; }
     const { data: pub } = supabase.storage.from("exam-media").getPublicUrl(path);
 

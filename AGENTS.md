@@ -2292,3 +2292,36 @@ refusal, the growth and travel thresholds, the two-sample motion rule) without a
 camera. That file imports through relative `./` paths, not `@/`, because
 `node --test` cannot resolve the alias — the same rule every testable lib module
 follows.
+
+## Uploads must carry a real MIME type (the octet-stream trap)
+
+Supabase Storage stores whatever `contentType` the client passes and serves that
+same string back as `Content-Type` on the public URL. The browser's `File.type`
+is empty more often than it looks — Android WebView, several file pickers, and
+anything that hands over a `Blob` instead of a `File`. When that empty string
+reached `.upload()`, the object was stored as `application/octet-stream`.
+
+Desktop Chrome and Firefox sniff the bytes and paint the image anyway, so this
+never showed up on a laptop. Strict mobile and in-app browsers — Facebook and
+Instagram WebViews, UC, some Samsung Internet modes — trust the declared type and
+refuse to paint, showing the `alt` text instead. That is the "the picture is
+missing and I only see words on my phone" report. The three `gallery/*.png`
+objects were in exactly this state (stored and served as
+`application/octet-stream`, 1.65–2.65 MB each) until they were re-uploaded with
+`image/png`.
+
+Every upload now goes through `uploadContentType(file)` in
+`src/lib/uploadContentType.ts`, which prefers a specific `file.type` and
+otherwise derives the type from the file extension. It treats
+`application/octet-stream` as "unknown" rather than as a deliberate choice,
+because it never is one here. Do not pass `file.type` straight to `.upload()`
+again.
+
+Two related traps:
+
+- A wrong `Content-Type` on a public object is cached by Cloudflare. After
+  correcting the metadata, fetch with a cache-busting query to see the new type;
+  the plain URL keeps serving the old header until the edge entry expires.
+- `PUT /storage/v1/object/...` replaces the object body with whatever is in the
+  request. Use `POST` with `x-upsert: true` to replace a file, and never send a
+  JSON metadata body to the object endpoint — it will overwrite the bytes.
