@@ -408,33 +408,54 @@ export const TOPIC_RUBRICS: Record<string, string[][]> = {
   ],
 };
 
-/** Rubric za swali, zikiwa tayari kwa kupimwa. */
-export function clustersForQuestion(question: string, explicit?: string[]): string[][] {
-  if (Array.isArray(explicit) && explicit.length > 0) return explicit.map((c) => [c]);
+/**
+ * Mada zote zinazolingana na swali, bora kwanza.
+ *
+ * Kanuni, kwa mpangilio wa uzito:
+ *
+ *   1. Jina la mada lenyewe likitajwa, hiyo mada inashinda. Bila hatua hii
+ *      swali "sunnah" linalingana na `hadith`, kwa sababu neno "sunnah" pia
+ *      lipo katika rubric ya hadith — na rubrics zote mbili zinapopata alama
+ *      sawa, mpangilio wa `Object.entries` huamua, jambo ambalo si jibu.
+ *   2. Neno refu zaidi lililolingana, kwa sababu neno mahususi ("preserve")
+ *      hueleza mada kuliko jina la jumla.
+ *   3. Jumla ya urefu wa maneno yote yaliyolingana.
+ *
+ * Kuchanganya mada zote zilizotajwa katika rubric moja hufanya rubrics
+ * zisizohusiana na swali ziongeze vigezo vya uongo, kwa hiyo kila mada
+ * hupimwa yenyewe.
+ */
+export function topicsForQuestion(question: string, max = 5): string[] {
   const q = normalizeArabic(question).toLowerCase();
 
-  // Mada moja tu — ile inayolingana zaidi — hutumika. Kuchanganya mada zote
-  // zinazotajwa hufanya rubrics zisizohusiana na swali ziongeze vigezo vya
-  // uongo. Neno refu zaidi lililolingana ndilo linaamua, kwa sababu neno
-  // mahususi ("preserve") hueleza mada kuliko jina la jumla ("sunnah").
-  let best: string[][] = [];
-  let bestLongest = 0;
-  let bestTotal = 0;
-  for (const [topic, rubric] of Object.entries(TOPIC_RUBRICS)) {
+  const scored: { topic: string; exact: number; longest: number; total: number }[] = [];
+  for (const [topic] of Object.entries(TOPIC_RUBRICS)) {
     // Set huondoa marudio: `synonymsOf` inaweza kurudia neno lenyewe, na
     // marudio yangevimba alama ya mada.
     const terms = new Set([topic, ...synonymsOf(topic)]);
     const hits = [...terms].filter((t) => q.includes(t));
     if (hits.length === 0) continue;
-    const longest = Math.max(...hits.map((t) => t.length));
-    const totalLen = hits.reduce((a, t) => a + t.length, 0);
-    if (longest > bestLongest || (longest === bestLongest && totalLen > bestTotal)) {
-      bestLongest = longest;
-      bestTotal = totalLen;
-      best = rubric;
-    }
+    scored.push({
+      topic,
+      exact: q.includes(topic) ? 1 : 0,
+      longest: Math.max(...hits.map((t) => t.length)),
+      total: hits.reduce((a, t) => a + t.length, 0),
+    });
   }
-  return best;
+
+  scored.sort((a, b) => b.exact - a.exact || b.longest - a.longest || b.total - a.total);
+  return scored.slice(0, Math.max(0, max)).map((s) => s.topic);
+}
+
+/** Mada inayolingana zaidi na swali, au `null` hakuna inayolingana. */
+export function topicForQuestion(question: string): string | null {
+  return topicsForQuestion(question, 1)[0] ?? null;
+}
+
+export function clustersForQuestion(question: string, explicit?: string[]): string[][] {
+  if (Array.isArray(explicit) && explicit.length > 0) return explicit.map((c) => [c]);
+  const topic = topicForQuestion(question);
+  return topic ? TOPIC_RUBRICS[topic] : [];
 }
 
 /** Jina la kundi linaloonyeshwa kwa mwanafunzi. */

@@ -35,7 +35,7 @@ export type LessonQuestion = {
 };
 
 /** Swahili and English names for each topic in the knowledge bank. */
-const TOPIC_NAMES: Record<string, { sw: string; en: string }> = {
+export const TOPIC_NAMES: Record<string, { sw: string; en: string }> = {
   preserve: { sw: "Kuhifadhi Qur'an na Sunnah", en: "Preserving the Qur'an and Sunnah" },
   hadith: { sw: "Hadith", en: "Hadith" },
   quran: { sw: "Qur'an", en: "The Qur'an" },

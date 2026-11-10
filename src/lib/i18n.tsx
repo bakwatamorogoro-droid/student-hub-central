@@ -163,6 +163,7 @@ const dict: Record<string, { sw: string; en: string }> = {
   nav_attendance: { sw: "Mahudhurio", en: "Attendance" },
   nav_group: { sw: "Group Yangu", en: "My group" },
   nav_news: { sw: "Habari", en: "News" },
+  nav_tutor: { sw: "OpenTutor", en: "OpenTutor" },
   attendance_card_sub: {
     sw: "Skani QR au weka msimbo wa kipindi kuhudhuria. Hapa pia unaona historia yako.",
     en: "Scan a QR or enter a session code to check in. Your history lives here too.",
