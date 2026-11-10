@@ -1888,13 +1888,14 @@ and a cancelled prompt writes nothing. `biometric.test.ts` pins the binding rule
 biometric functions must decline rather than throw.
 
 
-**The phone on file is the proof of identity.** Attendance and results both sign
-a student in with their Reg Namba plus the phone number the school holds, rather
-than a PIN. `loginStudentByPhone` mints the same session a PIN login would, and
+**The phone on file is the proof of identity.** Results still signs a student in
+with their Reg Namba plus the phone number the school holds, rather than a PIN.
+`loginStudentByPhone` mints the same session a PIN login would, and
 `verifyStudentByPhone` only compares the two details (no session, no device
 binding) because checking marks on a friend's phone should change nothing. Both
 return a `no_phone` reason when the roster row has no number, so the page can say
-"add a number under Akaunti" instead of a generic refusal.
+"add a number under Akaunti" instead of a generic refusal. **Attendance no longer
+uses this path** — see "Attendance is four steps" for why.
 
 **The verification code is a receipt, not a secret.** `verificationCodeFor`
 hashes Reg Namba + phone and `deriveVerificationCode` maps the digest onto a
@@ -2205,8 +2206,15 @@ The student flow on `/attendance` is fixed, and the order carries meaning.
 2. **Reg Namba, then the details.** `findStudentsByQuery` resolves the number and
    the page shows the name, the Reg Namba and the course before asking for
    anything else, so a mistyped number is caught while it is the only thing on
-   screen. The phone on file is still what mints the session
-   (`loginStudentByPhone`); it is asked for only after the name is on screen.
+   screen. **No phone number is asked for.** The owner removed it: the phone was
+   a second secret, and asking for it again after the name was already on screen
+   was friction without much proof. `loginStudentForAttendance` mints the
+   session from the Reg Namba alone — the same session `loginStudentByPhone`
+   would mint, minus the phone check. That is a real weakening, and it is
+   deliberate: anyone who knows a classmate's Reg Namba can mint a session for
+   them, so the honest guard is the room (the QR rotates and is only available
+   in the lecture) and the invigilator, not the phone. The face step does not
+   close this gap — see "liveness, not recognition" below.
 3. **The face.** `FaceCheck` runs the liveness sequence and is the last thing
    before the record is written, because it is the one check that has to happen
    *at* the session with the student present.
@@ -2227,9 +2235,33 @@ Firefox and Safari have no detector; there the check falls back to
 `proctoring.ts`'s frame statistics — an uncovered lens with something in front of
 it, plus motion — which is a weaker claim. `faceCheckSupport()` reports which path
 is in play and `FaceCheck` prints it, because a check that quietly checks less
-than it appears to would be worse than no check. A browser with no camera at all
-is offered "Hudhuria bila kamera" and the record says `bila kamera`, so a student
-is never stranded and the teacher can see what was verified.
+than it appears to would be worse than no check.
+
+**The face step is mandatory, and there is no bypass.** The owner was explicit:
+`onSkip` and the "Hudhuria bila kamera" button were removed, so a check-in is
+written only after `FaceCheck` reports success. A browser with no camera, or one
+where the student refuses the camera permission, is told the face check is
+required and to try on a phone with a camera or see the invigilator — it does not
+get a way through. Do not reintroduce a skip path: the whole point of the step is
+that it cannot be declined.
+
+**When the face is not visible, say *what* is wrong.** `faceIssue(reading)` turns
+one detector reading into `absent`, `multiple`, `too_far`, `off_centre` or
+`none`, and `FaceCheck` renders the matching instruction from `FACE_ISSUE_TEXT`.
+The student cannot see the camera, so a generic "hold still and follow the
+instructions" is useless when their face is out of frame or a classmate has
+walked in behind them — naming the fault is the whole point. `too_far` is
+reported before `off_centre`, because "come closer" is the instruction that fixes
+both. The old code tried to derive this from `passed`, which is `null` on the
+detector path, so a bad face read as "Uso unaonekana" (the face is visible) —
+which is the bug this replaces. The hint shows on both engines: the detector path
+judges geometry, and the no-detector path reports `absent` when the lens is
+covered or the frame is blank.
+
+`record` takes the method as an argument rather than reading it from state,
+because `submit` and the write happen in the same tick — a state read there would
+still see the previous value and the record would always say `none`. Keep that
+argument when editing `submit`.
 
 **Nothing about the face is stored.** No frame is uploaded, no image is kept; the
 verdict and the method name are all that reach the record.

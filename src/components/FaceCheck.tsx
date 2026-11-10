@@ -8,11 +8,13 @@ import {
   NO_FACE,
   challengeSatisfied,
   faceCheckSupport,
+  faceIssue,
   frameStats,
   motionInFrame,
   motionMoved,
   readFaces,
   type FaceChallenge,
+  type FaceIssue,
   type FaceReading,
   type FrameStats,
   type MotionChallenge,
@@ -29,6 +31,26 @@ const MOTION_TEXT: Record<MotionChallenge, { title: string; hint: string }> = {
   in_frame: { title: "Weka uso wako mbele ya kamera", hint: "Hakikisha kamera inaona uso wako" },
   moved: { title: "Sogeza kichwa kidogo", hint: "Geuza kichwa kushoto na kulia" },
 };
+
+/**
+ * What to say when the face is not usable, by fault.
+ *
+ * A student cannot see the camera, so "hold still" tells them nothing when their
+ * face is out of frame or a classmate is behind them. Each of these names the
+ * fault and the fix. `none` is never rendered — it means the face is fine.
+ */
+const FACE_ISSUE_TEXT: Record<FaceIssue, string> = {
+  none: "Uso unaonekana vizuri",
+  absent: "Hatuoni uso wako. Weka uso wako mbele ya kamera, uso ukiangalia moja kwa moja.",
+  multiple: "Kuna watu zaidi ya mmoja kwenye kamera. Hakikisha uko peke yako, kisha ujaribu tena.",
+  too_far: "Uso wako uko mbali sana. Sogeza simu karibu na uso wako.",
+  off_centre: "Uso wako hauko katikati. Weka uso wako katikati ya fremu, kisha ujaribu tena.",
+};
+
+/** Whether a fault is worth showing in red rather than as a neutral hint. */
+function isBlocking(issue: FaceIssue): boolean {
+  return issue !== "none";
+}
 
 /** How long a single movement may take before the student is told to retry. */
 const STEP_TIMEOUT_MS = 25000;
@@ -56,11 +78,8 @@ type DetectorCtor = new (opts?: { fastMode?: boolean; maxDetectedFaces?: number 
  */
 export function FaceCheck({
   onVerified,
-  onSkip,
 }: {
   onVerified: (method: "face_detector" | "motion") => void;
-  /** Offered only when the browser has no camera at all, so a student is never stuck. */
-  onSkip?: () => void;
 }) {
   const support = faceCheckSupport();
   const detectorMode = support === "face_detector";
@@ -80,8 +99,7 @@ export function FaceCheck({
   const [running, setRunning] = useState(false);
   const [starting, setStarting] = useState(false);
   const [step, setStep] = useState(0);
-  const [reading, setReading] = useState<FaceReading>(NO_FACE);
-  const [moved, setMoved] = useState(false);
+  const [issue, setIssue] = useState<FaceIssue>("none");
   const [stalled, setStalled] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
@@ -141,7 +159,12 @@ export function FaceCheck({
         faces as Array<{ boundingBox: { x: number; y: number; width: number; height: number } }>,
         frame,
       );
-      setReading(current);
+      // Report the fault as it is seen, so the student is told "come closer" or
+      // "you are not alone in frame" rather than a generic "hold still". Only
+      // the centred step judges position and size, so only there does the
+      // reading's geometry describe what is being asked for; on the later steps
+      // the instruction is the movement itself.
+      setIssue(challenge === "centred" ? faceIssue(current) : "none");
 
       const ok = challengeSatisfied(challenge as FaceChallenge, current, baselineRef.current);
       if (ok) {
@@ -171,13 +194,16 @@ export function FaceCheck({
       let ok: boolean;
       if (challenge === "in_frame") {
         ok = motionInFrame(stats);
+        // No detector on this browser, so the lens is all that can be judged: a
+        // covered or blank lens means nothing is in front of the camera, which
+        // is the same advice as "we cannot see you".
+        setIssue(ok ? "none" : "absent");
       } else {
         // Collect first, then judge, so the current frame is part of the
         // evidence rather than always one reading behind.
         motionSamplesRef.current = [...motionSamplesRef.current, stats].slice(-6);
         ok = motionMoved(motionSamplesRef.current);
       }
-      setMoved(ok);
 
       if (ok) {
         hitsRef.current += 1;
@@ -192,7 +218,9 @@ export function FaceCheck({
 
   const start = useCallback(async () => {
     if (support === "none") {
-      setCameraError("Kivinjari hiki hakina kamera inayopatikana. Tumia simu yenye kamera.");
+      setCameraError(
+        "Kivinjari hiki hakina kamera inayopatikana. Uthibitisho wa sura unahitaji kamera.",
+      );
       return;
     }
     setStarting(true);
@@ -233,7 +261,6 @@ export function FaceCheck({
   const instruction = detectorMode
     ? CHALLENGE_TEXT[currentChallenge as FaceChallenge]
     : MOTION_TEXT[currentChallenge as MotionChallenge];
-  const passed = detectorMode ? null : moved;
 
   return (
     <div className="space-y-3 rounded-xl border border-primary/30 bg-primary/5 p-3">
@@ -262,11 +289,11 @@ export function FaceCheck({
           <X className="h-5 w-5 shrink-0 text-destructive" />
           <div className="min-w-0 text-sm">
             <p className="font-medium text-destructive">{cameraError}</p>
-            {onSkip && (
-              <Button variant="outline" size="sm" className="mt-2" onClick={onSkip}>
-                Endelea bila kamera
-              </Button>
-            )}
+            <p className="mt-1 text-xs text-muted-foreground">
+              Uthibitisho wa sura ni lazima ili kuhudhuria. Fungua ruhusa ya kamera kwenye
+              mipangilio ya kivinjari chako, kisha ujaribu tena. Kama tatizo linaendelea, mwambie
+              mwalimu au msimamizi.
+            </p>
           </div>
         </div>
       )}
@@ -337,17 +364,22 @@ export function FaceCheck({
         </div>
       )}
 
-      {running && detectorMode && (
-        <p className="text-center text-[11px] text-muted-foreground">
-          {reading.count === 0
-            ? "Hakuna uso unaonekana"
-            : reading.count > 1
-              ? "Watu zaidi ya mmoja kwenye kamera"
-              : passed === false
-                ? "Sogeza ili uso uonekane vizuri"
-                : "Uso unaonekana"}
-        </p>
-      )}
+      {(running && detectorMode) || isBlocking(issue) ? (
+        <div
+          className={`flex items-start gap-2 rounded-lg border p-2.5 text-xs ${
+            isBlocking(issue)
+              ? "border-amber-500/45 bg-amber-500/10 text-amber-800 dark:text-amber-300"
+              : "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+          }`}
+        >
+          {isBlocking(issue) ? (
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          ) : (
+            <Check className="mt-0.5 h-4 w-4 shrink-0" />
+          )}
+          <span className="min-w-0">{FACE_ISSUE_TEXT[issue]}</span>
+        </div>
+      ) : null}
 
       {!running && (
         <Button
@@ -358,6 +390,21 @@ export function FaceCheck({
           {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
           Fungua kamera kuthibitisha sura
         </Button>
+      )}
+
+      {support === "none" && (
+        <div className="flex gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
+          <ShieldAlert className="h-5 w-5 shrink-0 text-destructive" />
+          <div className="min-w-0">
+            <p className="font-medium text-destructive">
+              Kivinjari hiki hakina kamera inayopatikana
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Uthibitisho wa sura ni lazima ili kuhudhuria. Fungua ukurasa huu kwenye simu yenye
+              kamera, kisha ujaribu tena. Kama huna kamera, mwambie mwalimu au msimamizi.
+            </p>
+          </div>
+        </div>
       )}
 
       {running && (
