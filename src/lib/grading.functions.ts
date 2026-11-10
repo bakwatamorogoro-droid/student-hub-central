@@ -4,6 +4,7 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { gradeLocally, type GradeResult } from "@/lib/ai-grader";
+import { resolveReferenceAnswer, type ReferenceAnswer } from "@/lib/referenceAnswer";
 
 export type GradeInput = {
   question: string;
@@ -12,6 +13,31 @@ export type GradeInput = {
   points: number;
   concepts?: string[];
 };
+
+/**
+ * Produces the model answer for a question the teacher wrote without one.
+ *
+ * The bank answers first and offline; `ai-answer` is only reached when the bank
+ * cannot place the question, because that call spends one of fifty shared daily
+ * requests. The returned `source` says which layer answered, so the UI can show
+ * the teacher whether the material is the class's own or a model's.
+ */
+export async function generateReferenceAnswer(
+  question: string,
+  context = "",
+): Promise<ReferenceAnswer> {
+  return resolveReferenceAnswer(question, {
+    context,
+    fetchAi: async (q, ctx) => {
+      const { data, error } = await supabase.functions.invoke("ai-answer", {
+        body: { question: q, context: ctx },
+      });
+      if (error) return null;
+      const answer = (data as { answer?: unknown })?.answer;
+      return typeof answer === "string" ? answer : null;
+    },
+  });
+}
 
 export async function gradeShortAnswer(input: GradeInput): Promise<GradeResult> {
   const studentAnswer = (input.studentAnswer || "").trim();

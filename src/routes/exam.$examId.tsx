@@ -17,6 +17,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { getDeviceId } from "@/lib/device-id";
 import { gradeShortAnswer, explainAnswer } from "@/lib/grading.functions";
+import { buildReferenceAnswer } from "@/lib/referenceAnswer";
 import { toast } from "@/lib/toast";
 import SignatureCanvas from "react-signature-canvas";
 import { Camera, MapPin, Mic, Clock, Eye, FileDown, Printer, MonitorSmartphone } from "lucide-react";
@@ -720,8 +721,23 @@ function ExamPage() {
               };
               return;
             }
+            // The teacher may have left the answer blank, or may have written
+            // one. Either way the bank is tried first: it knows the topic's
+            // rubric, so it supplies the concepts the answer is marked against
+            // even when the teacher wrote the answer themselves. Only a question
+            // the bank cannot place reaches the AI, which spends a request.
             let referenceAnswer = String(q.correct_answer || "").trim();
-            if (!referenceAnswer) {
+            let concepts: string[] | undefined = Array.isArray(q.concepts)
+              ? (q.concepts as string[])
+              : undefined;
+            const known = buildReferenceAnswer(String(q.body || ""));
+            if (known.matched) {
+              if (!referenceAnswer) referenceAnswer = known.answer;
+              // The bank's rubric is the fairer marking scheme — it names every
+              // idea a good answer carries, in the class's own words — so it
+              // wins over a teacher's hand-typed list when both exist.
+              if (known.concepts.length) concepts = known.concepts;
+            } else if (!referenceAnswer) {
               try {
                 const { data } = await supabase.functions.invoke("ai-answer", {
                   body: { question: q.body, context: exam.title },
@@ -736,7 +752,7 @@ function ExamPage() {
               correctAnswer: referenceAnswer,
               studentAnswer: String(ans || ""),
               points: Number(q.points),
-              concepts: Array.isArray(q.concepts) ? (q.concepts as string[]) : undefined,
+              concepts,
             });
             aiScore += r.score;
             feedback[q.id] = { ...r, points: Number(q.points), aiAutoFilled: !!aiAutoFilled[q.id] };
