@@ -2227,9 +2227,20 @@ Firefox and Safari have no detector; there the check falls back to
 `proctoring.ts`'s frame statistics — an uncovered lens with something in front of
 it, plus motion — which is a weaker claim. `faceCheckSupport()` reports which path
 is in play and `FaceCheck` prints it, because a check that quietly checks less
-than it appears to would be worse than no check. A browser with no camera at all
-is offered "Hudhuria bila kamera" and the record says `bila kamera`, so a student
-is never stranded and the teacher can see what was verified.
+than it appears to would be worse than no check.
+
+**The face step is mandatory, and there is no bypass.** The owner was explicit:
+`onSkip` and the "Hudhuria bila kamera" button were removed, so a check-in is
+written only after `FaceCheck` reports success. A browser with no camera, or one
+where the student refuses the camera permission, is told the face check is
+required and to try on a phone with a camera or see the invigilator — it does not
+get a way through. Do not reintroduce a skip path: the whole point of the step is
+that it cannot be declined.
+
+`record` takes the method as an argument rather than reading it from state,
+because `submit` and the write happen in the same tick — a state read there would
+still see the previous value and the record would always say `none`. Keep that
+argument when editing `submit`.
 
 **Nothing about the face is stored.** No frame is uploaded, no image is kept; the
 verdict and the method name are all that reach the record.

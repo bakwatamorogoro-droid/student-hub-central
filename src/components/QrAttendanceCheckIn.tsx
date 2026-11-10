@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { QrScanner } from "@/components/QrScanner";
 import { FaceCheck } from "@/components/FaceCheck";
-import { WizardNav, WizardProgress, type WizardStep } from "@/components/StepWizard";
+import { WizardProgress, type WizardStep } from "@/components/StepWizard";
 import { parseAttendanceQr, type ScannedAttendance } from "@/lib/attendance-qr";
 import {
   checkIn,
@@ -20,6 +20,7 @@ import { findStudentsByQuery } from "@/lib/studentSearch";
 import { getStudentToken, setStudentToken } from "@/lib/student-session";
 import { toast } from "@/lib/toast";
 import {
+  ArrowLeft,
   BookOpen,
   CheckCircle2,
   GraduationCap,
@@ -122,10 +123,6 @@ export function QrAttendanceCheckIn({
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [signingIn, setSigningIn] = useState(false);
 
-  // The face check, once it has passed. Its method is kept so the record can say
-  // how the student was verified.
-  const [faceMethod, setFaceMethod] = useState<string | null>(null);
-
   const identified = !!studentToken && !!identity;
 
   /**
@@ -137,7 +134,7 @@ export function QrAttendanceCheckIn({
   const steps: WizardStep[] = [
     { key: "scan", title: "Scan QR", hint: "Skani QR ya kipindi au andika msimbo wake" },
     { key: "who", title: "Reg Namba", hint: "Weka Reg Namba yako ili tuone taarifa zako" },
-    { key: "face", title: "Sura yako", hint: "Mfumo ujiscan ukutambue kama uthibitisho" },
+    { key: "face", title: "Sura yako", hint: "Lazima: mfumo ujiscan ukutambue" },
     { key: "done", title: "Hongera", hint: "Mahudhurio yako yamekamilika" },
   ];
 
@@ -163,6 +160,10 @@ export function QrAttendanceCheckIn({
         lng: number | null;
         accuracy: number | null;
       }) => Promise<Awaited<ReturnType<typeof checkIn>>>,
+      // Passed in rather than read from state: `submit` sets the state and calls
+      // this in the same tick, so a state read here would still see the old value
+      // and the record would always say "none".
+      faceMethod: string,
     ) => {
       setBusy(true);
       setFailure(null);
@@ -183,7 +184,7 @@ export function QrAttendanceCheckIn({
             distanceM: res.distanceM,
             checkInAt: res.checkInAt,
             semina: res.semina,
-            faceMethod: faceMethod ?? "none",
+            faceMethod,
           });
           setStep(3);
           toast.success("Mahudhurio yamekamilika ✓");
@@ -199,7 +200,7 @@ export function QrAttendanceCheckIn({
         setBusy(false);
       }
     },
-    [faceMethod, identity, onCheckedIn, regNo],
+    [identity, onCheckedIn, regNo],
   );
 
   /** Writes the attendance. Called once the face step has passed. */
@@ -207,23 +208,24 @@ export function QrAttendanceCheckIn({
     async (method: string) => {
       const st = getStudentToken();
       if (!st || !chosen) return;
-      setFaceMethod(method);
-      await record((fix) =>
-        chosen.kind === "join"
-          ? checkIn({
-              studentToken: st,
-              joinCode: chosen.joinCode,
-              lat: fix.lat,
-              lng: fix.lng,
-              accuracy: fix.accuracy,
-            })
-          : checkIn({
-              studentToken: st,
-              token: chosen.token,
-              lat: fix.lat,
-              lng: fix.lng,
-              accuracy: fix.accuracy,
-            }),
+      await record(
+        (fix) =>
+          chosen.kind === "join"
+            ? checkIn({
+                studentToken: st,
+                joinCode: chosen.joinCode,
+                lat: fix.lat,
+                lng: fix.lng,
+                accuracy: fix.accuracy,
+              })
+            : checkIn({
+                studentToken: st,
+                token: chosen.token,
+                lat: fix.lat,
+                lng: fix.lng,
+                accuracy: fix.accuracy,
+              }),
+        method,
       );
     },
     [chosen, record],
@@ -383,11 +385,7 @@ export function QrAttendanceCheckIn({
               <ScanFace className="h-4 w-4 shrink-0" />
               <span className="text-xs">
                 Uthibitisho wa sura:{" "}
-                {done.faceMethod === "face_detector"
-                  ? "kipimo cha uso"
-                  : done.faceMethod === "motion"
-                    ? "mwendo wa kamera"
-                    : "bila kamera"}
+                {done.faceMethod === "face_detector" ? "kipimo cha uso" : "mwendo wa kamera"}
               </span>
             </div>
           </div>
@@ -403,7 +401,6 @@ export function QrAttendanceCheckIn({
               setChosen(null);
               setIdentity(null);
               setRegNo("");
-              setFaceMethod(null);
               setStep(0);
             }}
           >
@@ -421,7 +418,7 @@ export function QrAttendanceCheckIn({
           <QrCode className="h-4 w-4" /> Hudhuria kwa QR Code
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Hatua nne: skani QR, weka Reg Namba yako, thibitisha sura yako, kisha mahudhurio
+          Hatua nne: skani QR, weka Reg Namba yako, thibitisha sura yako (lazima), kisha mahudhurio
           yanakamilika.
         </p>
       </CardHeader>
@@ -667,20 +664,19 @@ export function QrAttendanceCheckIn({
                   </span>
                 </div>
                 <FaceCheck onVerified={(method) => void submit(method)} />
-                <WizardNav
-                  current={step}
-                  count={steps.length}
-                  onBack={() => {
+                <Button
+                  variant="outline"
+                  onClick={() => {
                     setFailure(null);
                     setStep(1);
                   }}
-                  onNext={() => void submit("none")}
-                  nextLabel="Hudhuria bila kamera"
-                  backLabel="Nyuma"
-                />
+                  className="w-full gap-1.5"
+                >
+                  <ArrowLeft className="h-4 w-4" /> Nyuma
+                </Button>
                 <p className="text-center text-[11px] text-muted-foreground">
-                  Kama kamera haifanyi kazi, unaweza kuhudhuria bila uthibitisho wa sura — mwalimu
-                  ataona hilo.
+                  Uthibitisho wa sura ni lazima. Mahudhurio yanarekodiwa mara tu sura
+                  inapothibitishwa.
                 </p>
               </>
             )}

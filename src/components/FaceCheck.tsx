@@ -56,11 +56,8 @@ type DetectorCtor = new (opts?: { fastMode?: boolean; maxDetectedFaces?: number 
  */
 export function FaceCheck({
   onVerified,
-  onSkip,
 }: {
   onVerified: (method: "face_detector" | "motion") => void;
-  /** Offered only when the browser has no camera at all, so a student is never stuck. */
-  onSkip?: () => void;
 }) {
   const support = faceCheckSupport();
   const detectorMode = support === "face_detector";
@@ -192,7 +189,9 @@ export function FaceCheck({
 
   const start = useCallback(async () => {
     if (support === "none") {
-      setCameraError("Kivinjari hiki hakina kamera inayopatikana. Tumia simu yenye kamera.");
+      setCameraError(
+        "Kivinjari hiki hakina kamera inayopatikana. Uthibitisho wa sura unahitaji kamera.",
+      );
       return;
     }
     setStarting(true);
@@ -262,11 +261,11 @@ export function FaceCheck({
           <X className="h-5 w-5 shrink-0 text-destructive" />
           <div className="min-w-0 text-sm">
             <p className="font-medium text-destructive">{cameraError}</p>
-            {onSkip && (
-              <Button variant="outline" size="sm" className="mt-2" onClick={onSkip}>
-                Endelea bila kamera
-              </Button>
-            )}
+            <p className="mt-1 text-xs text-muted-foreground">
+              Uthibitisho wa sura ni lazima ili kuhudhuria. Fungua ruhusa ya kamera kwenye
+              mipangilio ya kivinjari chako, kisha ujaribu tena. Kama tatizo linaendelea, mwambie
+              mwalimu au msimamizi.
+            </p>
           </div>
         </div>
       )}
@@ -358,6 +357,21 @@ export function FaceCheck({
           {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
           Fungua kamera kuthibitisha sura
         </Button>
+      )}
+
+      {support === "none" && (
+        <div className="flex gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
+          <ShieldAlert className="h-5 w-5 shrink-0 text-destructive" />
+          <div className="min-w-0">
+            <p className="font-medium text-destructive">
+              Kivinjari hiki hakina kamera inayopatikana
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Uthibitisho wa sura ni lazima ili kuhudhuria. Fungua ukurasa huu kwenye simu yenye
+              kamera, kisha ujaribu tena. Kama huna kamera, mwambie mwalimu au msimamizi.
+            </p>
+          </div>
+        </div>
       )}
 
       {running && (
