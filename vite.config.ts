@@ -1,9 +1,33 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import path from "node:path";
+import { unwrapCascadeLayers } from "./src/lib/cssLayers.ts";
+
+/*
+ * Tailwind 4 wraps its whole sheet in `@layer`, which is Chrome 99 / Safari 15.4
+ * / Firefox 97 — above the CSS floor in the `lightningcss` block below. On an
+ * engine in that window every layered rule is discarded, so the palette in
+ * `:root` arrives but nothing that uses it does: no colour, no layout. The
+ * layers carry no information this sheet needs (see `src/lib/cssLayers.ts`), so
+ * flatten them in the shipped CSS only.
+ */
+function flattenCssLayers(): Plugin {
+  return {
+    name: "flatten-css-layers",
+    apply: "build",
+    enforce: "post",
+    generateBundle(_options, bundle) {
+      for (const file of Object.values(bundle)) {
+        if (file.type === "asset" && file.fileName.endsWith(".css")) {
+          file.source = unwrapCascadeLayers(String(file.source));
+        }
+      }
+    },
+  };
+}
 
 export default defineConfig({
   plugins: [
@@ -15,6 +39,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     tsconfigPaths(),
+    flattenCssLayers(),
   ],
   resolve: {
     alias: {
