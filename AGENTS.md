@@ -2193,6 +2193,39 @@ those in. It is a classic script in `<head>` so it runs before the module and is
 never transpiled, and it is written in ES5 because an engine old enough to need a
 polyfill may also be old enough to choke on an arrow function.
 
+**CSS.** A third floor, and the one that produced "the colours and the words do
+not show on some devices". `lightningcss` downlevels the *values* — `oklch()`
+becomes a hex fallback, `color-mix()` is guarded by `@supports` — for the
+`targets` in `vite.config.ts` (chrome80 / safari13 / firefox78). Two *features*
+are not values and were not downlevelled, and each fails silently by discarding
+the rule rather than the value:
+
+- `@layer`, which Tailwind 4 wraps its whole sheet in. Chrome 99 / Safari 15.4 /
+  Firefox 97. Below that the at-rule is unknown, so **every rule inside it is
+  dropped**: the palette in `:root` still arrives (it is unlayered) but nothing
+  that uses it does, and the page has no colour, no layout and no spacing. Fixed
+  by the `flatten-css-layers` plugin in `vite.config.ts`, which strips the layers
+  from the shipped CSS only. The layers carry no information the sheet needs, and
+  flattening them is byte-identical to the layered output — verified, and held by
+  `src/lib/cssLayers.test.ts`.
+- `in oklab`, the gradient interpolation method Tailwind writes into every
+  `--tw-gradient-position`. Chrome 111 / Safari 16.2 / Firefox 113. It is part of
+  the `linear-gradient()` value, so an older engine rejects the *whole*
+  declaration and `background-image` ends up `none` — no gradient at all, not a
+  plainer one. Two symptoms, one cause: a `bg-clip-text text-transparent` heading
+  has a transparent colour and a background that never painted, so it renders as
+  nothing; and the dark scrim over the hero video never paints, so its white copy
+  sits on a bright frame. Fixed by the `@supports not (... in oklab ...)` block at
+  the end of `styles.css`, which restates the direction **and** the three stop
+  positions (those live in `@property`, which the same engines lack, so they have
+  no initial value and poison `--tw-gradient-stops` even after the direction is
+  fixed). `src/lib/gradientCompat.test.ts` fails if a `bg-gradient-to-*` direction
+  is used without an entry. `bg-linear-to-*` carries the same method and needs the
+  same entry.
+
+When adding a CSS feature, check it against chrome80/safari13/firefox78 and not
+just the browser on the desk. The failure mode is invisible, not loud.
+
 **Never a blank page.** `index.html` arms the `#unsupported` notice until the app
 says it mounted. Three signals: the syntax gate (synchronous, so it cannot produce
 a false alarm), an `error` listener on the module script itself (accurate for a 404

@@ -714,3 +714,71 @@
     max-height: 92dvh;
   }
 }
+
+/*
+ * Gradients on engines that cannot interpolate in `oklab`.
+ *
+ * Tailwind 4 writes a gradient direction as `to right in oklab`. The
+ * interpolation method is Chrome 111 / Safari 16.2 / Firefox 113, and it is part
+ * of the `linear-gradient()` value: an engine that does not understand it
+ * rejects the *whole* declaration, so `background-image` ends up `none`. Not a
+ * plainer gradient — no gradient at all. Two things break, and both were
+ * reported as "the colour and the words do not show on some devices":
+ *
+ *   - A heading painted with `bg-clip-text text-transparent` has a transparent
+ *     colour and a background that never painted, so it renders as nothing.
+ *   - The dark scrim over the hero video is a gradient too, so its white copy
+ *     sits on a bright frame and cannot be read.
+ *
+ * The same engines are also below `@property` (Chrome 85 / Safari 16.4 /
+ * Firefox 128), which is where Tailwind's `--tw-gradient-*-position` variables
+ * get their initial values. Without it those `var()`s are invalid, which
+ * poisons `--tw-gradient-stops` even after the direction is fixed. So the
+ * fallback restates the direction *and* the three positions.
+ *
+ * It is gated on the feature itself rather than on a browser name, and it is
+ * unlayered, so it beats Tailwind's `@layer utilities` rules on every engine
+ * that reaches it. `src/lib/gradientCompat.test.ts` fails if a direction is used
+ * in the app without an entry here, which is the one way this can silently rot.
+ *
+ * Prefer the plain direction in new code: `bg-linear-to-r` still carries the
+ * interpolation method, so it needs the same entry.
+ */
+@supports not (background-image: linear-gradient(to right in oklab, red, blue)) {
+  .bg-gradient-to-t {
+    --tw-gradient-position: to top;
+  }
+  .bg-gradient-to-tr {
+    --tw-gradient-position: to top right;
+  }
+  .bg-gradient-to-r {
+    --tw-gradient-position: to right;
+  }
+  .bg-gradient-to-br {
+    --tw-gradient-position: to bottom right;
+  }
+  .bg-gradient-to-b {
+    --tw-gradient-position: to bottom;
+  }
+  .bg-gradient-to-bl {
+    --tw-gradient-position: to bottom left;
+  }
+  .bg-gradient-to-l {
+    --tw-gradient-position: to left;
+  }
+  .bg-gradient-to-tl {
+    --tw-gradient-position: to top left;
+  }
+  .bg-gradient-to-t,
+  .bg-gradient-to-tr,
+  .bg-gradient-to-r,
+  .bg-gradient-to-br,
+  .bg-gradient-to-b,
+  .bg-gradient-to-bl,
+  .bg-gradient-to-l,
+  .bg-gradient-to-tl {
+    --tw-gradient-from-position: 0%;
+    --tw-gradient-via-position: 50%;
+    --tw-gradient-to-position: 100%;
+  }
+}
