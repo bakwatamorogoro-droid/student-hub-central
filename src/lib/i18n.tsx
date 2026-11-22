@@ -166,11 +166,9 @@ const dict: Record<string, { sw: string; en: string }> = {
   nav_group: { sw: "Group Yangu", en: "My group" },
   nav_news: { sw: "Habari", en: "News" },
   nav_tutor: { sw: "OpenTutor", en: "OpenTutor" },
-  attendance_card_sub: {
-    sw: "Skani QR au weka msimbo wa kipindi kuhudhuria. Hapa pia unaona historia yako.",
-    en: "Scan a QR or enter a session code to check in. Your history lives here too.",
-  },
+  attendance_card_sub: { sw: "Skani QR na uhudhurie.", en: "Scan the QR to check in." },
   attendance_open_now: { sw: "Hudhuria sasa", en: "Check in now" },
+  attendance_kicker: { sw: "Kipindi", en: "Session" },
   // --- mahudhurio ya mwanafunzi ---------------------------------------------
   att_title: { sw: "Mahudhurio Yangu", en: "My Attendance" },
   att_sub: {
@@ -304,13 +302,11 @@ const dict: Record<string, { sw: string; en: string }> = {
 
   // --- home actions -------------------------------------------------------
   do_exam: { sw: "Fanya Mtihani", en: "Take Exam" },
-  do_exam_sub: { sw: "Fanya mtihani rasmi — mtu mmoja", en: "Sit a formal exam — individually" },
+  do_exam_kicker: { sw: "MTU MMOJA", en: "INDIVIDUAL" },
+  do_exam_sub: { sw: "Mtihani rasmi, mtu mmoja.", en: "A formal exam, individually." },
   start_now: { sw: "Anza sasa", en: "Start now" },
   quiz: { sw: "Assignment Group", en: "Group Assignment" },
-  quiz_sub: {
-    sw: "Kazi ya group — chagua wanachama, andika swali, pakia faili",
-    en: "Group work — pick your members, write the question, upload the file",
-  },
+  quiz_sub: { sw: "Kazi ya group na wanachama.", en: "Group work with your members." },
   quiz_badge: { sw: "GROUP", en: "GROUP" },
   quiz_cta: { sw: "Anza kazi", en: "Start assignment" },
   enter: { sw: "Ingia", en: "Enter" },
@@ -540,8 +536,8 @@ const dict: Record<string, { sw: string; en: string }> = {
   taarifa_kicker: { sw: "Update Taarifa", en: "Update your details" },
   taarifa_card_title: { sw: "Update Taarifa Zako", en: "Update your details" },
   taarifa_card_sub: {
-    sw: "Hatua mbili: weka Reg Namba, kisha rekebisha taarifa zako, semina na group lako, na uhifadhi.",
-    en: "Two steps: enter your Reg number, then edit your details, seminar and group, and save.",
+    sw: "Weka Reg Namba, rekebisha taarifa zako, uhifadhi.",
+    en: "Enter your Reg number, fix your details, save.",
   },
 
   // --- E-Learning ---------------------------------------------------------
@@ -551,6 +547,10 @@ const dict: Record<string, { sw: string; en: string }> = {
   el_sub: {
     sw: "Lecture, mawaidha na duruus za Dr. Jiba. Fungua video, angalia hapa hapa, na ujibu maswali ya mada pembeni.",
     en: "Lectures, sermons and lessons from Dr. Jiba. Open a video, watch it right here, and answer the topic questions beside it.",
+  },
+  el_card_sub: {
+    sw: "Video za Dr. Jiba, na maswali ya kila mada.",
+    en: "Dr. Jiba's videos, with questions for each topic.",
   },
   el_headline: { sw: "Jifunze kwa Video", en: "Learn Through Video" },
   el_kicker: { sw: "Elimu ya Kisasa", en: "Modern learning" },
@@ -692,6 +692,9 @@ const dict: Record<string, { sw: string; en: string }> = {
 
   // --- group hub ("Group Yangu" page) --------------------------------------
   gh_title: { sw: "Group Yangu", en: "My group" },
+  gh_card_sub: { sw: "Group lako na wenzako.", en: "Your group and classmates." },
+  gh_card_cta: { sw: "Fungua group", en: "Open my group" },
+  gh_card_kicker: { sw: "Wenzako", en: "Classmates" },
   gh_sub: {
     sw: "Thibitisha kwa Reg Namba yako na namba ya simu uliyojisajili, kisha uone group lako, wanafunzi wenzako na namba zao.",
     en: "Confirm with your Reg number and the phone you registered, then see your group, your classmates and their numbers.",
