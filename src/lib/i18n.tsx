@@ -689,6 +689,144 @@ const dict: Record<string, { sw: string; en: string }> = {
     sw: "Picha inachukuliwa kutoka kwenye link. Unaweza kuibadilisha kwa URL nyingine.",
     en: "The picture comes from the link. You can replace it with another URL.",
   },
+
+  // --- group hub ("Group Yangu" page) --------------------------------------
+  gh_title: { sw: "Group Yangu", en: "My group" },
+  gh_sub: {
+    sw: "Thibitisha kwa Reg Namba yako na namba ya simu uliyojisajili, kisha uone group lako, wanafunzi wenzako na namba zao.",
+    en: "Confirm with your Reg number and the phone you registered, then see your group, your classmates and their numbers.",
+  },
+  gh_verify_title: { sw: "Thibitisha ni wewe", en: "Confirm it is you" },
+  gh_verify_help: {
+    sw: "Tunahitaji vitu viwili: Reg Namba yako na namba ya simu uliyojisajili. Vyote lazima vilingane na taarifa zako.",
+    en: "We need two things: your Reg number and the phone you registered. Both must match your details.",
+  },
+  gh_reg_label: { sw: "Reg Namba", en: "Reg number" },
+  gh_phone_label: { sw: "Namba ya simu uliyojisajili", en: "Registered phone number" },
+  gh_verify_button: { sw: "Thibitisha na uone group", en: "Verify and see my group" },
+  gh_verifying: { sw: "Inathibitisha...", en: "Verifying..." },
+  gh_verified_as: { sw: "Umethibitishwa kama", en: "Verified as" },
+  gh_sign_out: { sw: "Toka", en: "Sign out" },
+  gh_privacy_note: {
+    sw: "Namba yako haihifadhiwi kwenye kifaa hiki. Ukifunga ukurasa, utaombwa uthibitishe tena.",
+    en: "Your number is not stored on this device. Close the page and you will be asked to verify again.",
+  },
+  gh_err_no_reg: { sw: "Andika Reg Namba yako.", en: "Enter your Reg number." },
+  gh_err_no_phone: {
+    sw: "Andika namba ya simu uliyojisajili.",
+    en: "Enter the phone you registered.",
+  },
+  gh_err_no_match: {
+    sw: "Reg Namba na namba ya simu havilingani na mwanafunzi yeyote. Hakikisha zote mbili ni sahihi.",
+    en: "That Reg number and phone do not match any student. Check both are right.",
+  },
+  gh_err_no_phone_on_file: {
+    sw: "Hakuna namba ya simu kwenye taarifa zako. Nenda Update Taarifa uiweke, kisha rudi hapa.",
+    en: "There is no phone number on your details. Add one in Update details, then come back.",
+  },
+  gh_group_label: { sw: "Group", en: "Group" },
+  gh_seminar_label: { sw: "Semina", en: "Seminar" },
+  gh_size_label: { sw: "Wanafunzi", en: "Members" },
+  gh_status_full: { sw: "Limejaa", en: "Full" },
+  gh_status_open: { sw: "Lina nafasi", en: "Has room" },
+  gh_status_under: { sw: "Wachache sana", en: "Too few" },
+  gh_members_title: {
+    sw: "Wanafunzi wenzako na namba zao",
+    en: "Your classmates and their numbers",
+  },
+  gh_members_help: {
+    sw: "Hii ni orodha ya group lako pekee. Namba zinaonekana kwa wanachama wa group hili.",
+    en: "This is your group only. The numbers are shown to members of this group.",
+  },
+  gh_you: { sw: "wewe", en: "you" },
+  gh_no_phone: { sw: "Hakuna namba", en: "No number" },
+  gh_invite_title: { sw: "Alika mwenzako", en: "Invite a classmate" },
+  gh_invite_help: {
+    sw: "Group lako lina watu chini ya 5, kwa hivyo unaweza kuomba kuhamia group la mwenzako. Mwenzako ndiye anayekubali.",
+    en: "Your group has fewer than 5 people, so you may ask to join a classmate's group. Your classmate accepts.",
+  },
+  gh_invite_locked_full: {
+    sw: "Group lako limejaa au lina watu 5 au zaidi, kwa hivyo haliingii kwenye group lingine.",
+    en: "Your group is full or has 5 or more people, so it cannot merge into another.",
+  },
+  gh_invite_locked_nogroup: {
+    sw: "Wewe huna group bado. Mwone mwalimu au admin akupange kwenye group.",
+    en: "You have no group yet. Ask your teacher or an admin to place you.",
+  },
+  gh_pick_group: { sw: "Chagua group la kwenda", en: "Pick a group to join" },
+  gh_group_row: { sw: "watu", en: "people" },
+  gh_group_free: { sw: "nafasi", en: "seats free" },
+  gh_no_joinable: {
+    sw: "Hakuna group lenye nafasi kwenye semina yako kwa sasa.",
+    en: "No group in your seminar has a free seat right now.",
+  },
+  gh_pick_member: { sw: "Chagua mwanafunzi wa kumwalika", en: "Pick a student to invite" },
+  gh_send_invite: { sw: "Tuma mwaliko", en: "Send invitation" },
+  gh_sending: { sw: "Inatuma...", en: "Sending..." },
+  gh_sent_title: { sw: "Mwaliko umetumwa", en: "Invitation sent" },
+  gh_sent_body: {
+    sw: "Subiri {name} ajibu. Ukikubaliwa, utahamishwa kwenye group lake.",
+    en: "Wait for {name} to answer. If accepted, you will be moved into their group.",
+  },
+  gh_cancel_invite: { sw: "Futa mwaliko", en: "Cancel invitation" },
+  gh_received_title: { sw: "Una mwaliko", en: "You have an invitation" },
+  gh_received_body: {
+    sw: "{name} ({reg}) wa {group} anaomba kujiunga na group lako. Group lake lina watu wachache.",
+    en: "{name} ({reg}) from {group} asks to join your group. Their group has too few people.",
+  },
+  gh_accept: { sw: "Kubali", en: "Accept" },
+  gh_decline: { sw: "Kataa", en: "Decline" },
+  gh_accepting: { sw: "Inakubali...", en: "Accepting..." },
+  gh_accepted: {
+    sw: "Umekubali. Mwenzako amehamia group lako.",
+    en: "Accepted. Your classmate has joined your group.",
+  },
+  gh_declined: { sw: "Umekataa mwaliko.", en: "Invitation declined." },
+  gh_invite_sent_toast: { sw: "Mwaliko umetumwa.", en: "Invitation sent." },
+  gh_invite_error: { sw: "Mwaliko haukutumwa", en: "The invitation was not sent" },
+  gh_err_gone: { sw: "Mwaliko huu haupo tena.", en: "That invitation no longer exists." },
+  gh_err_not_yours: {
+    sw: "Mwaliko huu si wako, kwa hivyo hauwezi kuujibu.",
+    en: "That invitation is not yours, so you cannot answer it.",
+  },
+  gh_err_answered: {
+    sw: "Mwaliko huu tayari umejibiwa.",
+    en: "That invitation has already been answered.",
+  },
+  gh_err_moved: {
+    sw: "Umekwisha hamia group lingine, kwa hivyo mwaliko huu umefutwa.",
+    en: "You have already moved to another group, so this invitation was cancelled.",
+  },
+  gh_err_full_now: {
+    sw: "Group limejaa sasa hivi (watu 8). Mwaliko hauwezi kukubaliwa.",
+    en: "The group just filled up (8 people). The invitation cannot be accepted.",
+  },
+  gh_err_target_full: {
+    sw: "Group la mwenzako limejaa (watu 8). Hakuna nafasi ya kuingia.",
+    en: "Their group is full (8 people). There is no seat to move into.",
+  },
+  gh_err_gender: {
+    sw: "Group ni la jinsia moja; mwaliko huu hauwezekani.",
+    en: "Groups are single-gender, so this invitation is not possible.",
+  },
+  gh_err_not_updated: {
+    sw: "Mwanafunzi huyu haja-update taarifa zake bado, kwa hivyo hawezi kualikwa.",
+    en: "This student has not updated their details yet, so they cannot be invited.",
+  },
+  gh_err_source_full: {
+    sw: "Group lako lina watu 5 au zaidi, kwa hivyo haliingii kwenye group lingine.",
+    en: "Your group has 5 or more people, so it does not merge into another group.",
+  },
+  gh_needs_migration: {
+    sw: "Kipengele hiki bado hakijawashwa kwenye hifadhidata. Mwone admin ailainishe.",
+    en: "This feature is not switched on in the database yet. Ask an admin to apply it.",
+  },
+  gh_not_updated: { sw: "Haja-update", en: "Not updated" },
+  gh_updated_badge: { sw: "Ame-update", en: "Updated" },
+  gh_search_help: {
+    sw: "Wanafunzi waliokwisha update taarifa zao ndio wanaoweza kualikwa.",
+    en: "Only students who have already updated their details can be invited.",
+  },
 };
 
 const Ctx = createContext<{

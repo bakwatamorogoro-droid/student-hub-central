@@ -1012,6 +1012,41 @@ back in on the next save.
 the migration. `src/routes/admin.groups.tsx` is the admin surface; `GroupManager` renders it and
 `groupExports.ts` writes Excel/Word/PDF/CSV from `xlsx`, `docx` and `jspdf`.
 
+## "Group Yangu" (`/group`) — invitations and the move rule
+
+The page lets a student verify with their Reg Namba plus the phone on their record, see their own
+group and their classmates' numbers, and move to a classmate's group by invitation. `group.tsx` is
+the UI; `src/lib/groupHub.ts` holds the pure rules and `groupHubApi.ts` the Supabase calls. Keep the
+split: `groupHub.ts` is import-free so `node --test` covers the rules, and that is why
+`inviteErrorKey` (the DB message to i18n key map) lives there rather than next to the RPC.
+
+A move needs an invitation the invitee accepts, and the database, not the page, decides. Four rules
+hold in the triggers and in `answer_group_invite`, and each raises with its Swahili message so the
+page can turn it into a toast in the reader's language:
+
+- A group holds at most 8, counted per **(seminar, gender, group)**.
+- Only a student whose group has **fewer than 5** may move, so a group of 5–8 stays put.
+- A group is gender-pure; a cross-gender invitation is refused.
+- The invitee must have updated their details (`group_confirmed_at is not null`), because an
+  invitation to a student who has never opened their profile goes nowhere.
+
+Two bugs that only appear against a real Postgres, both now fixed and covered:
+
+- `answer_group_invite` counted free seats without a lock, so two invitees accepting into the last
+  seat at the same moment each saw the same free seat and both took it, leaving 9 in a group of 8.
+  It now takes `pg_advisory_xact_lock(hashtext(semina|group|gender))` before counting. `02_race_*`
+  in `supabase/tests/group_invites/` runs the two accepts concurrently and fails if either the seat
+  count or the single-winner expectation is wrong; remove the lock and the runner exits 1.
+- When the mover had already left the group the invitation named, the function used to `RAISE`.
+  That rolled back the `cancelled` status update with it, so the invitee was left with a card they
+  could never clear. It now returns `'cancelled'`, the API surfaces that string, and `answerToast`
+  in `groupHub.ts` picks the message — "accepted" there would be a lie.
+
+`supabase/tests/group_invites/run.sh` proves all of it on a throwaway Postgres: it applies
+`00_setup.sql` (a stand-in `students` table with the real column names), the migration, the eight
+rule assertions in `01_rules.sql`, then the concurrency case. It asserts rather than prints, so a
+regression exits non-zero.
+
 ## Group assignments ("Kazi za Kufanya")
 
 A group's work lives in `pdf_submissions`, not a new table: the live project has no way to run DDL
