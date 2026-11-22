@@ -148,8 +148,8 @@ function Page() {
     }
   }, []);
 
-  // The header links to /student#group-yangu. With the group folded into the edit
-  // step, that link lands on step 2 rather than making the student walk the wizard.
+  // Old bookmarks to /student#group-yangu still land on the group step of the
+  // wizard, even though the header now points at /group.
   useEffect(() => {
     const openGroup = () => {
       if (window.location.hash === "#group-yangu") {

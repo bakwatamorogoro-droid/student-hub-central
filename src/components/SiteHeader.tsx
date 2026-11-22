@@ -141,7 +141,7 @@ export function SiteHeader() {
                   icon: <UserCog className="h-3.5 w-3.5" />,
                 },
                 {
-                  to: "/student#group-yangu",
+                  to: "/group",
                   label: t("nav_group"),
                   icon: <Users className="h-3.5 w-3.5" />,
                 },

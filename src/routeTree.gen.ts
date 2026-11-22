@@ -16,6 +16,7 @@ import { Route as AttendanceRouteImport } from './routes/attendance'
 import { Route as CrRouteImport } from './routes/cr'
 import { Route as ElessonsRouteImport } from './routes/elessons'
 import { Route as ExamsRouteImport } from './routes/exams'
+import { Route as GroupRouteImport } from './routes/group'
 import { Route as NewsRouteImport } from './routes/news'
 import { Route as PdfQuizRouteImport } from './routes/pdf-quiz'
 import { Route as QuizRouteImport } from './routes/quiz'
@@ -73,6 +74,11 @@ const ElessonsRoute = ElessonsRouteImport.update({
 const ExamsRoute = ExamsRouteImport.update({
   id: '/exams',
   path: '/exams',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GroupRoute = GroupRouteImport.update({
+  id: '/group',
+  path: '/group',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NewsRoute = NewsRouteImport.update({
@@ -199,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/cr': typeof CrRoute
   '/elessons': typeof ElessonsRoute
   '/exams': typeof ExamsRoute
+  '/group': typeof GroupRoute
   '/news': typeof NewsRoute
   '/pdf-quiz': typeof PdfQuizRoute
   '/quiz': typeof QuizRoute
@@ -230,6 +237,7 @@ export interface FileRoutesByTo {
   '/cr': typeof CrRoute
   '/elessons': typeof ElessonsRoute
   '/exams': typeof ExamsRoute
+  '/group': typeof GroupRoute
   '/news': typeof NewsRoute
   '/pdf-quiz': typeof PdfQuizRoute
   '/quiz': typeof QuizRoute
@@ -263,6 +271,7 @@ export interface FileRoutesById {
   '/cr': typeof CrRoute
   '/elessons': typeof ElessonsRoute
   '/exams': typeof ExamsRoute
+  '/group': typeof GroupRoute
   '/news': typeof NewsRoute
   '/pdf-quiz': typeof PdfQuizRoute
   '/quiz': typeof QuizRoute
@@ -297,6 +306,7 @@ export interface FileRouteTypes {
     | '/cr'
     | '/elessons'
     | '/exams'
+    | '/group'
     | '/news'
     | '/pdf-quiz'
     | '/quiz'
@@ -328,6 +338,7 @@ export interface FileRouteTypes {
     | '/cr'
     | '/elessons'
     | '/exams'
+    | '/group'
     | '/news'
     | '/pdf-quiz'
     | '/quiz'
@@ -360,6 +371,7 @@ export interface FileRouteTypes {
     | '/cr'
     | '/elessons'
     | '/exams'
+    | '/group'
     | '/news'
     | '/pdf-quiz'
     | '/quiz'
@@ -393,6 +405,7 @@ export interface RootRouteChildren {
   CrRoute: typeof CrRoute
   ElessonsRoute: typeof ElessonsRoute
   ExamsRoute: typeof ExamsRoute
+  GroupRoute: typeof GroupRoute
   NewsRoute: typeof NewsRoute
   PdfQuizRoute: typeof PdfQuizRoute
   QuizRoute: typeof QuizRoute
@@ -454,6 +467,13 @@ declare module '@tanstack/react-router' {
       path: '/exams'
       fullPath: '/exams'
       preLoaderRoute: typeof ExamsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/group': {
+      id: '/group'
+      path: '/group'
+      fullPath: '/group'
+      preLoaderRoute: typeof GroupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/news': {
@@ -662,6 +682,7 @@ const rootRouteChildren: RootRouteChildren = {
   CrRoute: CrRoute,
   ElessonsRoute: ElessonsRoute,
   ExamsRoute: ExamsRoute,
+  GroupRoute: GroupRoute,
   NewsRoute: NewsRoute,
   PdfQuizRoute: PdfQuizRoute,
   QuizRoute: QuizRoute,
