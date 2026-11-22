@@ -8,6 +8,7 @@ import {
   Trophy,
   Shield,
   Users,
+  UsersRound,
   ClipboardCheck,
   Eye,
   ArrowRight,
@@ -23,6 +24,7 @@ import { FounderPurpose } from "@/components/FounderPurpose";
 import { HomeAnimationHero } from "@/components/HomeAnimationHero";
 import { RealPhotoHero } from "@/components/RealPhotoHero";
 import { UpdateTaarifaCard } from "@/components/UpdateTaarifaCard";
+import { DashboardActionCard } from "@/components/DashboardActionCard";
 import { AnnouncementBanner } from "@/components/AnnouncementBanner";
 import { Odometer } from "@/components/Odometer";
 import { testCategory, TEST_NUMBERS } from "@/lib/examCatalog";
@@ -77,7 +79,11 @@ function Index() {
         .select("show_submissions_stat, show_test1_stat, stats_hidden_at")
         .eq("id", 1)
         .single();
-      const s0 = settings as any;
+      const s0 = settings as {
+        show_submissions_stat: boolean | null;
+        show_test1_stat: boolean | null;
+        stats_hidden_at: string | null;
+      } | null;
       const visibility: StatVisibility = {
         showSubmissions: s0?.show_submissions_stat !== false,
         showTest1: s0?.show_test1_stat !== false,
@@ -151,29 +157,32 @@ function Index() {
         <RealPhotoHero fallback={<HomeAnimationHero />} />
 
         {/* E-LEARNING — the owner asked for this in front of the page, so it
-            sits above everything else a student sees on arrival. */}
-        <div className="animate-fade-in mb-4">
+            sits above everything else a student sees on arrival. Kept as a
+            single compact banner so it leads without pushing the tiles down. */}
+        <div className="animate-fade-in mb-3">
           <Link to="/elessons" className="group block">
-            <Card className="relative h-full overflow-hidden border-2 border-primary/40 bg-gradient-to-br from-primary via-primary/85 to-secondary text-primary-foreground shadow-xl transition-all hover:-translate-y-1 hover:shadow-2xl">
-              <div className="absolute -right-10 -top-10 h-44 w-44 rounded-full bg-white/15 blur-2xl" />
-              <div className="absolute -bottom-12 -left-8 h-40 w-40 rounded-full bg-secondary/30 blur-2xl" />
-              <CardContent className="relative flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/20 shadow-lg backdrop-blur">
-                    <GraduationCap className="h-7 w-7" />
-                  </div>
-                  <div>
-                    <div className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/15 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest backdrop-blur">
-                      <PlayCircle className="h-3 w-3" /> {t("el_kicker")}
-                    </div>
-                    <h2 className="mt-2 text-2xl font-extrabold tracking-tight">
-                      {t("elearning")}
-                    </h2>
-                    <p className="mt-1 max-w-md text-sm text-white/90">{t("el_sub")}</p>
-                  </div>
+            {/* A fixed dark banner in both themes: `--primary` turns light in
+                dark mode, which would leave white copy on a pale blue. */}
+            <Card className="relative overflow-hidden border-2 border-sky-500/30 bg-gradient-to-br from-slate-900 via-sky-900 to-teal-900 text-white shadow-soft transition-all duration-300 hover:-translate-y-0.5 hover:shadow-float">
+              <div className="absolute -right-10 -top-10 h-36 w-36 rounded-full bg-sky-400/25 blur-2xl" />
+              <div className="absolute -bottom-12 -left-8 h-32 w-32 rounded-full bg-teal-400/20 blur-2xl" />
+              <CardContent className="relative flex items-center gap-3 p-4">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 shadow-lg backdrop-blur">
+                  <GraduationCap className="h-5 w-5" />
                 </div>
-                <div className="flex items-center gap-2 text-sm font-bold sm:shrink-0">
-                  {t("el_watch")}
+                <div className="min-w-0 flex-1">
+                  <div className="inline-flex items-center gap-1 rounded-full border border-white/30 bg-white/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.14em] backdrop-blur">
+                    <PlayCircle className="h-2.5 w-2.5" /> {t("el_kicker")}
+                  </div>
+                  <h2 className="mt-1 font-display text-lg font-extrabold leading-tight tracking-tight">
+                    {t("elearning")}
+                  </h2>
+                  <p className="mt-0.5 line-clamp-2 text-xs leading-snug text-white/85">
+                    {t("el_card_sub")}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5 text-xs font-bold">
+                  <span className="hidden sm:inline">{t("el_watch")}</span>
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                 </div>
               </CardContent>
@@ -182,82 +191,53 @@ function Index() {
         </div>
 
         {/* Update Taarifa — the self-service flow, one tap from the dashboard */}
-        <div className="animate-fade-in mb-4">
+        <div className="animate-fade-in mb-3">
           <UpdateTaarifaCard />
         </div>
 
-        {/* MAHUDHURIO — the one thing a student needs during a lecture, so it
-            sits above the exam cards rather than behind a menu. */}
-        <div className="animate-fade-in mb-4">
-          <Link to="/attendance" className="group block">
-            <Card className="relative h-full overflow-hidden border-2 border-emerald-500/40 bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-600 text-white transition-all hover:-translate-y-1 hover:shadow-2xl">
-              <div className="absolute -right-8 -bottom-8 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
-              <CardContent className="relative flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur">
-                    <CalendarCheck className="h-7 w-7" />
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-extrabold tracking-tight">
-                      {t("nav_attendance")}
-                    </h2>
-                    <p className="mt-1 max-w-md text-sm text-white/90">
-                      {t("attendance_card_sub")}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 text-sm font-bold sm:shrink-0">
-                  {t("attendance_open_now")}
-                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-        </div>
-
-        {/* VITENDO VIKUU: Fanya Mtihani / Quiz */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <Link to="/exams" className="group animate-fade-in">
-            <Card className="h-full min-h-[190px] border-2 hover:border-primary hover:shadow-2xl transition-all hover:-translate-y-1 bg-gradient-to-br from-primary via-primary/80 to-primary/40 text-primary-foreground overflow-hidden relative">
-              <div className="absolute -right-10 -bottom-10 w-48 h-48 rounded-full bg-primary-foreground/10 blur-2xl" />
-              <CardContent className="p-6 h-full flex flex-col justify-between relative">
-                <div>
-                  <div className="w-12 h-12 rounded-2xl bg-primary-foreground/20 backdrop-blur flex items-center justify-center mb-3">
-                    <FileText className="h-6 w-6" />
-                  </div>
-                  <h2 className="text-2xl font-extrabold tracking-tight">{t("do_exam")}</h2>
-                  <p className="text-sm opacity-90 mt-1">{t("do_exam_sub")}</p>
-                </div>
-                <div className="flex items-center gap-2 text-sm font-bold group-hover:translate-x-1 transition-transform">
-                  {t("start_now")} <ArrowRight className="h-4 w-4" />
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-
-          <Link to="/quiz" className="group animate-fade-in" style={{ animationDelay: "80ms" }}>
-            <Card className="relative h-full min-h-[190px] overflow-hidden border-2 border-transparent bg-gradient-to-br from-violet-600 via-fuchsia-600 to-indigo-600 text-white shadow-xl shadow-violet-500/20 transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-fuchsia-500/30">
-              <div className="absolute -right-10 -bottom-12 h-48 w-48 rounded-full bg-white/15 blur-2xl" />
-              <div className="absolute -left-8 -top-10 h-36 w-36 rounded-full bg-fuchsia-300/20 blur-2xl" />
-              <CardContent className="relative flex h-full flex-col justify-between p-6">
-                <div>
-                  <div className="mb-3 flex items-center gap-3">
-                    <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20 shadow-lg backdrop-blur">
-                      <Users className="h-6 w-6" />
-                    </span>
-                    <span className="rounded-full border border-white/30 bg-white/15 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest backdrop-blur">
-                      {t("quiz_badge")}
-                    </span>
-                  </div>
-                  <h2 className="text-2xl font-extrabold tracking-tight">{t("quiz")}</h2>
-                  <p className="mt-1 text-sm text-white/85">{t("quiz_sub")}</p>
-                </div>
-                <div className="flex items-center gap-2 text-sm font-bold transition-transform group-hover:translate-x-1">
-                  {t("quiz_cta")} <ArrowRight className="h-4 w-4" />
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
+        {/* The four things a student opens daily, as equal compact tiles: 2x2 on
+            a phone, one row of four from `md`. Attendance keeps the first
+            position because it is the one used during a lecture. */}
+        <div className="mb-4 grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-4">
+          <DashboardActionCard
+            to="/attendance"
+            tone="emerald"
+            icon={CalendarCheck}
+            kicker={t("attendance_kicker")}
+            title={t("nav_attendance")}
+            sub={t("attendance_card_sub")}
+            cta={t("attendance_open_now")}
+          />
+          <DashboardActionCard
+            to="/exams"
+            tone="primary"
+            icon={FileText}
+            kicker={t("do_exam_kicker")}
+            title={t("do_exam")}
+            sub={t("do_exam_sub")}
+            cta={t("start_now")}
+            delay={70}
+          />
+          <DashboardActionCard
+            to="/quiz"
+            tone="violet"
+            icon={Users}
+            kicker={t("quiz_badge")}
+            title={t("quiz")}
+            sub={t("quiz_sub")}
+            cta={t("quiz_cta")}
+            delay={140}
+          />
+          <DashboardActionCard
+            to="/group"
+            tone="sky"
+            icon={UsersRound}
+            kicker={t("gh_card_kicker")}
+            title={t("gh_title")}
+            sub={t("gh_card_sub")}
+            cta={t("gh_card_cta")}
+            delay={210}
+          />
         </div>
 
         {/* TAKWIMU — chini kwa mpangilio */}
