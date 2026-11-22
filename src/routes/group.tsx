@@ -22,6 +22,12 @@ import {
 } from "@/lib/groupHub";
 import { answerInvite, cancelInvite, loadInvitesFor, sendInvite } from "@/lib/groupHubApi";
 import { GROUP_SIZE, type RosterEntry } from "@/lib/groupAssignment";
+import { ownGroupOf } from "@/components/GroupAssignmentPicker";
+import { GroupWorkCard } from "@/components/GroupWorkCard";
+import { loadGroupSubmission } from "@/lib/groupAssignmentApi";
+import { toGroupSubmission, type GroupSubmissionRow } from "@/lib/groupAssignmentSubmission";
+import { forGroupPage, loadOpenAssignments, type OpenAssignment } from "@/lib/openAssignments";
+import { formatDeadline, groupWorkStatus } from "@/lib/groupWorkStatus";
 import {
   AlertTriangle,
   ArrowRight,
@@ -58,7 +64,7 @@ export const Route = createFileRoute("/group")({
 });
 
 function Page() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { roster, loading: rosterLoading, reload: reloadRoster } = useRoster();
 
   // The verified student lives in memory only. A phone number is a credential
@@ -94,6 +100,73 @@ function Page() {
     [roster, me, invites],
   );
 
+  // The group's own assignment. Loaded only once the student is verified: the
+  // submission is keyed by the group, so asking before we know which group the
+  // visitor is in would read every group's work on their behalf.
+  const [assignments, setAssignments] = useState<OpenAssignment[]>([]);
+  const [submission, setSubmission] = useState<GroupSubmissionRow | null>(null);
+  const groupKey = useMemo(() => (me ? ownGroupOf(me) : null), [me]);
+
+  useEffect(() => {
+    let live = true;
+    loadOpenAssignments()
+      .then((rows) => {
+        if (live) setAssignments(forGroupPage(rows));
+      })
+      .catch(() => {
+        if (live) setAssignments([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!groupKey) {
+      setSubmission(null);
+      return;
+    }
+    let live = true;
+    loadGroupSubmission(groupKey)
+      .then((row) => {
+        if (live) setSubmission(row);
+      })
+      .catch(() => {
+        if (live) setSubmission(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [groupKey]);
+
+  const work = useMemo(() => {
+    const sub = submission ? toGroupSubmission(submission) : null;
+    return {
+      status: groupWorkStatus({
+        assignments: assignments.map((a) => ({
+          id: a.id,
+          title: a.title,
+          dueAt: a.dueAt,
+          points: a.points,
+        })),
+        submission: sub
+          ? {
+              submittedAt: sub.submittedAt,
+              answered: sub.answered,
+              mark: sub.mark,
+              markScore: sub.markScore,
+              markMax: sub.markMax,
+              annotations: sub.annotations.length,
+            }
+          : null,
+        now: Date.now(),
+      }),
+      kind: sub?.kind ?? null,
+      sentAt: sub ? formatDeadline(sub.submittedAt, lang) : null,
+      answerPreview: sub?.answer ?? null,
+    };
+  }, [assignments, submission, lang]);
+
   return (
     <div className="page-shell min-h-screen">
       <SiteHeader />
@@ -118,6 +191,12 @@ function Page() {
             <VerifiedBar student={me} onSignOut={() => setVerified(null)} />
             {!invitesReady && <MigrationNotice />}
             <GroupCard mine={mine!} />
+            <GroupWorkCard
+              status={work.status}
+              kind={work.kind}
+              sentAt={work.sentAt}
+              answerPreview={work.answerPreview}
+            />
             {mine!.receivedInvite && (
               <ReceivedInviteCard
                 invite={mine!.receivedInvite}
@@ -299,10 +378,19 @@ function GroupCard({ mine }: { mine: ReturnType<typeof describeGroup> }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {[
             { label: t("gh_seminar_label"), value: mine.semina || "—" },
             { label: t("gh_group_label"), value: mine.group || "—" },
+            {
+              label: t("gender"),
+              value:
+                mine.gender === "female"
+                  ? t("gh_gender_female")
+                  : mine.gender === "male"
+                    ? t("gh_gender_male")
+                    : t("gh_gender_unknown"),
+            },
             { label: t("gh_size_label"), value: `${mine.size}/${GROUP_SIZE}` },
           ].map((f) => (
             <div key={f.label} className="rounded-xl border border-primary/15 bg-primary/5 p-2.5">

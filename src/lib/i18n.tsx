@@ -742,6 +742,9 @@ const dict: Record<string, { sw: string; en: string }> = {
     en: "This is your group only. The numbers are shown to members of this group.",
   },
   gh_you: { sw: "wewe", en: "you" },
+  gh_gender_male: { sw: "Wanaume", en: "Men" },
+  gh_gender_female: { sw: "Wanawake", en: "Women" },
+  gh_gender_unknown: { sw: "Jinsia haijulikani", en: "Gender unknown" },
   gh_no_phone: { sw: "Hakuna namba", en: "No number" },
   gh_invite_title: { sw: "Alika mwenzako", en: "Invite a classmate" },
   gh_invite_help: {
@@ -830,6 +833,35 @@ const dict: Record<string, { sw: string; en: string }> = {
     sw: "Wanafunzi waliokwisha update taarifa zao ndio wanaoweza kualikwa.",
     en: "Only students who have already updated their details can be invited.",
   },
+
+  // --- the group's assignment, shown on the group page ---------------------
+  gh_work_title: { sw: "Kazi ya Group Lenu", en: "Your group's assignment" },
+  gh_work_help: {
+    sw: "Hii ni kazi ya group lako. Tuma kazi kwenye ukurasa wa Kazi za Kufanya.",
+    en: "This is your group's work. Send it from the Assignment page.",
+  },
+  gh_work_help_sent: {
+    sw: "Kazi yenu na majibu ya mwalimu ziko kwenye ukurasa wa Kazi za Kufanya.",
+    en: "Your work and the teacher's reply are on the Assignment page.",
+  },
+  gh_work_none: {
+    sw: "Mwalimu hajaweka kazi ya group bado. Ukiiweka itaonekana hapa.",
+    en: "The teacher has not opened a group assignment yet. It will appear here.",
+  },
+  gh_work_open: { sw: "Haijatumwa", en: "Not sent yet" },
+  gh_work_sent: { sw: "Imetumwa", en: "Sent" },
+  gh_work_answered: { sw: "Mwalimu amejibu", en: "Teacher replied" },
+  gh_work_overdue: { sw: "Muda umepita", en: "Past due" },
+  gh_work_due: { sw: "Mwisho", en: "Deadline" },
+  gh_work_points: { sw: "alama", en: "marks" },
+  gh_work_mark: { sw: "Alama", en: "Mark" },
+  gh_work_notes: { sw: "Alama za mwalimu", en: "Teacher's marks" },
+  gh_work_open_cta: { sw: "Tuma kazi ya group", en: "Send the group's work" },
+  gh_work_view_cta: { sw: "Fungua kazi", en: "Open the work" },
+  gh_work_page_cta: { sw: "Fungua Kazi za Kufanya", en: "Open the Assignment page" },
+  gh_due_today: { sw: "Mwisho ni leo", en: "Due today" },
+  gh_due_left: { sw: "Siku {n} zimebaki", en: "{n} days left" },
+  gh_due_past: { sw: "Siku {n} zimepita", en: "{n} days ago" },
 };
 
 const Ctx = createContext<{
