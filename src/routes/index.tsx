@@ -25,6 +25,7 @@ import { DashboardActionCard } from "@/components/DashboardActionCard";
 import { AnnouncementBanner } from "@/components/AnnouncementBanner";
 import { Odometer } from "@/components/Odometer";
 import { ExamHistoryTicker } from "@/components/ExamHistoryTicker";
+import { CountTicker, type TickerFrame } from "@/components/CountTicker";
 import { testCategory, TEST_NUMBERS } from "@/lib/examCatalog";
 import { buildExamHistory, type ExamHistoryEntry, type HistoryExam } from "@/lib/examHistory";
 
@@ -61,6 +62,19 @@ function Index() {
     showSubmissions: true,
     showTest1: true,
   });
+
+  // One frame per test category, so the "submissions per test" slot carries the
+  // whole list instead of needing a card each. A hidden Test 1 drops its frame
+  // rather than showing a dash, since a rotating card has no room to explain it.
+  const testFrames: TickerFrame[] = testStats
+    .filter((ts) => ts.key !== "test1" || vis.showTest1)
+    .map((ts) => ({
+      key: ts.key,
+      count: ts.count,
+      name: t(ts.labelKey),
+      meta: null,
+      label: t("took"),
+    }));
 
   useEffect(() => {
     (async () => {
@@ -142,13 +156,11 @@ function Index() {
       const countsByExam: Record<string, number> = {};
       await Promise.all(
         exams.map(async (exam) => {
-          let q = supabase
+          const { count } = await supabase
             .from("submissions")
             .select("id", { count: "exact", head: true })
             .eq("exam_id", exam.id)
             .not("submitted_at", "is", null);
-          if (visibility.hiddenSince) q = q.gt("submitted_at", visibility.hiddenSince);
-          const { count } = await q;
           countsByExam[exam.id] = count || 0;
         }),
       );
@@ -321,27 +333,14 @@ function Index() {
             {t("per_test_title")}
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-            {testStats.map((ts) => {
-              const hidden = ts.key === "test1" && !vis.showTest1;
-              return (
-                <Card
-                  key={ts.key}
-                  className={`border-primary/20 bg-gradient-to-br from-primary/10 to-transparent ${hidden ? "border-dashed opacity-70" : ""}`}
-                >
-                  <CardContent className="p-4">
-                    <div className="text-[11px] font-bold uppercase tracking-wide text-primary">
-                      {t(ts.labelKey)}
-                    </div>
-                    {hidden ? (
-                      <div className="text-3xl font-black mt-1 text-muted-foreground/50">—</div>
-                    ) : (
-                      <Odometer value={ts.count} className="text-3xl font-black mt-1" />
-                    )}
-                    <div className="text-[10px] uppercase text-muted-foreground">{t("took")}</div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+            <Card className="border-primary/20 bg-gradient-to-br from-primary/10 to-transparent">
+              <CardContent className="p-4">
+                <span className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15">
+                  <ClipboardCheck className="h-5 w-5 text-primary" />
+                </span>
+                <CountTicker frames={testFrames} />
+              </CardContent>
+            </Card>
           </div>
 
           <div className="grid grid-cols-2 gap-3 md:gap-4 mt-4">
