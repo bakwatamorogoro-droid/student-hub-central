@@ -2367,6 +2367,44 @@ camera. That file imports through relative `./` paths, not `@/`, because
 `node --test` cannot resolve the alias — the same rule every testable lib module
 follows.
 
+## The results export holds three columns, and nothing else
+
+`/admin/submissions` hands the class one file per exam. The owner was explicit
+about the shape: **Jina, Reg Namba, Alama** - name, registration number, mark -
+in all four formats (Excel, CSV, Word, PDF), sorted A-Z. The screen keeps showing
+course, phone, GPS and submission time for the admin; none of it belongs in a
+file that leaves the school.
+
+- `src/lib/resultRows.ts` builds the rows (`resultRows`), and `compareByName`
+  owns the order. Both are pure and import-free, so `node --test` pins them.
+- `src/lib/resultExports.ts` turns those rows into a sheet, CSV text, a `jsPDF`
+  document and a `docx` `Document`. Keeping the builders out of the page is what
+  makes the artifacts themselves testable: the tests read the generated
+  spreadsheet, the CSV text, the PDF content stream and the Word XML back, and
+  assert three columns rather than three columns *intended*.
+- An unmarked paper exports an **empty cell**, never `0` or `-`. A blank says the
+  paper is unmarked; a zero claims it scored nothing.
+- Names are folded with `NFKC` before they reach a file. A name typed with a
+  decorative keyboard arrives as mathematical alphanumeric symbols (U+1D400 and
+  up). They read as letters, but the PDF's built-in fonts have no glyph for
+  them, so the cell printed **blank** while the mark beside it printed fine:
+  `SALIMA ALLY BAULENI` written that way was invisible in the PDF and correct in
+  the CSV. `NFKC` maps it to the plain letters, which every format can draw.
+
+The file name and the on-screen label both come from `testLabel(exam)` in
+`examCatalog`, i.e. the admin's own `test_number`. Numbering by list position
+called `ASSESSMENT TEST 2` a "Test 1", so the download disagreed with the counter
+the student sees on the home page.
+
+## The home counters count every taker
+
+`app_settings.stats_hidden_at` records *when* an admin last hid a counter. It used
+to also cut the query window (`submitted_at > stats_hidden_at`), which meant
+switching a counter back on still showed the handful of submissions made since it
+was hidden instead of the real total - and hiding Test 1 silently truncated the
+Test 2 count as well, because one timestamp gated every counter. Visibility is
+now a plain on/off flag; the timestamp is history, not a filter.
+
 ## Uploads must carry a real MIME type (the octet-stream trap)
 
 Supabase Storage stores whatever `contentType` the client passes and serves that
