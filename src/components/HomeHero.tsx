@@ -8,8 +8,8 @@ import { useI18n } from "@/lib/i18n";
  * The previous hero rotated user-uploaded photos behind the headline. That put
  * a 1–2.6 MB image in the critical path of the first paint, and the copy had to
  * fight whatever the photo happened to show. Here the visual is an inline SVG
- * arch with a tiled octagram, which costs a few hundred bytes, cannot be slow,
- * and leaves the headline as the only thing to read.
+ * arch framing a drawn answer sheet, which costs a few hundred bytes, cannot be
+ * slow, and leaves the headline as the only thing to read.
  */
 export function HomeHero() {
   const { t } = useI18n();
@@ -83,8 +83,14 @@ export function HomeHero() {
   );
 }
 
-/** A pointed arch with a tiled octagram, drawn rather than photographed. */
+/**
+ * A pointed arch framing a drawn answer sheet: a countdown, three rows with two
+ * ticked, and a progress bar. Every stroke is geometry, so it stays sharp at any
+ * width and nothing has to be downloaded.
+ */
 function ArchMark() {
+  const arch = "M20 280V150C20 80 70 35 120 22C170 35 220 80 220 150V280Z";
+
   return (
     <div className="relative mx-auto hidden w-[15rem] shrink-0 md:block lg:w-[17rem]">
       <svg
@@ -104,17 +110,13 @@ function ArchMark() {
             </g>
           </pattern>
           <clipPath id="archClip">
-            <path d="M20 280V150C20 80 70 35 120 22C170 35 220 80 220 150V280Z" />
+            <path d={arch} />
           </clipPath>
         </defs>
 
+        <path d={arch} fill="url(#archTile)" className="text-primary" />
         <path
-          d="M20 280V150C20 80 70 35 120 22C170 35 220 80 220 150V280Z"
-          fill="url(#archTile)"
-          className="text-primary"
-        />
-        <path
-          d="M20 280V150C20 80 70 35 120 22C170 35 220 80 220 150V280Z"
+          d={arch}
           fill="none"
           stroke="url(#archStroke)"
           strokeWidth="3"
@@ -131,18 +133,90 @@ function ArchMark() {
         />
 
         <g clipPath="url(#archClip)">
-          <g className="animate-float text-secondary" style={{ transformOrigin: "120px 150px" }}>
-            <path
-              d="M142 132a30 30 0 1 0 0 42 24 24 0 1 1 0-42Z"
-              fill="currentColor"
-              className="text-secondary"
+          {/* Timer: a gold arc of elapsed time over a quiet track. */}
+          <circle
+            cx="120"
+            cy="92"
+            r="25"
+            fill="none"
+            strokeWidth="3"
+            className="stroke-primary/15"
+          />
+          <circle
+            cx="120"
+            cy="92"
+            r="25"
+            fill="none"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeDasharray="104 158"
+            transform="rotate(-90 120 92)"
+            className="stroke-secondary"
+          />
+          <path
+            d="M120 80v12l9 6"
+            fill="none"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="stroke-primary/70"
+          />
+
+          {/* The sheet. */}
+          <g>
+            <rect
+              x="62"
+              y="132"
+              width="116"
+              height="126"
+              rx="12"
+              strokeWidth="1.5"
+              className="fill-card stroke-primary/20"
             />
+
+            {[0, 1, 2].map((row) => {
+              const y = 150 + row * 24;
+              return (
+                <g key={row}>
+                  <rect
+                    x="74"
+                    y={y}
+                    width="11"
+                    height="11"
+                    rx="3"
+                    strokeWidth="1.5"
+                    className={row < 2 ? "fill-secondary/20 stroke-secondary" : "stroke-primary/25"}
+                  />
+                  {row < 2 && (
+                    <path
+                      d={`M76.5 ${y + 5.5}l2.6 2.8 4.4-5.4`}
+                      fill="none"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="stroke-secondary"
+                    />
+                  )}
+                  <rect
+                    x="92"
+                    y={y + 3}
+                    width={row === 1 ? 58 : 66}
+                    height="5"
+                    rx="2.5"
+                    className="fill-primary/20"
+                  />
+                </g>
+              );
+            })}
+
+            <rect x="74" y="228" width="92" height="7" rx="3.5" className="fill-primary/10" />
+            <rect x="74" y="228" width="60" height="7" rx="3.5" className="fill-secondary" />
           </g>
         </g>
 
         <g className="text-primary/40" fill="currentColor">
-          <path d="M104 262l3 7 7 3-7 3-3 7-3-7-7-3 7-3Z" />
-          <path d="M136 258l2.2 5 5 2.2-5 2.2-2.2 5-2.2-5-5-2.2 5-2.2Z" />
+          <path d="M52 122l2.6 6 6 2.6-6 2.6-2.6 6-2.6-6-6-2.6 6-2.6Z" />
+          <path d="M190 236l2 4.6 4.6 2-4.6 2-2 4.6-2-4.6-4.6-2 4.6-2Z" />
         </g>
       </svg>
     </div>
