@@ -331,6 +331,163 @@ const dict: Record<string, { sw: string; en: string }> = {
     sw: "Zimesalia saa {hours}, dakika {minutes}, sekunde {seconds}",
     en: "{hours} hours {minutes} minutes {seconds} seconds remaining",
   },
+
+  // --- kutunga maswali (admin) ----------------------------------------------
+  qc_new: { sw: "Swali jipya", en: "New question" },
+  qc_edit: { sw: "Hariri swali", en: "Edit question" },
+  qc_back: { sw: "Rudi kwenye orodha", en: "Back to the list" },
+  qc_type: { sw: "Aina ya swali", en: "Question type" },
+  qc_body: { sw: "Swali", en: "Question" },
+  qc_body_ph: {
+    sw: "Andika swali hapa, kwa uwazi…",
+    en: "Write the question here, clearly…",
+  },
+  qc_options: { sw: "Machaguo", en: "Choices" },
+  qc_option: { sw: "Chaguo", en: "Choice" },
+  qc_add_option: { sw: "Ongeza chaguo", en: "Add choice" },
+  qc_remove_option: { sw: "Ondowa chaguo", en: "Remove choice" },
+  qc_pick_one: {
+    sw: "Bonyeza kitufe cha chaguo kimoja ili kukitangaza kuwa jibu sahihi.",
+    en: "Click the circle beside one choice to mark it correct.",
+  },
+  qc_pick_many: {
+    sw: "Bonyeza kitufe cha machaguo yote yaliyo sahihi.",
+    en: "Click every choice that is correct.",
+  },
+  qc_mark_correct: { sw: "Tangaza kuwa sahihi", en: "Mark as correct" },
+  qc_answer: { sw: "Jibu sahihi", en: "Correct answer" },
+  qc_true: { sw: "Kweli", en: "True" },
+  qc_false: { sw: "Sikweli", en: "False" },
+  qc_pairs: { sw: "Jozi za kulinganisha", en: "Matching pairs" },
+  qc_add_pair: { sw: "Ongeza jozi", en: "Add pair" },
+  qc_remove_pair: { sw: "Ondowa jozi", en: "Remove pair" },
+  qc_pairs_hint: {
+    sw: "Kushoto ni neno, kulia ni maelezo yake. Kila jozi lazima iwe na jibu tofauti.",
+    en: "Left is the term, right is its meaning. Each pair needs a distinct match.",
+  },
+  qc_left: { sw: "Kushoto", en: "Left" },
+  qc_right: { sw: "Kulia", en: "Right" },
+  qc_order: { sw: "Mpangilio sahihi", en: "Correct order" },
+  qc_add_step: { sw: "Ongeza hatua", en: "Add step" },
+  qc_remove_step: { sw: "Ondowa hatua", en: "Remove step" },
+  qc_order_hint: {
+    sw: "Panga vipengele kwa mpangilio; mwanafunzi atavipanga mwenyewe.",
+    en: "Arrange the items in order; the student will rearrange them.",
+  },
+  qc_step: { sw: "Hatua", en: "Step" },
+  qc_move_up: { sw: "Pamduza juu", en: "Move up" },
+  qc_move_down: { sw: "Shusha chini", en: "Move down" },
+  qc_reference: { sw: "Jibu la marejezo", en: "Reference answer" },
+  qc_reference_ph: {
+    sw: "Andika jibu kamili ambalo AI italinganisha nalo…",
+    en: "Write the full answer the AI will compare against…",
+  },
+  qc_concepts: { sw: "Mawazo muhimu", en: "Key concepts" },
+  qc_concepts_ph: {
+    sw: "Mstari mmoja kwa wazo (si lazima)",
+    en: "One idea per line (optional)",
+  },
+  qc_concepts_hint: {
+    sw: "AI itahesabu mawazo yapi mwanafunzi ameyaeleza, kisha kumpa alama kwa uwiano.",
+    en: "The AI counts how many concepts the student covered, then scores proportionally.",
+  },
+  qc_points: { sw: "Alama", en: "Points" },
+  qc_preview: { sw: "Onyesho kwa mwanafunzi", en: "Student preview" },
+  qc_preview_empty: {
+    sw: "Andika swali ili kuona jinsi mwanafunzi atakavyoiona.",
+    en: "Write the question to see how a student will see it.",
+  },
+  qc_fix_before_save: { sw: "Rekebisha haya kabla ya kuhifadhi:", en: "Fix these before saving:" },
+  qc_save: { sw: "Hifadhi swali", en: "Save question" },
+  qc_saving: { sw: "Inahifadhi…", en: "Saving…" },
+  qc_cancel: { sw: "Acha", en: "Cancel" },
+  qc_ai_hint: {
+    sw: "Andika swali kwanza, kisha bonyeza hapa — mfumo utatafuta jibu kanzi ya Islamic Studies kwanza, AI ikisaidia pale tu kanzi haijui.",
+    en: "Write the question first, then press here — the answer comes from the Islamic Studies bank first, with AI only where the bank has nothing.",
+  },
+  qc_ai_generate: { sw: "Tengeneza jibu + maana (AI)", en: "Generate answer + concepts (AI)" },
+  qc_ai_busy: { sw: "Inatafuta…", en: "Looking up…" },
+  qc_ai_found_bank: {
+    sw: "Jibu limetoka kanzi ya maarifa.",
+    en: "The answer came from the knowledge bank.",
+  },
+  qc_ai_found_ai: {
+    sw: "Jibu limetoka kwa AI — liangalie kabla ya kuhifadhi.",
+    en: "The answer came from the AI — check it before saving.",
+  },
+  qc_ai_missing: {
+    sw: "Kanzi haikupata jibu la swali hili. Andika jibu mwenyewe.",
+    en: "The bank had no answer for this question. Write one yourself.",
+  },
+  qc_ai_failed: { sw: "Imeshindikana kutengeneza jibu.", en: "Could not generate an answer." },
+
+  // --- orodha ya maswali ----------------------------------------------------
+  qc_list_title: { sw: "Maswali", en: "Questions" },
+  qc_list_meta: {
+    sw: "({n} maswali · alama {points})",
+    en: "({n} questions · {points} points)",
+  },
+  qc_add: { sw: "Ongeza swali", en: "Add question" },
+  qc_pt: { sw: "alama", en: "pt" },
+  qc_delete: { sw: "Futa swali", en: "Delete question" },
+  qc_delete_ask: { sw: "Futa swali hili?", en: "Delete this question?" },
+  qc_delete_note: { sw: "Haitarudishwa.", en: "It cannot be undone." },
+  qc_saved_new: { sw: "Swali limehifadhiwa", en: "Question saved" },
+  qc_saved_edit: { sw: "Mabadiliko yamehifadhiwa", en: "Changes saved" },
+  qc_load_failed: {
+    sw: "Imeshindikana kupakia maswali. Pakia upya ukurasa.",
+    en: "Could not load the questions. Reload the page.",
+  },
+  qc_empty_title: { sw: "Hakuna swali bado", en: "No questions yet" },
+  qc_empty_body: {
+    sw: "Bonyeza hapa kuanza kutunga swali la kwanza.",
+    en: "Click here to compose the first question.",
+  },
+  qc_pairs_count: { sw: "jozi {n}", en: "{n} pairs" },
+
+  // --- uhalali wa kuhifadhi swali ------------------------------------------
+  question_body_required: { sw: "Swali halina maandishi.", en: "The question is empty." },
+  question_answer_required: { sw: "Chagua jibu sahihi.", en: "Choose the correct answer." },
+  question_options_two: {
+    sw: "Chaguo kimoja pekee hakitoshi — weka angalau mawili.",
+    en: "One choice is not enough — add at least two.",
+  },
+  question_options_duplicate: {
+    sw: "Kuna machaguo yanayofanana; kila chaguo kiwe cha tofauti.",
+    en: "Two choices are identical; each must be distinct.",
+  },
+  question_answer_must_match_option: {
+    sw: "Jibu sahihi lazima liwe kimoja ya machaguo uliyoweka.",
+    en: "The correct answer must be one of the choices you entered.",
+  },
+  question_pairs_two: {
+    sw: "Weka angalau jozi mawili za kulinganisha.",
+    en: "Add at least two matching pairs.",
+  },
+  question_pairs_duplicate: {
+    sw: "Jibu la kulia limetumika mara mawili; kila jozi iwe na jibu tofauti.",
+    en: "A right-hand answer is used twice; each pair needs a distinct match.",
+  },
+  question_order_two: {
+    sw: "Weka angalau vipengele mawili vya mpangilio.",
+    en: "Add at least two items to order.",
+  },
+  question_points_positive: {
+    sw: "Alama lazima iwe nambari zaidi ya sifuri.",
+    en: "Points must be a number greater than zero.",
+  },
+  question_save_failed: {
+    sw: "Swali haikuhifadhwa. Jaribu tena.",
+    en: "The question was not saved. Try again.",
+  },
+  question_save_forbidden: {
+    sw: "Huna ruhusa ya kuhifadhi swali. Ingia kama admin.",
+    en: "You are not allowed to save questions. Sign in as admin.",
+  },
+  question_type_not_enabled: {
+    sw: "Aina hii ya swali bado haijawashwa kwenye hifadhidata. Tumia aina nyingine kwa sasa.",
+    en: "This question type is not enabled in the database yet. Use another type for now.",
+  },
   start_now: { sw: "Anza sasa", en: "Start now" },
   quiz: { sw: "Assignment Group", en: "Group Assignment" },
   quiz_sub: { sw: "Kazi ya group na wanachama.", en: "Group work with your members." },
