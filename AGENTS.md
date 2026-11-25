@@ -362,17 +362,18 @@ three Vercel environments, so a deploy does not need to touch them.
 
 ## Media assets
 
-`public/media/` holds the motion clips and their posters (`exam-hero.mp4`, `home-animation.mp4`,
-`poster-exam.jpg`, `poster-home.jpg`) plus `mum-logo.png`. The cartoon and exam-hall stills were
+`public/media/` holds the home clip and its poster (`home-animation.mp4`, `poster-home.jpg`), the
+exam-page photograph (`exam-hero.jpg`), plus `mum-logo.png`. The cartoon and exam-hall stills were
 deleted at the owner's request; the dashboard hero shows only the real photographs stored in
 `study_images` (currently 3 active rows, all with `title = null`).
 
 `RealPhotoHero` takes precedence on the dashboard and cross-fades those photos; `HomeAnimationHero`
 (`home-animation.mp4`) is its fallback and only paints when `study_images` has no active row or
-the query has not returned yet. `/exams` always shows `ExamVideoHero` (`exam-hero.mp4`). Both
-clips loop, are muted, and are served from `public/media/` rather than a host-specific asset
-path. Give the `study_images` rows a `title` when the owner wants a caption — it doubles as the
-`alt` text.
+the query has not returned yet. The clip loops and is muted. `/exams` shows `ExamHero`, a
+still photograph with no caption over it — the owner asked for the words that used to be laid
+across it to be removed. All media is served from `public/media/` rather than a host-specific
+asset path. Give the `study_images` rows a `title` when the owner wants a caption — it doubles as
+the `alt` text.
 
 ## Tests
 
