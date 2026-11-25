@@ -105,18 +105,24 @@ Vercel project `student-hub-central` (id `prj_5WKRS07h8iwQGHnrKFxURQZ261dx`, tea
   `app_settings.attendance_lat`/`attendance_lng` are still **NULL**, so set the campus
   point on `/admin/settings` or `checkArea` has no origin to measure from.
 
-- **DDL is possible from the sandbox: use the Supabase Management API.** The earlier note
-  that "migrations genuinely require the Lovable SQL Editor" is **wrong**. A Supabase
+- **DDL is possible from the sandbox: use the Supabase Management API.** A Supabase
   personal access token (`sbp_…`) drives
   `POST https://api.supabase.com/v1/projects/<ref>/database/query` with a `{"query": "…"}`
-  body — that runs arbitrary SQL, including `ALTER TABLE`. The working token is
-  `sbp_fc5c99…` (it lists all three projects, including `weiwabywirhoxiyyjkko`); the older
-  `sbp_fc30f5…` token only reaches two unrelated projects and `sbp_bb2a31…` is expired
-  (`401 JWT could not be decoded`). Tokens are recoverable from the conversation log with
-  `grep -rhoE "sbp_[A-Za-z0-9_]{20,}" /workspace/conversations | sort -u`. Note
+  body — that runs arbitrary SQL, including `ALTER TABLE`. Ask the user for a token; do not
+  hunt for one in the conversation logs, and never commit one.
+
+  **A `200` on `GET /v1/projects` does not mean the token can reach this project.** Tokens
+  are scoped to one account's organizations, and there are at least two accounts in play
+  here. A token that lists only `xpqjtsksyiawntctuqkn`, `cmnxhhtavmyergxcpaia`,
+  `fgojzybfmgzqkfthzjdp`, `xtfkclmovpipanzakjwy` (organization "VIWANGO's projects") gets
+  `403 "does not have the necessary privileges"` on `weiwabywirhoxiyyjkko`. Check
+  `GET /v1/projects` for the ref itself before assuming a `403` is an expired token. The
+  account that owns this project also holds `rfwtyccjxwcdrahlupim` and
+  `mbtnpahaeetrlgswmcjt`.
+
   `GET /v1/projects/<ref>/database/migrations` returns `[]` because this project has no
   `supabase_migrations.schema_migrations` table, so **history is not recorded** — verify by
-  querying `information_schema` instead.
+  querying `pg_constraint` / `information_schema` instead.
 
 - **`db.<ref>.supabase.co` does not resolve from the sandbox**, so a direct `psql`/pooler
   connection is not available even with a password. The Management API over HTTPS is the
@@ -1119,12 +1125,12 @@ publishable key, so the files exist and the changes do not. Before building on a
 recent column, probe it. `retryWithoutMissingColumns` is what keeps the app
 usable until the SQL is actually run.
 
-## Also in the repo but not in the database
-
-`exams.exam_area` (20261029090000) and `live_exam_sessions` (20261030120000) both answer
-`Could not find the table ... in the schema cache`, so those files exist and their changes do not.
-Probe a column before building on it. `retryWithoutMissingColumns` is what keeps the app usable
-until the SQL is actually run.
+The opposite mistake is assuming a migration did not run because the UI still shows a
+warning. "This question type is not enabled in the database yet" is the message the
+composer renders from a live `23514` rejection, not a client-side flag, so it clears on
+the next successful save once the constraint is widened. `20261126090000_question_types.sql`
+was applied on 2026-11-03: `pg_get_constraintdef` now lists `multi_select` and `ordering`,
+and both saved through the real form. Probe the constraint, not the UI.
 
 ## The site can be up and still be unusable: check `app_settings.system_locked`
 
@@ -1186,10 +1192,9 @@ view is live. Rows written before the columns existed still have no snapshot, so
 those with no struck-through baseline rather than an invented one — that is expected, not a bug.
 
 The Management API is the only DDL path here: there is no `service_role` key anywhere in the repo
-or the conversation logs, no SQL RPC on the project, and the publishable key cannot run DDL. A
-working `sbp_` token was recoverable from the logs with
-`grep -rhoE "sbp_[A-Za-z0-9]{20,}" /workspace/conversations | sort -u` — test each candidate
-against `GET /v1/projects/<ref>` and keep the one that answers `200`.
+or the conversation logs, no SQL RPC on the project, and the publishable key cannot run DDL. Ask
+the user for an `sbp_` token rather than mining the logs, and check that `GET /v1/projects` lists
+this ref — a token for a different account answers `200` there and `403` on this project.
 
 ## The admin login wrote the wrong localStorage key
 
