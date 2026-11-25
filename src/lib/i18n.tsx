@@ -304,6 +304,33 @@ const dict: Record<string, { sw: string; en: string }> = {
   do_exam: { sw: "Fanya Mtihani", en: "Take Exam" },
   do_exam_kicker: { sw: "MTU MMOJA", en: "INDIVIDUAL" },
   do_exam_sub: { sw: "Mtihani rasmi, mtu mmoja.", en: "A formal exam, individually." },
+
+  // --- mwenendo wa mtihani kwa wakati halisi --------------------------------
+  live_kicker: { sw: "Moja kwa moja", en: "Live" },
+  live_writing_finished: {
+    sw: "{writing} wanaandika · {finished} wamemaliza",
+    en: "{writing} writing · {finished} finished",
+  },
+  live_first_to_start: {
+    sw: "Wewe ndiye wa kwanza kuanza",
+    en: "You are the first to start",
+  },
+  live_hall_empty: {
+    sw: "Hakuna mwingine bado — wewe ndiye wa kwanza kufungua karatasi.",
+    en: "The hall is empty — your paper is the first one open.",
+  },
+  live_aria: {
+    sw: "Mwenendo wa mtihani kwa sasa",
+    en: "Live test activity",
+  },
+  clock_hours: { sw: "saa", en: "h" },
+  clock_minutes: { sw: "dk", en: "m" },
+  clock_seconds: { sw: "sk", en: "s" },
+  clock_time_up: { sw: "Muda umekwisha", en: "Time up" },
+  clock_aria: {
+    sw: "Zimesalia saa {hours}, dakika {minutes}, sekunde {seconds}",
+    en: "{hours} hours {minutes} minutes {seconds} seconds remaining",
+  },
   start_now: { sw: "Anza sasa", en: "Start now" },
   quiz: { sw: "Assignment Group", en: "Group Assignment" },
   quiz_sub: { sw: "Kazi ya group na wanachama.", en: "Group work with your members." },

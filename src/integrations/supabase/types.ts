@@ -317,6 +317,8 @@ export type Database = {
         Row: {
           assignment_mode: string | null;
           autosave_disabled: boolean;
+          course_code: string | null;
+          course_name: string | null;
           created_at: string;
           description: string | null;
           duration_minutes: number;
@@ -343,6 +345,8 @@ export type Database = {
         Insert: {
           assignment_mode?: string | null;
           autosave_disabled?: boolean;
+          course_code?: string | null;
+          course_name?: string | null;
           created_at?: string;
           description?: string | null;
           duration_minutes?: number;
@@ -369,6 +373,8 @@ export type Database = {
         Update: {
           assignment_mode?: string | null;
           autosave_disabled?: boolean;
+          course_code?: string | null;
+          course_name?: string | null;
           created_at?: string;
           description?: string | null;
           duration_minutes?: number;

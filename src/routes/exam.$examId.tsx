@@ -58,6 +58,8 @@ import {
 import { monitorAudio, talkingShare, type AudioVerdict } from "@/lib/proctorAudio";
 import { storageGet, storageRemove, storageSet } from "@/lib/safe-storage";
 import { touchSubmission } from "@/lib/liveExamsApi";
+import { ExamClock } from "@/components/ExamClock";
+import { ExamPresenceBar } from "@/components/ExamPresenceBar";
 import {
   ExamStepper,
   ExamProgress,
@@ -148,6 +150,14 @@ function ExamPage() {
       const { data: e } = await supabase.from("exams").select("*").eq("id", examId).maybeSingle();
       if (!e) {
         toast.error("Mtihani haupo");
+        nav({ to: "/exams" });
+        return;
+      }
+      // An unpublished test is hidden from students. Without this guard the list
+      // hid it but a bookmarked URL still opened it, so a half-built paper could
+      // be sat by anyone holding the link.
+      if (!e.published) {
+        toast.error("Mtihani huu haujachapishwa bado.");
         nav({ to: "/exams" });
         return;
       }
@@ -644,18 +654,18 @@ function ExamPage() {
 
   useEffect(() => {
     if (!started) return;
-    const t = setInterval(
-      () =>
-        setTimeLeft((s) => {
-          if (s <= 1) {
-            clearInterval(t);
-            doSubmit();
-            return 0;
-          }
-          return s - 1;
-        }),
-      1000,
-    );
+    // The clock reads a deadline rather than counting ticks: a background tab
+    // throttles timers to about once a minute, so a decremented counter would
+    // hand back minutes the student no longer has.
+    const deadline = startedAtRef.current.getTime() + exam.duration_minutes * 60_000;
+    const tick = () =>
+      setTimeLeft((prev) => {
+        const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+        if (left === 0 && prev > 0) doSubmit();
+        return left;
+      });
+    tick();
+    const t = setInterval(tick, 1000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started]);
@@ -1054,9 +1064,6 @@ function ExamPage() {
     );
   }
 
-  const mm = String(Math.floor(timeLeft / 60)).padStart(2, "0");
-  const ss = String(timeLeft % 60).padStart(2, "0");
-
   const isAnswered = (a: any) => {
     if (a === undefined || a === null || a === "") return false;
     if (typeof a === "object") return Object.keys(a).length > 0;
@@ -1073,10 +1080,7 @@ function ExamPage() {
     >
       <div className="sticky top-0 z-50 bg-primary text-primary-foreground px-4 py-2 flex justify-between items-center shadow">
         <span className="font-bold truncate">{exam.title}</span>
-        <span className="font-mono text-lg flex items-center gap-1">
-          <Clock className="h-4 w-4" />
-          {mm}:{ss}
-        </span>
+        <ExamClock seconds={timeLeft} />
       </div>
       {camOk && (
         <div className="fixed bottom-4 right-4 z-50 space-y-1">
@@ -1166,6 +1170,7 @@ function ExamPage() {
         </div>
       )}
       <main className="container mx-auto px-4 py-6 max-w-3xl space-y-4">
+        {started && <ExamPresenceBar examId={examId} active={started} />}
         {!isAssignment && questions.length > 0 && (
           <div className="sticky top-12 z-30 space-y-3 rounded-2xl border border-primary/20 bg-card/90 p-4 backdrop-blur">
             <ExamProgress answered={answeredCount} total={questions.length} />

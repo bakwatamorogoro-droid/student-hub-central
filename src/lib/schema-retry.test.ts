@@ -128,7 +128,9 @@ test("a bulk write drops the named column from every row", async () => {
     async (rows) => {
       attempts.push(rows);
       const bad = rows.some((r) => "proctor" in r);
-      return { error: bad ? { code: "PGRST204", message: "Could not find the 'proctor' column" } : null };
+      return {
+        error: bad ? { code: "PGRST204", message: "Could not find the 'proctor' column" } : null,
+      };
     },
   );
   assert.equal(last.error, null);
@@ -158,4 +160,38 @@ test("a bulk write stops on a real error instead of looping", async () => {
   });
   assert.equal(calls, 1);
   assert.deepEqual(dropped, []);
+});
+
+test("drops course_code then course_name, as the live database reports them", async () => {
+  // The exact sequence the production database returned: it names one column at
+  // a time, and only the second attempt can succeed.
+  const seen: Record<string, unknown>[] = [];
+  const { last, dropped } = await retryWithoutMissingColumns(
+    { title: "Assessment", course_name: "Fiqh", course_code: "IS120" },
+    async (body) => {
+      seen.push({ ...body });
+      if ("course_code" in body)
+        return {
+          error: {
+            code: "PGRST204",
+            message: "Could not find the 'course_code' column of 'exams' in the schema cache",
+          },
+        };
+      if ("course_name" in body)
+        return {
+          error: {
+            code: "PGRST204",
+            message: "Could not find the 'course_name' column of 'exams' in the schema cache",
+          },
+        };
+      return { error: null };
+    },
+  );
+
+  assert.equal(last.error, null);
+  assert.deepEqual(dropped, ["course_code", "course_name"]);
+  assert.equal(seen.length, 3);
+  // The title survives every attempt: only the unknown columns are removed.
+  assert.ok(seen.every((body) => body.title === "Assessment"));
+  assert.deepEqual(seen[2], { title: "Assessment" });
 });
