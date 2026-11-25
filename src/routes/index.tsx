@@ -19,10 +19,7 @@ import {
 import { useI18n } from "@/lib/i18n";
 import { supabase } from "@/integrations/supabase/client";
 import { getDeviceId } from "@/lib/device-id";
-import { BigSystemTitle } from "@/components/ExamHero";
-import { FounderPurpose } from "@/components/FounderPurpose";
-import { HomeAnimationHero } from "@/components/HomeAnimationHero";
-import { RealPhotoHero } from "@/components/RealPhotoHero";
+import { HomeHero } from "@/components/HomeHero";
 import { UpdateTaarifaCard } from "@/components/UpdateTaarifaCard";
 import { DashboardActionCard } from "@/components/DashboardActionCard";
 import { AnnouncementBanner } from "@/components/AnnouncementBanner";
@@ -154,7 +151,7 @@ function Index() {
       <AnnouncementBanner />
       <SiteHeader />
       <main className="container mx-auto px-4 py-6 max-w-6xl">
-        <RealPhotoHero fallback={<HomeAnimationHero />} />
+        <HomeHero />
 
         {/* E-LEARNING — the owner asked for this in front of the page, so it
             sits above everything else a student sees on arrival. Kept as a
@@ -362,10 +359,6 @@ function Index() {
             </Link>
           </div>
         </section>
-
-        <BigSystemTitle sub={t("badge_islamic")} />
-
-        <FounderPurpose />
       </main>
     </div>
   );
