@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "@/lib/toast";
 import { confirmAction } from "@/lib/alerts";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Eye, EyeOff } from "lucide-react";
 import { eatLocalInputToUtcIso, utcIsoToEatLocalInput } from "@/lib/time";
 import { ACADEMIC_YEARS, STUDY_YEARS } from "@/lib/academicTargeting";
 import {
@@ -21,6 +21,18 @@ import {
 } from "@/lib/examQuestions";
 import { TypeBadge } from "@/components/ExamAnswerField";
 import { generateReferenceAnswer } from "@/lib/grading.functions";
+import {
+  COURSE_CODE_MAX,
+  COURSE_NAME_MAX,
+  courseFromRow,
+  courseLabel,
+  coursePayload,
+  publishWarning,
+  toggledPublish,
+  validateCourse,
+  visibilityLabel,
+} from "@/lib/examBuilder";
+import { retryWithoutMissingColumns } from "@/lib/schema-retry";
 
 export const Route = createFileRoute("/admin/exams")({ component: Page });
 
@@ -30,12 +42,24 @@ function Page() {
   const [editing, setEditing] = useState<any | null>(null);
 
   const load = async () => {
-    const { data } = await supabase.from("exams").select("*").order("created_at", { ascending: false });
+    const { data } = await supabase
+      .from("exams")
+      .select("*, questions(count)")
+      .order("created_at", { ascending: false });
     setExams(data || []);
   };
   useEffect(() => { load(); }, []);
 
   const saveExam = async (e: any) => {
+    // Compulsory on create; on edit an older test without a course can still save.
+    const errors = validateCourse(
+      { courseName: e.course_name, courseCode: e.course_code },
+      !e.id,
+    );
+    if (Object.keys(errors).length > 0) {
+      toast.error(errors.courseName || errors.courseCode || "Kamilisha taarifa za kozi.");
+      return;
+    }
     const payload = {
       title: e.title, description: e.description, duration_minutes: Number(e.duration_minutes) || 60,
       start_time: eatLocalInputToUtcIso(e.start_time || ""),
@@ -48,20 +72,47 @@ function Page() {
       randomize_tf: !!e.randomize_tf,
       randomize_matching: !!e.randomize_matching,
       autosave_disabled: !!e.autosave_disabled,
-      quiz_mode: e.quiz_mode || null,
+      // Every test composed here is an individual test. The old form let an
+      // admin pick "group", which changed how marks were totalled without
+      // saying so.
+      quiz_mode: null,
       quiz_active: !!e.quiz_active,
       target_study_year: e.target_study_year ? Number(e.target_study_year) : null,
       target_academic_year: e.target_academic_year || null,
-      assignment_mode: e.quiz_mode === "assignment" ? (e.assignment_mode || "individual") : null,
+      assignment_mode: null,
+      ...coursePayload({ courseName: e.course_name, courseCode: e.course_code }),
     };
     (payload as any).test_number = e.test_number ? Number(e.test_number) : null;
-    if (e.id) {
-      await supabase.from("exams").update(payload as any).eq("id", e.id);
-    } else {
-      await supabase.from("exams").insert(payload as any);
+
+    // `course_name`/`course_code` arrive with a migration that may not have been
+    // applied yet; the retry drops them so the rest of the test still saves.
+    const write = async (body: Record<string, unknown>) =>
+      e.id
+        ? await supabase.from("exams").update(body as any).eq("id", e.id)
+        : await supabase.from("exams").insert(body as any);
+
+    const { last, dropped } = await retryWithoutMissingColumns(payload as Record<string, unknown>, write);
+    if (last.error) {
+      toast.error("Imeshindikana kuhifadhi. Jaribu tena.");
+      return;
+    }
+    if (dropped.length > 0) {
+      toast.info("Kozi haijawekwa: safu za kozi hazijawashwa kwenye hifadhidata bado.");
     }
     toast.success("Imehifadhiwa");
     setEditing(null); load();
+  };
+
+  /** Publish from the list, so a test is never hidden by accident. */
+  const togglePublish = async (e: any) => {
+    const next = toggledPublish(e.published);
+    const { error } = await supabase.from("exams").update({ published: next }).eq("id", e.id);
+    if (error) {
+      toast.error("Imeshindikana kubadilisha hali ya kuonekana.");
+      return;
+    }
+    toast.success(next ? "Mtihani unaonekana kwa wanafunzi" : "Mtihani hautaonekana kwa wanafunzi");
+    load();
   };
 
   const del = async (id: string) => {
@@ -69,6 +120,20 @@ function Page() {
     await supabase.from("exams").delete().eq("id", id);
     load();
   };
+
+  // The list query asks PostgREST for `questions(count)`, which arrives as a
+  // one-element array per exam.
+  const questionCount = (e: { questions?: Array<{ count: number }> | null }): number =>
+    e.questions?.[0]?.count ?? 0;
+
+  // Shown beside the fields while the admin types, but not for a field left
+  // empty on an older test: that is allowed, so flagging it would nag.
+  const courseErrors = editing
+    ? validateCourse(
+        { courseName: editing.course_name, courseCode: editing.course_code },
+        !editing.id,
+      )
+    : {};
 
   return (
     <div className="space-y-4">
@@ -84,10 +149,28 @@ function Page() {
                 <div className="font-bold">{e.title} {e.published && <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded ml-2">Published</span>}</div>
                 <div className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
                   <span>{e.duration_minutes} dakika</span>
+                  <span className={questionCount(e) === 0 ? "text-xs font-semibold" : "text-xs"}>
+                    Maswali {questionCount(e)}
+                  </span>
+                  {courseLabel(courseFromRow(e)) && (
+                    <span className="text-xs bg-secondary/50 px-2 py-0.5 rounded font-semibold">
+                      {courseLabel(courseFromRow(e))}
+                    </span>
+                  )}
                   {e.target_study_year && <span className="text-xs bg-primary/15 text-primary px-2 py-0.5 rounded">Mwaka {e.target_study_year}</span>}
                   {e.target_academic_year && <span className="text-xs bg-secondary/50 px-2 py-0.5 rounded">{e.target_academic_year}</span>}
                   {e.test_number && <span className="text-xs bg-blue-500/20 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded font-bold">Test {e.test_number}</span>}
                   {e.quiz_mode && <span className="text-xs bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded">Quiz: {e.quiz_mode}</span>}
+                  {!e.published && publishWarning(questionCount(e)) && (
+                    <span className="text-xs text-amber-700 dark:text-amber-300">
+                      {publishWarning(questionCount(e))}
+                    </span>
+                  )}
+                  {!e.published && (
+                    <span className="text-xs bg-amber-500/20 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded font-semibold">
+                      {visibilityLabel(e.published)}
+                    </span>
+                  )}
                   {e.quiz_mode && (
                     <label className="flex items-center gap-1 text-xs cursor-pointer">
                       <Switch checked={!!e.quiz_active} onCheckedChange={async (v) => {
@@ -100,7 +183,17 @@ function Page() {
                   )}
                 </div>
               </div>
-              <div className="flex gap-1 flex-wrap">
+              <div className="flex gap-1 flex-wrap items-center">
+                <Button
+                  size="sm"
+                  variant={e.published ? "default" : "outline"}
+                  onClick={() => togglePublish(e)}
+                  title={visibilityLabel(e.published)}
+                  className={e.published ? "" : "border-dashed"}
+                >
+                  {e.published ? <Eye className="h-3 w-3 mr-1" /> : <EyeOff className="h-3 w-3 mr-1" />}
+                  {e.published ? "Published" : "Publish"}
+                </Button>
                 <Button size="sm" variant="outline" onClick={() => setSelected(selected === e.id ? null : e.id)}>Maswali</Button>
                 <Button size="sm" variant="outline" onClick={() => setEditing(e)}><Pencil className="h-3 w-3" /></Button>
                 <Button size="sm" variant="destructive" onClick={() => del(e.id)}><Trash2 className="h-3 w-3" /></Button>
@@ -143,33 +236,48 @@ function Page() {
                 <label className="flex items-center gap-2"><Switch checked={!!editing.require_signature} onCheckedChange={(v) => setEditing({ ...editing, require_signature: v })} />Sahihi</label>
                 <label className="flex items-center gap-2 col-span-2"><Switch checked={!!editing.published} onCheckedChange={(v) => setEditing({ ...editing, published: v })} />Publish</label>
               </div>
-              <div className="border-t pt-3">
-                <Label className="text-sm font-bold">Aina ya Mtihani / Quiz</Label>
-                <Select value={editing.quiz_mode || "exam"} onValueChange={(v) => setEditing({ ...editing, quiz_mode: v === "exam" ? null : v })}>
-                  <SelectTrigger className="mt-2"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="exam">Mtihani wa kawaida (mtu binafsi)</SelectItem>
-                    <SelectItem value="individual">Quiz — Mtu Binafsi</SelectItem>
-                    <SelectItem value="group">Quiz — Group (alama za group hujumlishwa)</SelectItem>
-                    <SelectItem value="assignment">Assignment</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Group quiz: kila mwanafunzi anajibu peke yake, kisha matokeo ya wanafunzi wote wa <b>semina + group</b> moja huungana kwenye <b>jumla ya group</b>.
+              <div className="border-t pt-3 space-y-2">
+                <Label className="text-sm font-bold">Kozi</Label>
+                <div>
+                  <Label className="text-xs">Jina la kozi *</Label>
+                  <Input
+                    className="mt-1"
+                    maxLength={COURSE_NAME_MAX}
+                    placeholder="Mfano: Introduction to Qur'an and Hadith Studies"
+                    value={editing.course_name || ""}
+                    onChange={(ev) => setEditing({ ...editing, course_name: ev.target.value })}
+                  />
+                  {courseErrors.courseName && (editing.course_name || "").length > 0 && (
+                    <p className="mt-1 text-xs text-destructive">{courseErrors.courseName}</p>
+                  )}
+                </div>
+                <div>
+                  <Label className="text-xs">Code ya kozi *</Label>
+                  <Input
+                    className="mt-1 font-mono uppercase"
+                    maxLength={COURSE_CODE_MAX}
+                    placeholder="Mfano: IS120"
+                    value={editing.course_code || ""}
+                    onChange={(ev) => setEditing({ ...editing, course_code: ev.target.value })}
+                  />
+                  {courseErrors.courseCode && (editing.course_code || "").length > 0 && (
+                    <p className="mt-1 text-xs text-destructive">{courseErrors.courseCode}</p>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Kozi inahitajika ili mtihani utambulike kwenye orodha na matokeo.
                 </p>
               </div>
-              {editing.quiz_mode === "assignment" && (
-                <div>
-                  <Label>Assignment ni ya nani?</Label>
-                  <Select value={editing.assignment_mode || "individual"} onValueChange={(v) => setEditing({ ...editing, assignment_mode: v })}>
-                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="individual">Individual</SelectItem>
-                      <SelectItem value="group">Group</SelectItem>
-                    </SelectContent>
-                  </Select>
+              <div className="border-t pt-3">
+                <Label className="text-sm font-bold">Aina ya Mtihani</Label>
+                <div className="mt-2 rounded-md border bg-muted/40 px-3 py-2 text-sm font-semibold">
+                  Individual Test
                 </div>
-              )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  Kila mtihani unaoundwa hapa ni wa mtu binafsi — kila mwanafunzi anajibiwa
+                  peke yake.
+                </p>
+              </div>
               <div className="grid grid-cols-2 gap-2 border-t pt-3">
                 <div>
                   <Label>Mwaka wa Masomo</Label>

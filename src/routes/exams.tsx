@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ExamHero, BigSystemTitle } from "@/components/ExamHero";
 
 import { findStudentsByQuery } from "@/lib/studentSearch";
+import { courseFromRow, courseLabel } from "@/lib/examBuilder";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
 import {
   categoryCounts,
@@ -173,6 +174,11 @@ function ExamsPage() {
                   {label && (
                     <span className="mt-1 inline-flex w-fit items-center rounded-full bg-blue-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">
                       {label}
+                    </span>
+                  )}
+                  {courseLabel(courseFromRow(e)) && (
+                    <span className="mt-1 inline-flex w-fit items-center rounded-full bg-secondary/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
+                      {courseLabel(courseFromRow(e))}
                     </span>
                   )}
                 </CardHeader>
