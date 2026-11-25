@@ -51,7 +51,7 @@ export const Route = createFileRoute("/")({
 type TestStat = { key: string; labelKey: string; count: number };
 
 /** Read by the home stats so the admin can hide a counter without a rebuild. */
-type StatVisibility = { showSubmissions: boolean; showTest1: boolean; hiddenSince: string | null };
+type StatVisibility = { showSubmissions: boolean; showTest1: boolean };
 
 function Index() {
   const { t } = useI18n();
@@ -60,7 +60,6 @@ function Index() {
   const [vis, setVis] = useState<StatVisibility>({
     showSubmissions: true,
     showTest1: true,
-    hiddenSince: null,
   });
 
   useEffect(() => {
@@ -76,37 +75,32 @@ function Index() {
 
       const { data: settings } = await supabase
         .from("app_settings")
-        .select("show_submissions_stat, show_test1_stat, stats_hidden_at")
+        .select("show_submissions_stat, show_test1_stat")
         .eq("id", 1)
         .single();
       const s0 = settings as {
         show_submissions_stat: boolean | null;
         show_test1_stat: boolean | null;
-        stats_hidden_at: string | null;
       } | null;
       const visibility: StatVisibility = {
         showSubmissions: s0?.show_submissions_stat !== false,
         showTest1: s0?.show_test1_stat !== false,
-        hiddenSince: s0?.stats_hidden_at ?? null,
       };
       setVis(visibility);
 
       const today = new Date();
       const tzOffset = today.getTimezoneOffset() * 60000;
       const localDate = new Date(today.getTime() - tzOffset).toISOString().slice(0, 10);
-      // Once a counter has been hidden, only takers after that moment are
-      // counted, so switching it back on shows fresh activity rather than the
-      // old total the admin asked to hide.
-      let submissionsQuery = supabase
-        .from("submissions")
-        .select("id", { count: "exact", head: true })
-        .not("submitted_at", "is", null);
-      if (visibility.hiddenSince) {
-        submissionsQuery = submissionsQuery.gt("submitted_at", visibility.hiddenSince);
-      }
+      // A visible counter counts every taker. `stats_hidden_at` is only a record
+      // of when the admin last hid one; it used to also cut the window, which
+      // meant re-showing a counter still read "3" instead of the real total, and
+      // hiding Test 1 silently truncated Test 2 as well.
       const [s, sub, v, ex] = await Promise.all([
         supabase.from("students").select("id", { count: "exact", head: true }),
-        submissionsQuery,
+        supabase
+          .from("submissions")
+          .select("id", { count: "exact", head: true })
+          .not("submitted_at", "is", null),
         supabase
           .from("daily_visits")
           .select("id", { count: "exact", head: true })
@@ -128,13 +122,11 @@ function Index() {
           // so a Test 1 named "MAJARIO" counts as Test 1 here too.
           const ids = exams.filter((e) => testCategory(e) === g.key).map((e) => e.id);
           if (ids.length === 0) return { ...g, count: 0 };
-          let q = supabase
+          const { count } = await supabase
             .from("submissions")
             .select("id", { count: "exact", head: true })
             .in("exam_id", ids)
             .not("submitted_at", "is", null);
-          if (visibility.hiddenSince) q = q.gt("submitted_at", visibility.hiddenSince);
-          const { count } = await q;
           return { ...g, count: count || 0 };
         }),
       );
