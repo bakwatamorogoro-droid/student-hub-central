@@ -1,15 +1,15 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, CameraIcon, CheckCircle2, Smartphone, UserPlus } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
+import { HOME_HERO_IMAGE, HOME_HERO_IMAGE_WEBP, MUM_LOGO } from "@/lib/mediaAssets";
 
 /**
- * The dashboard opening, built from type and geometry rather than a photograph.
+ * The dashboard opening: a photograph of the classroom beside a short pitch.
  *
- * The previous hero rotated user-uploaded photos behind the headline. That put
- * a 1–2.6 MB image in the critical path of the first paint, and the copy had to
- * fight whatever the photo happened to show. Here the visual is an inline SVG
- * arch framing a drawn answer sheet, which costs a few hundred bytes, cannot be
- * slow, and leaves the headline as the only thing to read.
+ * The photo is a fixed frame rather than a slideshow, so the copy always sits
+ * against the same composition, and it ships as WebP with a JPEG fallback at
+ * 1000px — one request, no layout shift, and nothing to decode before the
+ * headline can be read.
  */
 export function HomeHero() {
   const { t } = useI18n();
@@ -21,15 +21,13 @@ export function HomeHero() {
   ];
 
   return (
-    <section className="animate-fade-in relative mb-6 overflow-hidden rounded-[1.75rem] border border-primary/15 bg-gradient-to-br from-card via-card to-primary/5 shadow-soft md:rounded-[2rem]">
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute -left-24 -top-24 h-72 w-72 rounded-full bg-primary/15 blur-3xl" />
-        <div className="absolute -bottom-28 -right-16 h-72 w-72 rounded-full bg-secondary/20 blur-3xl" />
-      </div>
+    <section className="animate-fade-in relative mb-6 overflow-hidden rounded-[1.75rem] border border-primary/15 bg-card shadow-soft md:rounded-[2rem]">
+      <div className="grid items-stretch md:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)]">
+        <div className="relative flex flex-col justify-center p-6 sm:p-8 md:p-12">
+          <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-br from-card via-card to-primary/5" />
+          <div className="pointer-events-none absolute -left-24 -top-24 -z-10 h-72 w-72 rounded-full bg-primary/15 blur-3xl" />
 
-      <div className="grid items-center gap-8 p-6 sm:p-8 md:grid-cols-[minmax(0,1fr)_auto] md:gap-4 md:p-12">
-        <div className="min-w-0">
-          <span className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
+          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
             <span className="h-1.5 w-1.5 rounded-full bg-secondary" />
             {t("home_hero_kicker")}
           </span>
@@ -65,7 +63,7 @@ export function HomeHero() {
           </div>
         </div>
 
-        <ArchMark />
+        <HeroPhoto />
       </div>
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-primary/10 px-6 py-3.5 sm:px-8 md:px-12">
@@ -84,141 +82,45 @@ export function HomeHero() {
 }
 
 /**
- * A pointed arch framing a drawn answer sheet: a countdown, three rows with two
- * ticked, and a progress bar. Every stroke is geometry, so it stays sharp at any
- * width and nothing has to be downloaded.
+ * The classroom photograph, framed rather than bled to the card edge: a ring
+ * and a soft shadow keep it reading as a picture on the banner instead of a
+ * backdrop the copy happens to sit on.
+ *
+ * It fills its column on `md` and becomes a short strip above the copy on a
+ * phone, where there is no second column to sit beside.
  */
-function ArchMark() {
-  const arch = "M20 280V150C20 80 70 35 120 22C170 35 220 80 220 150V280Z";
-
+function HeroPhoto() {
   return (
-    <div className="relative mx-auto hidden w-[15rem] shrink-0 md:block lg:w-[17rem]">
-      <svg
-        viewBox="0 0 240 300"
-        aria-hidden="true"
-        className="h-auto w-full drop-shadow-[0_18px_36px_rgba(0,0,0,0.12)]"
-      >
-        <defs>
-          <linearGradient id="archStroke" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="currentColor" className="text-secondary" />
-            <stop offset="100%" stopColor="currentColor" className="text-primary" />
-          </linearGradient>
-          <pattern id="archTile" width="40" height="40" patternUnits="userSpaceOnUse">
-            <g stroke="currentColor" strokeWidth="0.9" fill="none" className="text-primary/25">
-              <rect x="6" y="6" width="28" height="28" />
-              <rect x="6" y="6" width="28" height="28" transform="rotate(45 20 20)" />
-            </g>
-          </pattern>
-          <clipPath id="archClip">
-            <path d={arch} />
-          </clipPath>
-        </defs>
-
-        <path d={arch} fill="url(#archTile)" className="text-primary" />
-        <path
-          d={arch}
-          fill="none"
-          stroke="url(#archStroke)"
-          strokeWidth="3"
-          strokeLinejoin="round"
-          className="text-primary"
-        />
-        <path
-          d="M40 280V158C40 100 80 62 120 50C160 62 200 100 200 158V280"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeDasharray="5 6"
-          className="text-primary/30"
-        />
-
-        <g clipPath="url(#archClip)">
-          {/* Timer: a gold arc of elapsed time over a quiet track. */}
-          <circle
-            cx="120"
-            cy="92"
-            r="25"
-            fill="none"
-            strokeWidth="3"
-            className="stroke-primary/15"
+    <div className="order-first p-3 md:order-none md:p-4 md:pl-0">
+      <div className="group relative h-full overflow-hidden rounded-2xl bg-primary/5 ring-1 ring-primary/15 shadow-[0_18px_40px_-18px_rgba(15,23,42,0.35)]">
+        <picture>
+          <source srcSet={HOME_HERO_IMAGE_WEBP} type="image/webp" />
+          <img
+            src={HOME_HERO_IMAGE}
+            alt=""
+            width={1000}
+            height={455}
+            loading="eager"
+            decoding="async"
+            className="h-40 w-full object-cover object-center transition-transform duration-700 group-hover:scale-[1.03] sm:h-52 md:h-full md:min-h-[18rem]"
           />
-          <circle
-            cx="120"
-            cy="92"
-            r="25"
-            fill="none"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeDasharray="104 158"
-            transform="rotate(-90 120 92)"
-            className="stroke-secondary"
+        </picture>
+
+        {/* Ties the photo to the card's palette rather than leaving a bright
+            rectangle beside the tinted copy column. */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/60 via-slate-950/10 to-transparent" />
+
+        {/* Just the crest: any caption here would repeat the kicker beside it. */}
+        <span className="absolute bottom-3 left-3 flex h-8 w-8 items-center justify-center rounded-lg bg-white/95 p-1 shadow-sm ring-1 ring-black/5">
+          <img
+            src={MUM_LOGO}
+            alt=""
+            width={32}
+            height={32}
+            className="h-full w-full object-contain"
           />
-          <path
-            d="M120 80v12l9 6"
-            fill="none"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="stroke-primary/70"
-          />
-
-          {/* The sheet. */}
-          <g>
-            <rect
-              x="62"
-              y="132"
-              width="116"
-              height="126"
-              rx="12"
-              strokeWidth="1.5"
-              className="fill-card stroke-primary/20"
-            />
-
-            {[0, 1, 2].map((row) => {
-              const y = 150 + row * 24;
-              return (
-                <g key={row}>
-                  <rect
-                    x="74"
-                    y={y}
-                    width="11"
-                    height="11"
-                    rx="3"
-                    strokeWidth="1.5"
-                    className={row < 2 ? "fill-secondary/20 stroke-secondary" : "stroke-primary/25"}
-                  />
-                  {row < 2 && (
-                    <path
-                      d={`M76.5 ${y + 5.5}l2.6 2.8 4.4-5.4`}
-                      fill="none"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="stroke-secondary"
-                    />
-                  )}
-                  <rect
-                    x="92"
-                    y={y + 3}
-                    width={row === 1 ? 58 : 66}
-                    height="5"
-                    rx="2.5"
-                    className="fill-primary/20"
-                  />
-                </g>
-              );
-            })}
-
-            <rect x="74" y="228" width="92" height="7" rx="3.5" className="fill-primary/10" />
-            <rect x="74" y="228" width="60" height="7" rx="3.5" className="fill-secondary" />
-          </g>
-        </g>
-
-        <g className="text-primary/40" fill="currentColor">
-          <path d="M52 122l2.6 6 6 2.6-6 2.6-2.6 6-2.6-6-6-2.6 6-2.6Z" />
-          <path d="M190 236l2 4.6 4.6 2-4.6 2-2 4.6-2-4.6-4.6-2 4.6-2Z" />
-        </g>
-      </svg>
+        </span>
+      </div>
     </div>
   );
 }

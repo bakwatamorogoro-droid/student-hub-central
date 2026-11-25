@@ -511,6 +511,7 @@ const dict: Record<string, { sw: string; en: string }> = {
   stats_title: { sw: "Takwimu za Mfumo", en: "System statistics" },
   stat_registered: { sw: "Waliojisajili", en: "Registered students" },
   stat_took_exam: { sw: "Waliofanya Mtihani", en: "Exams taken" },
+  history_total: { sw: "Jumla ya mazoezi yote", en: "All submissions" },
   stat_visits_today: { sw: "Wametembelea Leo", en: "Visits today" },
   view_results: { sw: "Angalia Matokeo", en: "View Results" },
   view_results_sub: { sw: "Mtu binafsi / Group", en: "Individual / Group" },

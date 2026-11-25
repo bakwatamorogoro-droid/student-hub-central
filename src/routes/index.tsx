@@ -24,7 +24,9 @@ import { UpdateTaarifaCard } from "@/components/UpdateTaarifaCard";
 import { DashboardActionCard } from "@/components/DashboardActionCard";
 import { AnnouncementBanner } from "@/components/AnnouncementBanner";
 import { Odometer } from "@/components/Odometer";
+import { ExamHistoryTicker } from "@/components/ExamHistoryTicker";
 import { testCategory, TEST_NUMBERS } from "@/lib/examCatalog";
+import { buildExamHistory, type ExamHistoryEntry, type HistoryExam } from "@/lib/examHistory";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -54,6 +56,7 @@ function Index() {
   const { t } = useI18n();
   const [stats, setStats] = useState({ students: 0, submissions: 0, visitsToday: 0 });
   const [testStats, setTestStats] = useState<TestStat[]>([]);
+  const [history, setHistory] = useState<ExamHistoryEntry[]>([]);
   const [vis, setVis] = useState<StatVisibility>({
     showSubmissions: true,
     showTest1: true,
@@ -102,11 +105,15 @@ function Index() {
           .from("daily_visits")
           .select("id", { count: "exact", head: true })
           .eq("visit_date", localDate),
-        supabase.from("exams").select("id,title,test_number"),
+        supabase
+          .from("exams")
+          .select(
+            "id,title,test_number,start_time,created_at,target_academic_year,target_study_year",
+          ),
       ]);
       setStats({ students: s.count || 0, submissions: sub.count || 0, visitsToday: v.count || 0 });
 
-      const exams = (ex.data || []) as { id: string; title: string; test_number: number | null }[];
+      const exams = (ex.data || []) as (HistoryExam & { test_number: number | null })[];
       // Only keys are stored here: translating inside this one-shot effect would
       // freeze the label to whichever language was active on first paint.
       const groups: { key: string; labelKey: string }[] = [
@@ -128,6 +135,24 @@ function Index() {
         }),
       );
       setTestStats(results);
+
+      // One head-count per exam for the history ticker: a handful of requests
+      // that return only a count header, instead of the ~2,500 submission rows
+      // a full fetch would pull down to count them here.
+      const countsByExam: Record<string, number> = {};
+      await Promise.all(
+        exams.map(async (exam) => {
+          let q = supabase
+            .from("submissions")
+            .select("id", { count: "exact", head: true })
+            .eq("exam_id", exam.id)
+            .not("submitted_at", "is", null);
+          if (visibility.hiddenSince) q = q.gt("submitted_at", visibility.hiddenSince);
+          const { count } = await q;
+          countsByExam[exam.id] = count || 0;
+        }),
+      );
+      setHistory(buildExamHistory(exams, countsByExam));
     })();
   }, []);
 
@@ -253,10 +278,7 @@ function Index() {
                   <span className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-secondary/25">
                     <ClipboardCheck className="h-5 w-5 text-primary" />
                   </span>
-                  <Odometer value={stats.submissions} className="text-2xl font-extrabold" />
-                  <div className="text-[10px] uppercase text-muted-foreground">
-                    {t("stat_took_exam")}
-                  </div>
+                  <ExamHistoryTicker entries={history} total={stats.submissions} />
                 </CardContent>
               </Card>
             ) : (
