@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import * as XLSX from "xlsx";
 import { toast } from "@/lib/toast";
 import { confirmAction } from "@/lib/alerts";
 import {
@@ -36,20 +35,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-import {
-  Document,
-  Packer,
-  Paragraph,
-  Table,
-  TableRow,
-  TableCell,
-  HeadingLevel,
-  WidthType,
-  TextRun,
-} from "docx";
 import { saveAs } from "file-saver";
+import { resultRows } from "@/lib/resultRows";
+import { testLabel } from "@/lib/examCatalog";
+import { resultCsv, resultDocxBlob, resultPdf, resultXlsx } from "@/lib/resultExports";
 
 export const Route = createFileRoute("/admin/submissions")({ component: Page });
 
@@ -112,56 +101,57 @@ function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [examId]);
 
-  const examIndex = useMemo(() => exams.findIndex((e) => e.id === examId) + 1, [exams, examId]);
-  const fileBase = examIndex > 0 ? `TEST ${examIndex}` : "matokeo";
   const current = exams.find((e) => e.id === examId);
+  // The admin's own `test_number` names the file, the same way the home page
+  // counts it. Numbering by list position called "ASSESSMENT TEST 2" a Test 1,
+  // so its downloads disagreed with the counter a student sees.
+  const fileBase = current ? (testLabel(current) ?? "matokeo") : "matokeo";
 
-  const filtered = subs.filter((s) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (
-      s.reg_no?.toLowerCase().includes(q) ||
-      s.students?.full_name?.toLowerCase().includes(q) ||
-      s.students?.course?.toLowerCase().includes(q)
+  const filtered = subs
+    .filter((s) => {
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return (
+        s.reg_no?.toLowerCase().includes(q) ||
+        s.students?.full_name?.toLowerCase().includes(q) ||
+        s.students?.course?.toLowerCase().includes(q)
+      );
+    })
+    // The screen reads in the same order the downloads do, so what the admin
+    // checks on screen is what the class sees on paper.
+    .sort((a, b) =>
+      String(a.students?.full_name ?? "").localeCompare(String(b.students?.full_name ?? ""), "sw", {
+        sensitivity: "base",
+      }),
     );
-  });
 
-  const buildRows = () =>
-    filtered.map((s, i) => ({
-      "#": i + 1,
-      "Jina Kamili": s.students?.full_name ?? "",
-      "Reg Namba": s.reg_no,
-      Test: fileBase,
-      Alama: s.score != null ? Math.round(Number(s.score)) : "",
-      Simu: s.students?.phone ?? "",
-      Kozi: s.students?.course ?? "",
-      Semina: s.students?.semina ?? "",
-      Group: s.students?.student_group ?? "",
-      Imetumwa: s.submitted_at ? new Date(s.submitted_at).toLocaleString() : "",
-      GPS: s.gps_lat ? `${s.gps_lat},${s.gps_lng}` : "",
-    }));
+  const buildRows = () => resultRows(filtered);
+
+  const meta = () => ({
+    title: fileBase,
+    subtitle: current?.title || "",
+    date: new Date().toLocaleDateString("sw-TZ"),
+  });
 
   const exportExcel = () => {
     if (!filtered.length) return toast.error("Hakuna data");
-    // Excel rahisi: Reg Namba, Test, Alama tu (per user request)
-    const simpleRows = filtered.map((s) => ({
-      "Reg Namba": s.reg_no,
-      Test: fileBase,
-      Alama: s.score != null ? Math.round(Number(s.score)) : "",
-    }));
-    const ws = XLSX.utils.json_to_sheet(simpleRows);
-    ws["!cols"] = [{ wch: 18 }, { wch: 12 }, { wch: 10 }];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, fileBase);
-    XLSX.writeFile(wb, `${fileBase}.xlsx`);
+    const bytes = resultXlsx(buildRows(), meta());
+    saveAs(
+      new Blob([bytes], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+      `${fileBase}.xlsx`,
+    );
     toast.success(`Imehifadhiwa: ${fileBase}.xlsx`);
   };
 
   const exportCsv = () => {
     if (!filtered.length) return toast.error("Hakuna data");
-    const ws = XLSX.utils.json_to_sheet(buildRows());
-    const csv = XLSX.utils.sheet_to_csv(ws);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    // The BOM is what makes Excel read the file as UTF-8 rather than Latin-1,
+    // which is the difference between "Juma" and "Juma" followed by mojibake.
+    const blob = new Blob(["\uFEFF" + resultCsv(buildRows())], {
+      type: "text/csv;charset=utf-8;",
+    });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `${fileBase}.csv`;
@@ -172,67 +162,13 @@ function Page() {
 
   const exportPdf = () => {
     if (!filtered.length) return toast.error("Hakuna data");
-    const doc = new jsPDF({ orientation: "landscape" });
-    doc.setFontSize(16);
-    doc.text(`${fileBase} - ${current?.title || ""}`, 14, 15);
-    doc.setFontSize(10);
-    doc.text(`Tarehe: ${new Date().toLocaleString()} | Jumla: ${filtered.length}`, 14, 22);
-    const rows = buildRows();
-    const head = [Object.keys(rows[0])];
-    const body = rows.map((r) => Object.values(r).map((v) => String(v)));
-    autoTable(doc, {
-      startY: 28,
-      head,
-      body,
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [40, 100, 60] },
-    });
-    doc.save(`${fileBase}.pdf`);
+    resultPdf(buildRows(), meta()).save(`${fileBase}.pdf`);
     toast.success(`Imehifadhiwa: ${fileBase}.pdf`);
   };
 
   const exportWord = async () => {
     if (!filtered.length) return toast.error("Hakuna data");
-    const rows = buildRows();
-    const headers = Object.keys(rows[0]);
-    const table = new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      rows: [
-        new TableRow({
-          children: headers.map(
-            (h) =>
-              new TableCell({
-                children: [new Paragraph({ children: [new TextRun({ text: h, bold: true })] })],
-              }),
-          ),
-        }),
-        ...rows.map(
-          (r) =>
-            new TableRow({
-              children: headers.map(
-                (h) => new TableCell({ children: [new Paragraph(String((r as any)[h] ?? ""))] }),
-              ),
-            }),
-        ),
-      ],
-    });
-    const docx = new Document({
-      sections: [
-        {
-          children: [
-            new Paragraph({
-              heading: HeadingLevel.HEADING_1,
-              children: [new TextRun(`${fileBase} - ${current?.title || ""}`)],
-            }),
-            new Paragraph(`Tarehe: ${new Date().toLocaleString()}`),
-            new Paragraph(" "),
-            table,
-          ],
-        },
-      ],
-    });
-    const blob = await Packer.toBlob(docx);
-    saveAs(blob, `${fileBase}.docx`);
+    saveAs(await resultDocxBlob(buildRows(), meta()), `${fileBase}.docx`);
     toast.success(`Imehifadhiwa: ${fileBase}.docx`);
   };
 
@@ -339,9 +275,9 @@ function Page() {
                 <SelectValue placeholder="Chagua mtihani" />
               </SelectTrigger>
               <SelectContent>
-                {exams.map((e, i) => (
+                {exams.map((e) => (
                   <SelectItem key={e.id} value={e.id}>
-                    test{i + 1} — {e.title}
+                    {testLabel(e) ?? "Mingine"} — {e.title}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -393,7 +329,8 @@ function Page() {
                   Pakua Matokeo ({filtered.length})
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Chagua muundo wa faili — itahifadhiwa kama <b>{fileBase}</b>
+                  Faili zote zina safu tatu — <b>Jina</b>, <b>Reg Namba</b> na <b>Alama</b> — kwa
+                  mtiririko wa alfabeti. Itahifadhiwa kama <b>{fileBase}</b>
                 </p>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full sm:w-auto">
