@@ -292,6 +292,13 @@ const dict: Record<string, { sw: string; en: string }> = {
   // --- home hero ----------------------------------------------------------
   hero_kicker: { sw: "Mfumo wa Kisasa wa Mitihani", en: "A modern exam system" },
   hero_welcome: { sw: "Karibu Mfumo wa Mitihani", en: "Welcome to the exam system" },
+  home_hero_kicker: { sw: "Islamic Studies · Mtandaoni", en: "Islamic Studies · Online" },
+  home_hero_line1: { sw: "Mitihani ya", en: "Exams for" },
+  home_hero_line2: { sw: "Islamic Studies", en: "Islamic Studies" },
+  home_hero_accent: { sw: "Mtandaoni", en: "Online" },
+  home_hero_cta_primary: { sw: "Anza Mtihani", en: "Start an exam" },
+  home_hero_cta_secondary: { sw: "Jisajili", en: "Register" },
+  home_fact_device: { sw: "Simu au kompyuta", en: "Phone or computer" },
   hero_tagline: {
     sw: "Jifunze. Jipime. Fanikiwa. — Mitihani ya Islamic Studies mtandaoni, kwa kifaa chochote.",
     en: "Learn. Test yourself. Succeed. — Islamic Studies exams online, on any device.",
