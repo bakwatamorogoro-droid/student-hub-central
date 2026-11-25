@@ -20,7 +20,7 @@ import { gradeShortAnswer, explainAnswer } from "@/lib/grading.functions";
 import { buildReferenceAnswer } from "@/lib/referenceAnswer";
 import { toast } from "@/lib/toast";
 import SignatureCanvas from "react-signature-canvas";
-import { Camera, MapPin, Mic, Clock, Eye, FileDown, Printer, MonitorSmartphone } from "lucide-react";
+import { Camera, MapPin, Mic, Clock, Eye, MonitorSmartphone } from "lucide-react";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import {
   Dialog,
@@ -105,7 +105,6 @@ function ExamPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const autosaveKey = `exam_autosave_${examId}`;
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [downloaded, setDownloaded] = useState(false);
   const [groupMembers, setGroupMembers] = useState<any[]>([]);
   const [selectedShareIds, setSelectedShareIds] = useState<Set<string>>(new Set());
   const [forgottenQ, setForgottenQ] = useState("");
@@ -126,7 +125,9 @@ function ExamPage() {
   const [faceCount, setFaceCount] = useState(0);
   const [gpsFlags, setGpsFlags] = useState<string[]>([]);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
-  const [gpsLive, setGpsLive] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
+  const [gpsLive, setGpsLive] = useState<{ lat: number; lng: number; accuracy: number } | null>(
+    null,
+  );
 
   useEffect(() => {
     const load = async () => {
@@ -850,7 +851,10 @@ function ExamPage() {
     );
     const error = last.error;
     if (dropped.length) {
-      console.warn("Submission saved without columns the database does not have:", dropped.join(", "));
+      console.warn(
+        "Submission saved without columns the database does not have:",
+        dropped.join(", "),
+      );
     }
     streamRef.current?.getTracks().forEach((t) => t.stop());
     setSubmitting(false);
@@ -869,84 +873,6 @@ function ExamPage() {
       toast.success("Majibu yamewasilishwa!");
     }
     nav({ to: "/results" });
-  };
-
-  // Download helpers — Word (.doc as HTML) and PDF (print). ANSWERS ONLY (no questions).
-  const buildAnswersHtml = () => {
-    const css = `@page{size:A4;margin:18mm}body{font-family:'Times New Roman',serif;line-height:1.6;color:#111;margin:0}h1{font-size:20px;margin:0 0 6px}h2{font-size:15px;color:#0d9488;margin-top:14px}.cover{page-break-after:always;text-align:center}.cover .uni{font-size:24px;font-weight:bold;letter-spacing:1px;margin-bottom:8px}.cover .logo{display:block;margin:6px auto 10px;width:130px;height:auto}.cover .sub{font-size:13px;color:#555;margin-bottom:18px}.cover .row{font-size:14px;text-align:left;margin:6px 0}.cover .row b{display:inline-block;min-width:170px}.cover .qbox{margin-top:14px;padding:10px;border:1px solid #0d9488;border-radius:6px;background:#f0fdfa;text-align:left;font-size:13px}.members{margin:14px 0;padding:8px;border:1px solid #0d9488;border-radius:6px;text-align:left}.members table{width:100%;border-collapse:collapse;font-size:12px}.members th,.members td{border:1px solid #99f6e4;padding:4px 6px;text-align:left}.ans{margin:14px 0;padding:14px;background:#fff;border-left:4px solid #0d9488;border-radius:4px;page-break-inside:avoid}.ans h2,.ans h3{color:#0d9488}.ans blockquote{border-left:3px solid #0d9488;padding-left:8px;color:#555;font-style:italic}.qn-label{font-size:12px;color:#0d9488;font-weight:bold;margin-bottom:4px}.qn-text{font-size:13px;background:#f0fdfa;border:1px solid #99f6e4;border-radius:4px;padding:6px 8px;margin-bottom:8px;color:#111}`;
-    const logoUrl = `${window.location.origin}/media/mum-logo.png`;
-    const sharers: any[] = isAssignment
-      ? groupMembers.filter((m) => selectedShareIds.has(m.student_id))
-      : [{ full_name: student.full_name, reg_no: student.reg_no, phone: student.phone || "" }];
-    const memberRowsHtml = sharers
-      .map(
-        (m: any, i: number) =>
-          `<tr><td>${i + 1}</td><td>${m.full_name}</td><td>${m.reg_no}</td><td>${m.phone || "-"}</td></tr>`,
-      )
-      .join("");
-    const membersBlock = `<div class="members"><b>NAME OF STUDENTS (${sharers.length}):</b><table><thead><tr><th>#</th><th>Jina</th><th>Reg</th><th>Simu</th></tr></thead><tbody>${memberRowsHtml}</tbody></table></div>`;
-    const answeredQuestions = questions.filter((q: any) => {
-      const a = answers[q.id];
-      return a != null && !(typeof a === "string" && a.trim() === "");
-    });
-    const chosenList = answeredQuestions.length ? answeredQuestions : questions;
-    const questionsListHtml = chosenList
-      .map(
-        (q: any, i: number) =>
-          `<div style="margin:4px 0"><b>QN${i + 1}.</b> ${q.question_text || q.prompt || ""}</div>`,
-      )
-      .join("");
-    const cover = `<div class="cover">
-      <div class="uni">MUSLIM UNIVERSITY OF MOROGORO</div>
-      <img class="logo" src="${logoUrl}" alt="MUM Logo" />
-      <div class="sub">READ IN THE NAME OF ALLAH</div>
-      <div class="row"><b>NAME OF LECTURER:</b> MR. JIBA</div>
-      <div class="row"><b>COURSE NAME:</b> INTRODUCTION TO QUR'AN AND HADITH STUDIES</div>
-      <div class="row"><b>COURSE CODE:</b> IS 120</div>
-      <div class="row"><b>ASSIGNMENT:</b> ${exam.title}</div>
-      <div class="row"><b>DATE:</b> ${new Date().toLocaleDateString("sw-TZ")}</div>
-      ${membersBlock}
-      <div class="qbox"><b>MASWALI YALIYOCHAGULIWA:</b>${questionsListHtml || "<div>(angalia maelekezo)</div>"}</div>
-    </div>`;
-    const items = chosenList
-      .map((q: any, i: number) => {
-        const a = answers[q.id];
-        let ansHtml = "<em>(hakuna jibu)</em>";
-        if (q.question_type === "short_answer" && typeof a === "string") ansHtml = a || ansHtml;
-        else if (a != null) ansHtml = String(typeof a === "object" ? JSON.stringify(a) : a);
-        const qText = q.question_text || q.prompt || "";
-        return `<div class="ans"><div class="qn-label">QN${i + 1}</div><div class="qn-text">${qText}</div><div class="qn-label">JIBU</div>${ansHtml}</div>`;
-      })
-      .join("");
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${exam.title}</title><style>${css}</style></head><body>${cover}<div><h1>${exam.title}</h1>${items}</div></body></html>`;
-  };
-
-  const downloadWord = () => {
-    const html = buildAnswersHtml();
-    const blob = new Blob(["\ufeff", html], { type: "application/msword" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${exam.title.replace(/[^a-z0-9]+/gi, "_")}_${student.reg_no}.doc`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setDownloaded(true);
-    toast.success("Word imepakuliwa");
-  };
-
-  const downloadPdf = () => {
-    const html = buildAnswersHtml();
-    const w = window.open("", "_blank");
-    if (!w) {
-      toast.error("Ruhusu pop-up kwa PDF");
-      return;
-    }
-    w.document.write(
-      html + `<script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script>`,
-    );
-    w.document.close();
-    setDownloaded(true);
-    toast.success("Tumia 'Save as PDF' kwenye dirisha la print");
   };
 
   if (!exam || !student)
@@ -1047,10 +973,9 @@ function ExamPage() {
                 <div className="rounded-xl border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
                   <p className="font-semibold text-foreground">Faragha yako</p>
                   <p className="mt-1">
-                    Kamera na maikrofoni hazirekodiwi na hazitumwi popote. Mfumo
-                    unapima tu kama kuna uso mmoja unaoonekana, na kama kuna
-                    sauti inayozungumzwa — kwa nambari, sio maneno. Hakuna picha
-                    wala sauti inayohifadhiwa.
+                    Kamera na maikrofoni hazirekodiwi na hazitumwi popote. Mfumo unapima tu kama
+                    kuna uso mmoja unaoonekana, na kama kuna sauti inayozungumzwa — kwa nambari, sio
+                    maneno. Hakuna picha wala sauti inayohifadhiwa.
                   </p>
                 </div>
               )}
@@ -1113,9 +1038,7 @@ function ExamPage() {
             }`}
           >
             <MonitorSmartphone className="h-3 w-3" />
-            {isFullscreenSupported() && !isFullscreen()
-              ? "Umetoka fullscreen"
-              : "Fullscreen"}
+            {isFullscreenSupported() && !isFullscreen() ? "Umetoka fullscreen" : "Fullscreen"}
           </span>
           {fsLost > 0 && (
             <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 font-semibold text-amber-700">
@@ -1378,19 +1301,7 @@ function ExamPage() {
           >
             <Eye className="h-4 w-4 mr-2" /> Hakiki Majibu Kabla
           </Button>
-          <Button
-            onClick={() => {
-              if (isAssignment && !downloaded) {
-                toast.error("Pakua kwanza Word au PDF kabla ya kuwasilisha");
-                setPreviewOpen(true);
-                return;
-              }
-              doSubmit();
-            }}
-            disabled={submitting}
-            className="flex-1"
-            size="lg"
-          >
+          <Button onClick={() => doSubmit()} disabled={submitting} className="flex-1" size="lg">
             {submitting ? "Inatuma..." : "Tuma Majibu"}
           </Button>
         </div>
@@ -1444,11 +1355,13 @@ function ExamPage() {
               })}
             </div>
             <DialogFooter className="flex-col sm:flex-row gap-2 mt-4">
-              <Button type="button" variant="outline" onClick={downloadWord} className="flex-1">
-                <FileDown className="h-4 w-4 mr-2" /> Pakua Word (.doc)
-              </Button>
-              <Button type="button" variant="outline" onClick={downloadPdf} className="flex-1">
-                <Printer className="h-4 w-4 mr-2" /> Pakua PDF
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPreviewOpen(false)}
+                className="flex-1"
+              >
+                Rudi kwenye majibu
               </Button>
               <Button
                 type="button"
@@ -1456,10 +1369,10 @@ function ExamPage() {
                   setPreviewOpen(false);
                   doSubmit();
                 }}
-                disabled={submitting || (isAssignment && !downloaded)}
+                disabled={submitting}
                 className="flex-1"
               >
-                {isAssignment && !downloaded ? "Pakua kwanza" : "Wasilisha Sasa"}
+                {submitting ? "Inatuma..." : "Wasilisha Sasa"}
               </Button>
             </DialogFooter>
           </DialogContent>
