@@ -11,7 +11,7 @@ import { formatEat } from "@/lib/time";
 import { Clock, User, GraduationCap, Phone, CheckCircle2, Calendar } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ExamVideoHero, BigSystemTitle } from "@/components/ExamVideoHero";
+import { ExamHero, BigSystemTitle } from "@/components/ExamHero";
 
 import { findStudentsByQuery } from "@/lib/studentSearch";
 import { StudentMatchesPicker } from "@/components/StudentMatchesPicker";
@@ -96,7 +96,7 @@ function ExamsPage() {
     <div className="min-h-screen bg-background">
       <SiteHeader />
       <main className="container mx-auto px-4 py-8 max-w-5xl">
-        <ExamVideoHero subtitle="Jisajili, thibitisha taarifa zako, kisha anza mtihani wako mtandaoni kwa usalama na adabu ya Kiislamu." />
+        <ExamHero />
         <Card className="mb-6 border-2 border-primary/30">
 
           <CardHeader>

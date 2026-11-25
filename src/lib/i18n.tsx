@@ -297,6 +297,10 @@ const dict: Record<string, { sw: string; en: string }> = {
     en: "Learn. Test yourself. Succeed. — Islamic Studies exams online, on any device.",
   },
   badge_islamic: { sw: "Islamic Studies", en: "Islamic Studies" },
+  exam_hero_alt: {
+    sw: "Wanafunzi wa Kiislamu darasani wakifanya mtihani mtandaoni",
+    en: "Islamic studies students sitting an online test in a classroom",
+  },
   badge_security: { sw: "Kamera · GPS · Sahihi", en: "Camera · GPS · Signature" },
   badge_instant: { sw: "Matokeo ya Papo Hapo", en: "Instant results" },
 
