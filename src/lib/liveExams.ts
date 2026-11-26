@@ -21,6 +21,10 @@ export type LiveStudent = {
   answeredCount: number;
   questionCount: number;
   gpsDistanceM: number | null;
+  /** Most recent distance reported while writing; null when not tracked yet. */
+  liveDistanceM: number | null;
+  /** True when the last reading was outside the paper's fence. */
+  outsideArea: boolean;
   deviceId: string | null;
   /** Seconds since the last heartbeat, or since the start when there is none. */
   idleSeconds: number;
@@ -35,6 +39,10 @@ export type LiveExam = {
   submittedCount: number;
   /** Live students whose heartbeat has gone quiet for too long. */
   staleCount: number;
+  /** Allowed distance from the centre in metres; 0 when the paper is unfenced. */
+  radiusM: number;
+  /** Live students whose latest fix is beyond the fence. */
+  outsideCount: number;
 };
 
 /** A student with no heartbeat for this long is shown as "kimya" (quiet). */
@@ -68,7 +76,13 @@ export function countAnswers(answers: unknown): number {
  * rule can be tested without a database.
  */
 export function buildLiveExams(
-  exams: Array<{ id: string; title: string; duration_minutes: number | null }>,
+  exams: Array<{
+    id: string;
+    title: string;
+    duration_minutes: number | null;
+    area_radius_m?: number | null;
+    area_mode?: string | null;
+  }>,
   submissions: Row[],
   questionCounts: Map<string, number>,
   now = Date.now(),
@@ -83,6 +97,8 @@ export function buildLiveExams(
       startedCount: 0,
       submittedCount: 0,
       staleCount: 0,
+      radiusM: e.area_mode === "off" ? 0 : Math.max(0, Number(e.area_radius_m) || 0),
+      outsideCount: 0,
     });
   }
 
@@ -105,6 +121,10 @@ export function buildLiveExams(
     group.startedCount++;
     if (idleSeconds > STALE_AFTER_SECONDS) group.staleCount++;
 
+    const liveDistanceM = num(row.live_distance_m);
+    const outsideArea = group.radiusM > 0 && liveDistanceM != null && liveDistanceM > group.radiusM;
+    if (outsideArea) group.outsideCount++;
+
     group.live.push({
       submissionId: str(row.id),
       studentId: str(row.student_id),
@@ -115,6 +135,8 @@ export function buildLiveExams(
       answeredCount: countAnswers(row.answers),
       questionCount: questionCounts.get(examId) ?? 0,
       gpsDistanceM: num(row.gps_distance_m),
+      liveDistanceM,
+      outsideArea,
       deviceId: row.device_id ? str(row.device_id) : null,
       idleSeconds,
     });

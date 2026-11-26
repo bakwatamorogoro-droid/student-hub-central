@@ -32,7 +32,18 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Users } from "lucide-react";
 import { formatAcademicSummary } from "@/lib/academicTargeting";
-import { areaMessage, checkArea, type AreaVerdict } from "@/lib/geo";
+import { areaMessage, formatDistance, type AreaVerdict } from "@/lib/geo";
+import {
+  advanceGate,
+  gateStatusFromVerdict,
+  INITIAL_GATE,
+  judgeFence,
+  resolveExamFence,
+  verdictDistanceM,
+  type ExamFence,
+  type GateStatus,
+  type LocationGate,
+} from "@/lib/examFence";
 import { ExamAnswerField } from "@/components/ExamAnswerField";
 import { answerRatio, isAutoGraded } from "@/lib/examQuestions";
 import { retryRowsWithoutMissingColumns } from "@/lib/schema-retry";
@@ -57,8 +68,9 @@ import {
 } from "@/lib/proctorFaces";
 import { monitorAudio, talkingShare, type AudioVerdict } from "@/lib/proctorAudio";
 import { storageGet, storageRemove, storageSet } from "@/lib/safe-storage";
-import { touchSubmission } from "@/lib/liveExamsApi";
+import { touchSubmission, writeLiveLocation } from "@/lib/liveExamsApi";
 import { ExamClock } from "@/components/ExamClock";
+import { ExamLocationLock, ExamLocationPill } from "@/components/ExamLocationLock";
 import { ExamPresenceBar } from "@/components/ExamPresenceBar";
 import {
   ExamStepper,
@@ -93,7 +105,13 @@ function ExamPage() {
     radiusM: number;
   } | null>(null);
   const [areaVerdict, setAreaVerdict] = useState<AreaVerdict | null>(null);
-  const [examGpsRequired, setExamGpsRequired] = useState(true);
+  // The fence this paper is judged against, resolved once the exam and the
+  // school settings are both known. Null means "sat anywhere".
+  const [fence, setFence] = useState<ExamFence | null>(null);
+  // Live enforcement: whether the student is inside right now, and whether they
+  // have been outside long enough for the paper to lock.
+  const [gate, setGate] = useState<LocationGate>(INITIAL_GATE);
+  const [rechecking, setRechecking] = useState(false);
   const [camOk, setCamOk] = useState(false);
   const [audioOk, setAudioOk] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -186,19 +204,48 @@ function ExamPage() {
 
       try {
         const row = await loadArea();
-        if (row) {
-          setArea({
-            lat: (row.attendance_lat as number | null) ?? null,
-            lng: (row.attendance_lng as number | null) ?? null,
-            radiusM: Number(row.exam_radius_m) || 300,
-          });
-          // Only an explicit `false` turns the fence off. `exam_gps_required`
-          // arrives with a migration production has not applied, so the key is
-          // simply absent there — treating that as "off" is what let a student
-          // start an exam from anywhere. Absent means the safe default.
-          setExamGpsRequired(row.exam_gps_required !== false);
-        }
-      } catch {}
+        const school = row
+          ? {
+              lat: (row.attendance_lat as number | null) ?? null,
+              lng: (row.attendance_lng as number | null) ?? null,
+              radiusM: Number(row.exam_radius_m) || 300,
+              // Only an explicit `false` turns the fence off. `exam_gps_required`
+              // arrives with a migration production has not applied, so the key is
+              // simply absent there — treating that as "off" is what let a student
+              // start an exam from anywhere. Absent means the safe default.
+              required: row.exam_gps_required !== false,
+            }
+          : null;
+
+        // The paper's own switch wins when it has one; a paper written before
+        // the switch existed inherits the school row, exactly as before.
+        const resolved = resolveExamFence(
+          {
+            area_mode: (e as { area_mode?: string | null }).area_mode ?? null,
+            area_lat: (e as { area_lat?: number | null }).area_lat ?? null,
+            area_lng: (e as { area_lng?: number | null }).area_lng ?? null,
+            area_radius_m: (e as { area_radius_m?: number | null }).area_radius_m ?? null,
+          },
+          school,
+          // The row just loaded, not `exam` state: that is still null here, and
+          // reading it threw into the swallow-all below, which left every paper
+          // unfenced. Silent by design, so it hid itself.
+          (e as { require_gps?: boolean | null }).require_gps !== false,
+        );
+        setFence(resolved);
+        // `area` stays the shape the start gate and the submission row already
+        // use. With no fence it keeps the school centre for the checkout record
+        // but is never enforced.
+        setArea(
+          resolved && resolved.lat != null && resolved.lng != null
+            ? { lat: resolved.lat, lng: resolved.lng, radiusM: resolved.radiusM }
+            : school
+              ? { lat: school.lat, lng: school.lng, radiusM: school.radiusM }
+              : null,
+        );
+      } catch (err) {
+        console.error("Eneo la mtihani halikuweza kupimwa", err);
+      }
       const { data: qs } = await supabase
         .from("questions")
         .select("*")
@@ -423,37 +470,133 @@ function ExamPage() {
     return stop;
   }, [started, audioOk]);
 
-  // GPS, kept fresh: one fix at the start proves where the student was then, not
-  // where they are now. Samples accumulate so the teacher can see the spread.
+  // GPS, kept fresh, and — when the paper is fenced — enforced.
+  //
+  // `getCurrentPosition` on a timer is fine for "where did he start", but it
+  // cannot answer "is he still in the room", which is what the teacher actually
+  // asked for. `watchPosition` reports every time the device's own position
+  // changes, so leaving the building shows up within seconds instead of at the
+  // next 45-second poll.
+  //
+  // The gate, not the raw fix, decides what happens: one wild reading while
+  // indoors is normal, so a student has to stay outside for the grace period
+  // before the paper locks. See `advanceGate`.
   useEffect(() => {
     if (!started) return;
+    // No fence means the teacher opened the paper up. Watching the position
+    // anyway would raise a permission prompt for data nothing reads, which is
+    // exactly the annoyance the switch is meant to remove.
+    if (!fence) return;
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
+
     const samples: GpsSample[] = [];
-    const read = () =>
+    const enforced = !!fence && fence.enforced;
+    let lastWrite = 0;
+    // A phone that never got a fix is not evidence of leaving; a phone that had
+    // one and stopped is. The difference is whether this flag is set.
+    let hadFix = false;
+    // The most recent verdict, so the watchdog below can age it. A student who
+    // walks out and then stands still sends no further fixes, and without this
+    // the paper would never lock on a stationary breach.
+    let lastStatus: GateStatus | null = null;
+
+    const handleFix = (pos: GeolocationPosition) => {
+      hadFix = true;
+      const fix = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy ?? 999,
+      };
+      samples.push({ ...fix, at: Date.now() });
+      if (samples.length > 8) samples.shift();
+      setGpsLive({ lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy });
+      const assessment = assessGpsSamples(samples);
+      if (assessment) setGpsFlags(assessment.flags.map(gpsFlagLabel));
+
+      if (!enforced) return;
+
+      const verdict = judgeFence(fence, fix);
+      setAreaVerdict(verdict);
+      const status = gateStatusFromVerdict(verdict);
+      lastStatus = status;
+      setGate((prev) => advanceGate(prev, status, Date.now()));
+
+      // The teacher's live panel needs the current point, but a write per
+      // position change would be several a second in a moving car. One every
+      // few seconds is enough to see a student leave.
+      if (submissionId && Date.now() - lastWrite > 7000) {
+        lastWrite = Date.now();
+        void writeLiveLocation(submissionId, fix, verdictDistanceM(verdict));
+      }
+    };
+
+    // Watch errors are ignored here: the periodic read below distinguishes a
+    // refused permission from a dead spot, and a browser drops a watch when the
+    // tab is hidden, which is not a breach.
+    const watchId = navigator.geolocation.watchPosition(handleFix, () => {}, {
+      enableHighAccuracy: true,
+      maximumAge: 5000,
+      timeout: 20000,
+    });
+
+    // Ages the last verdict without needing a new fix, so a student who leaves
+    // and then stops moving still locks once the grace period is up.
+    const watchdog = setInterval(() => {
+      if (!enforced || !lastStatus) return;
+      setGate((prev) => advanceGate(prev, lastStatus!, Date.now()));
+    }, 4000);
+
+    // A backstop for devices whose watch never fires (some Android browsers
+    // only report on a significant move). Two minutes, not 45 seconds: the
+    // watch is the fast path, this only keeps the teacher's panel fresh.
+    const timer = setInterval(() => {
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          samples.push({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            accuracy: pos.coords.accuracy ?? 999,
-            at: Date.now(),
-          });
-          if (samples.length > 8) samples.shift();
-          setGpsLive({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            accuracy: pos.coords.accuracy ?? 0,
-          });
-          const assessment = assessGpsSamples(samples);
-          if (assessment) setGpsFlags(assessment.flags.map(gpsFlagLabel));
+        handleFix,
+        (err) => {
+          // PERMISSION_DENIED is the one error a student chose. It cannot lock
+          // the paper — a stale verdict is not proof they moved — but it does
+          // flag the run for the teacher. The other codes are the environment
+          // (a tunnel, a dead spot, a timeout), so they only update the pill.
+          if (!enforced || !hadFix) return;
+          setAreaVerdict({ status: "missing_fix" });
+          if (err && err.code === 1) setGpsFlags((prev) => [...prev, "GPS imezimwa"]);
         },
-        () => {},
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 },
       );
-    read();
-    const timer = setInterval(read, 45000);
-    return () => clearInterval(timer);
-  }, [started]);
+    }, 120000);
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      clearInterval(timer);
+      clearInterval(watchdog);
+    };
+  }, [started, fence, submissionId]);
+
+  /**
+   * Re-measures on demand, so the lock screen has a button that does something.
+   *
+   * The watch usually notices before a student can press it; this exists for the
+   * phone whose watch has gone quiet, and for the student who walked back and
+   * does not want to wait for the next reading.
+   */
+  const recheckLocation = () => {
+    if (!fence || typeof navigator === "undefined" || !navigator.geolocation) return;
+    setRechecking(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const verdict = judgeFence(fence, {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy ?? null,
+        });
+        setAreaVerdict(verdict);
+        setGate((prev) => advanceGate(prev, gateStatusFromVerdict(verdict), Date.now()));
+        setRechecking(false);
+      },
+      () => setRechecking(false),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
+  };
 
   // Heartbeat: tells the teacher's live panel this browser is still on the page.
   useEffect(() => {
@@ -502,8 +645,10 @@ function ExamPage() {
     } catch {}
 
     // GPS: chukua mahali, kisha linganisha na eneo la mwalimu. Kama mwanafunzi
-    // yuko nje ya umbali, mtihani hauanzi — ndiyo kazi ya "Eneo langu".
-    if (exam.require_gps || (area && area.lat != null)) {
+    // yuko nje ya umbali, mtihani hauanzi — ndiyo kazi ya "Eneo langu". A paper
+    // the teacher opened up ("popote") has no fence: no fix is asked for, and
+    // none is enforced. `fence === null` is that decision, not a missing setting.
+    if (fence) {
       // Three independent fixes, not one. A single reading can be a cached or a
       // spoofed value; a real receiver jitters by a metre or two between reads,
       // so the spread and the reported accuracy tell the two apart. See
@@ -562,7 +707,7 @@ function ExamPage() {
         // the teacher asked for GPS. Otherwise a missing fix is a flag, not a locked
         // door: refusing here is how "washa mtihani" became a dead button on a phone
         // whose location was switched off.
-        if (examGpsRequired && area && area.lat != null) {
+        if (fence.enforced) {
           setAreaVerdict({ status: "missing_fix" });
           toast.error(
             assessment?.flags.includes("too_vague")
@@ -574,18 +719,18 @@ function ExamPage() {
         setGpsFlags((f) =>
           f.includes("hakuna kipimo cha GPS") ? f : [...f, "hakuna kipimo cha GPS"],
         );
-      } else if (area && area.lat != null && area.lng != null) {
-        const verdict = checkArea(area, {
+      } else if (fence) {
+        const verdict = judgeFence(fence, {
           lat: assessment.best.lat,
           lng: assessment.best.lng,
           accuracy: assessment.best.accuracy,
         });
         setAreaVerdict(verdict);
-        if (verdict.status === "outside") {
+        if (verdict?.status === "outside") {
           toast.error(areaMessage(verdict));
           return;
         }
-        if (verdict.status === "near_edge") {
+        if (verdict?.status === "near_edge") {
           setGpsFlags((f) => (f.includes("mpakani wa eneo") ? f : [...f, "mpakani wa eneo"]));
         }
       }
@@ -650,6 +795,12 @@ function ExamPage() {
       /* live tracking is optional */
     }
 
+    // The student just proved they are inside, so the live gate starts there
+    // rather than at "unknown". Without this the first outside reading after a
+    // start already inside could be read as an open-ended run.
+    setGate(
+      fence && fence.enforced ? advanceGate(INITIAL_GATE, "inside", Date.now()) : INITIAL_GATE,
+    );
     setStarted(true);
   };
 
@@ -822,7 +973,7 @@ function ExamPage() {
       signature_data: sigData,
       gps_lat: gps.lat,
       gps_distance_m: areaVerdict && "distanceM" in areaVerdict ? areaVerdict.distanceM : null,
-      gps_radius_m: area && area.lat != null ? area.radiusM : null,
+      gps_radius_m: fence && fence.enforced ? fence.radiusM : null,
       gps_lng: gps.lng,
       device_id: getDeviceId(),
       started_at: startedAtRef.current.toISOString(),
@@ -838,6 +989,14 @@ function ExamPage() {
         faces: faceVerdict,
         face_count: faceCount,
         face_detection: isFaceDetectionSupported() ? "supported" : "unsupported",
+        // Where the fence came from and how the student behaved inside it. A
+        // teacher reading a result a week later needs to know whether "inside"
+        // meant the school gate or a classroom.
+        area: fence
+          ? { source: fence.source, radius_m: fence.radiusM, enforced: fence.enforced }
+          : { source: "none", enforced: false },
+        outside_ms: gate.outsideMs,
+        lock_breaches: gate.breaches,
       },
     }));
     // The columns the geofence writes (`gps_distance_m`, `gps_radius_m`) and the
@@ -887,16 +1046,23 @@ function ExamPage() {
         state: student ? "done" : "busy",
       },
     ];
-    if (exam.require_gps || (area && area.lat != null))
+    // No step when the teacher opened the paper up: asking for a location the
+    // system will not use is just a permission prompt with no purpose.
+    if (fence) {
+      // A fix alone is not success: a student 1 km away has a fix and still may
+      // not start. Only an accepted verdict clears this step, otherwise the
+      // checklist shows a green tick while the start button stays refused.
+      const allowed = areaVerdict?.status === "inside" || areaVerdict?.status === "near_edge";
       steps.push({
         key: "gps",
-        label: "Ruhusu mahali (GPS)",
+        label: fence.source === "exam" ? "Ruhusu mahali (darasa)" : "Ruhusu mahali (GPS)",
         hint:
           areaVerdict && areaVerdict.status !== "no_fence"
             ? areaMessage(areaVerdict)
-            : "Mfumo unahitaji kujua uko darasani wakati wa mtihani.",
-        state: gps.lat ? "done" : "active",
+            : `Mfumo unahitaji kujua uko ndani ya ${formatDistance(fence.radiusM)} kutoka kituo.`,
+        state: allowed ? "done" : "active",
       });
+    }
     if (exam.require_camera)
       steps.push({
         key: "camera",
@@ -919,6 +1085,10 @@ function ExamPage() {
     });
 
     const blockers = steps.filter((s) => s.state !== "done" && s.key !== "start").length;
+    // Distance and permission are different refusals with different fixes: one
+    // is "walk back", the other is "tap allow". One label for both made the
+    // student argue with a permission that was already granted.
+    const gpsBlocked = !!fence && areaVerdict?.status === "outside";
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/10">
@@ -980,7 +1150,11 @@ function ExamPage() {
                 </div>
               )}
               <Button onClick={beginExam} className="w-full" size="lg">
-                {blockers > 0 ? "Anza Mtihani (Ruhusu kwanza)" : "Anza Mtihani"}
+                {blockers > 0
+                  ? gpsBlocked
+                    ? "Rudi darasani kwanza"
+                    : "Anza Mtihani (Ruhusu kwanza)"
+                  : "Anza Mtihani"}
               </Button>
             </CardContent>
           </Card>
@@ -1003,6 +1177,9 @@ function ExamPage() {
       className="min-h-screen bg-background select-none"
       style={{ userSelect: "none" }}
     >
+      {started && gate.locked && (
+        <ExamLocationLock verdict={areaVerdict} onRetry={recheckLocation} retrying={rechecking} />
+      )}
       <div className="sticky top-0 z-50 bg-primary text-primary-foreground px-4 py-2 flex justify-between items-center shadow">
         <span className="font-bold truncate">{exam.title}</span>
         <ExamClock seconds={timeLeft} />
@@ -1045,11 +1222,13 @@ function ExamPage() {
               Umetoka mara {fsLost}
             </span>
           )}
-          {gpsLive && (
+          {fence && fence.enforced ? (
+            <ExamLocationPill verdict={areaVerdict} accuracy={gpsLive?.accuracy ?? null} />
+          ) : gpsLive ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 font-medium text-muted-foreground">
               <MapPin className="h-3 w-3" /> ±{Math.round(gpsLive.accuracy)} m
             </span>
-          )}
+          ) : null}
           {gpsFlags.map((f) => (
             <span
               key={f}

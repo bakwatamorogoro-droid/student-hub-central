@@ -44,6 +44,8 @@ import {
   visibilityLabel,
 } from "@/lib/examBuilder";
 import { retryWithoutMissingColumns } from "@/lib/schema-retry";
+import { ExamAreaPicker } from "@/components/ExamAreaPicker";
+import { areaFromRow, areaPayload, areaWarning } from "@/lib/examFence";
 
 export const Route = createFileRoute("/admin/exams")({ component: Page });
 
@@ -51,6 +53,13 @@ function Page() {
   const [exams, setExams] = useState<any[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<any | null>(null);
+  // The school's own centre, so "follow the school setting" can name it and a
+  // classroom left empty can start from it instead of from nothing.
+  const [schoolCentre, setSchoolCentre] = useState<{
+    lat: number | null;
+    lng: number | null;
+    radiusM: number;
+  } | null>(null);
 
   const load = async () => {
     const { data } = await supabase
@@ -61,6 +70,29 @@ function Page() {
   };
   useEffect(() => {
     load();
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from("app_settings")
+          .select("attendance_lat,attendance_lng,exam_radius_m")
+          .eq("id", 1)
+          .maybeSingle();
+        const row = data as {
+          attendance_lat: number | null;
+          attendance_lng: number | null;
+          exam_radius_m: number | null;
+        } | null;
+        if (row) {
+          setSchoolCentre({
+            lat: row.attendance_lat ?? null,
+            lng: row.attendance_lng ?? null,
+            radiusM: Number(row.exam_radius_m) || 300,
+          });
+        }
+      } catch {
+        /* the fence falls back to the school row at exam time anyway */
+      }
+    })();
   }, []);
 
   const saveExam = async (e: any) => {
@@ -95,6 +127,10 @@ function Page() {
       target_academic_year: e.target_academic_year || null,
       assignment_mode: null,
       ...coursePayload({ courseName: e.course_name, courseCode: e.course_code }),
+      // The per-paper fence. A missing `area_mode` keeps the old school-wide
+      // behaviour, so dropping these columns on an older database changes
+      // nothing for existing tests.
+      ...areaPayload(areaFromRow(e)),
     };
     (payload as any).test_number = e.test_number ? Number(e.test_number) : null;
 
@@ -397,6 +433,21 @@ function Page() {
                   Publish
                 </label>
               </div>
+
+              {editing.require_gps && (
+                <>
+                  <ExamAreaPicker
+                    value={areaFromRow(editing)}
+                    schoolCentre={schoolCentre}
+                    onChange={(next) => setEditing({ ...editing, ...next })}
+                  />
+                  {areaWarning(areaFromRow(editing)) && (
+                    <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700">
+                      {areaWarning(areaFromRow(editing))}
+                    </p>
+                  )}
+                </>
+              )}
               <div className="border-t pt-3 space-y-2">
                 <Label className="text-sm font-bold">Kozi</Label>
                 <div>

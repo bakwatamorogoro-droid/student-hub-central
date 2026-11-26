@@ -55,7 +55,9 @@ test("buildLiveExams drops exams with no activity at all", () => {
 });
 
 test("buildLiveExams flags a quiet heartbeat as stale", () => {
-  const quiet = row({ last_seen_at: new Date(Date.now() - (STALE_AFTER_SECONDS + 30) * 1000).toISOString() });
+  const quiet = row({
+    last_seen_at: new Date(Date.now() - (STALE_AFTER_SECONDS + 30) * 1000).toISOString(),
+  });
   const out = buildLiveExams(exams, [quiet], counts);
   assert.equal(out[0].staleCount, 1);
   assert.ok(out[0].live[0].idleSeconds > STALE_AFTER_SECONDS);
@@ -81,8 +83,16 @@ test("buildLiveExams reports progress against the exam's question count", () => 
 });
 
 test("buildLiveExams orders sitters by start time", () => {
-  const early = row({ id: "a", student_id: "a", started_at: new Date(Date.now() - 300_000).toISOString() });
-  const late = row({ id: "b", student_id: "b", started_at: new Date(Date.now() - 10_000).toISOString() });
+  const early = row({
+    id: "a",
+    student_id: "a",
+    started_at: new Date(Date.now() - 300_000).toISOString(),
+  });
+  const late = row({
+    id: "b",
+    student_id: "b",
+    started_at: new Date(Date.now() - 10_000).toISOString(),
+  });
   const out = buildLiveExams(exams, [late, early], counts);
   assert.deepEqual(
     out[0].live.map((s) => s.submissionId),
@@ -93,4 +103,50 @@ test("buildLiveExams orders sitters by start time", () => {
 test("buildLiveExams skips rows for an exam it was not given", () => {
   const out = buildLiveExams(exams, [row({ exam_id: "other" })], counts);
   assert.equal(out.length, 0);
+});
+
+// ------------------------------------------------------- the paper's fence
+
+const fenced = [
+  { id: "e1", title: "Islamic Studies Test", duration_minutes: 60, area_radius_m: 120 },
+];
+
+test("a paper's radius reaches the live view", () => {
+  const out = buildLiveExams(fenced, [row({ live_distance_m: 40 })], counts);
+  assert.equal(out[0].radiusM, 120);
+  assert.equal(out[0].live[0].liveDistanceM, 40);
+  assert.equal(out[0].live[0].outsideArea, false);
+  assert.equal(out[0].outsideCount, 0);
+});
+
+test("a student past the radius is counted as outside", () => {
+  const out = buildLiveExams(fenced, [row({ live_distance_m: 480 })], counts);
+  assert.equal(out[0].live[0].outsideArea, true);
+  assert.equal(out[0].outsideCount, 1);
+});
+
+test('a paper set to "anywhere" has no radius, so nobody is outside', () => {
+  const open = [
+    { id: "e1", title: "Take-home", duration_minutes: 60, area_mode: "off", area_radius_m: 120 },
+  ];
+  const out = buildLiveExams(open, [row({ live_distance_m: 40_000 })], counts);
+  assert.equal(out[0].radiusM, 0);
+  assert.equal(out[0].outsideCount, 0);
+  assert.equal(out[0].live[0].outsideArea, false);
+});
+
+test("a paper with no radius column yet reports zero rather than guessing", () => {
+  const out = buildLiveExams(exams, [row({ live_distance_m: 900 })], counts);
+  assert.equal(out[0].radiusM, 0);
+  assert.equal(out[0].outsideCount, 0);
+});
+
+test("several students are counted separately", () => {
+  const rows = [
+    row({ id: "s1", live_distance_m: 10 }),
+    row({ id: "s2", student_id: "st2", live_distance_m: 400 }),
+    row({ id: "s3", student_id: "st3", live_distance_m: 700 }),
+  ];
+  const out = buildLiveExams(fenced, rows, counts);
+  assert.equal(out[0].outsideCount, 2);
 });
