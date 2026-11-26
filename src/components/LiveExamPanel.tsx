@@ -7,7 +7,16 @@ import { confirmAction } from "@/lib/alerts";
 import { forceSubmitSubmission, loadLiveExams } from "@/lib/liveExamsApi";
 import type { LiveExam, LiveStudent } from "@/lib/liveExams";
 import { toast } from "@/lib/toast";
-import { Activity, CircleAlert, MapPin, Radio, RefreshCw, Square, Users } from "lucide-react";
+import {
+  Activity,
+  CircleAlert,
+  MapPin,
+  MapPinOff,
+  Radio,
+  RefreshCw,
+  Square,
+  Users,
+} from "lucide-react";
 
 /** How often the panel refreshes. A teacher watching a class needs seconds, not minutes. */
 const REFRESH_MS = 15000;
@@ -90,8 +99,8 @@ export function LiveExamPanel() {
           </span>
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Inasasishwa kila sekunde 15. "Kimya" ni mwanafunzi ambaye kivinjari chake hakijatuma ishara kwa
-          sekunde 90 — simu inaweza kuwa imezimika au ametoka kwenye ukurasa.
+          Inasasishwa kila sekunde 15. "Kimya" ni mwanafunzi ambaye kivinjari chake hakijatuma
+          ishara kwa sekunde 90 — simu inaweza kuwa imezimika au ametoka kwenye ukurasa.
         </p>
       </CardHeader>
 
@@ -123,7 +132,9 @@ export function LiveExamPanel() {
             </p>
           </div>
         ) : (
-          exams.map((exam) => <ExamLiveCard key={exam.examId} exam={exam} onRemove={remove} removing={removing} />)
+          exams.map((exam) => (
+            <ExamLiveCard key={exam.examId} exam={exam} onRemove={remove} removing={removing} />
+          ))
         )}
       </CardContent>
     </Card>
@@ -139,9 +150,10 @@ function ExamLiveCard({
   onRemove: (s: LiveStudent) => void;
   removing: string | null;
 }) {
-  const pct = exam.startedCount + exam.submittedCount > 0
-    ? Math.round((exam.submittedCount / (exam.startedCount + exam.submittedCount)) * 100)
-    : 0;
+  const pct =
+    exam.startedCount + exam.submittedCount > 0
+      ? Math.round((exam.submittedCount / (exam.startedCount + exam.submittedCount)) * 100)
+      : 0;
 
   return (
     <div className="rounded-xl border border-border/70 bg-card/60">
@@ -153,6 +165,11 @@ function ExamLiveCard({
         <Badge variant="secondary" className="tabular-nums">
           {exam.submittedCount} wamemaliza
         </Badge>
+        {exam.outsideCount > 0 && (
+          <Badge variant="destructive" className="tabular-nums">
+            {exam.outsideCount} nje ya eneo
+          </Badge>
+        )}
         <span className="text-xs text-muted-foreground tabular-nums">{pct}%</span>
       </div>
       <Progress value={pct} className="h-1 rounded-none" />
@@ -180,10 +197,27 @@ function ExamLiveCard({
                 <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
                   <span className="font-mono">{s.regNo}</span>
                   <span>• ameanza {new Date(s.startedAt).toLocaleTimeString("sw-TZ")}</span>
-                  {s.gpsDistanceM != null && (
-                    <span className="inline-flex items-center gap-0.5">
-                      • <MapPin className="h-3 w-3" /> {Math.round(s.gpsDistanceM)} m
+                  {s.liveDistanceM != null ? (
+                    <span
+                      className={`inline-flex items-center gap-0.5 ${
+                        s.outsideArea ? "font-semibold text-destructive" : ""
+                      }`}
+                    >
+                      •{" "}
+                      {s.outsideArea ? (
+                        <MapPinOff className="h-3 w-3" />
+                      ) : (
+                        <MapPin className="h-3 w-3" />
+                      )}{" "}
+                      {Math.round(s.liveDistanceM)} m
+                      {s.outsideArea && exam.radiusM > 0 ? ` (ndani ${exam.radiusM} m)` : ""}
                     </span>
+                  ) : (
+                    s.gpsDistanceM != null && (
+                      <span className="inline-flex items-center gap-0.5">
+                        • <MapPin className="h-3 w-3" /> {Math.round(s.gpsDistanceM)} m
+                      </span>
+                    )
                   )}
                 </div>
               </div>

@@ -315,6 +315,10 @@ export type Database = {
       };
       exams: {
         Row: {
+          area_lat: number | null;
+          area_lng: number | null;
+          area_mode: string | null;
+          area_radius_m: number | null;
           assignment_mode: string | null;
           autosave_disabled: boolean;
           course_code: string | null;
@@ -343,6 +347,10 @@ export type Database = {
           title: string;
         };
         Insert: {
+          area_lat?: number | null;
+          area_lng?: number | null;
+          area_mode?: string | null;
+          area_radius_m?: number | null;
           assignment_mode?: string | null;
           autosave_disabled?: boolean;
           course_code?: string | null;
@@ -371,6 +379,10 @@ export type Database = {
           title: string;
         };
         Update: {
+          area_lat?: number | null;
+          area_lng?: number | null;
+          area_mode?: string | null;
+          area_radius_m?: number | null;
           assignment_mode?: string | null;
           autosave_disabled?: boolean;
           course_code?: string | null;
@@ -799,6 +811,9 @@ export type Database = {
           gps_radius_m: number | null;
           id: string;
           last_seen_at: string | null;
+          live_distance_m: number | null;
+          live_lat: number | null;
+          live_lng: number | null;
           max_score: number | null;
           proctor: Json | null;
           reg_no: string;
@@ -822,6 +837,9 @@ export type Database = {
           gps_radius_m?: number | null;
           id?: string;
           last_seen_at?: string | null;
+          live_distance_m?: number | null;
+          live_lat?: number | null;
+          live_lng?: number | null;
           max_score?: number | null;
           proctor?: Json | null;
           reg_no: string;
@@ -845,6 +863,9 @@ export type Database = {
           gps_radius_m?: number | null;
           id?: string;
           last_seen_at?: string | null;
+          live_distance_m?: number | null;
+          live_lat?: number | null;
+          live_lng?: number | null;
           max_score?: number | null;
           proctor?: Json | null;
           reg_no?: string;

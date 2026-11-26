@@ -15,6 +15,8 @@ type SubmissionRow = {
   /** Absent until the tracking migration has been applied to the database. */
   gps_distance_m?: number | null;
   last_seen_at?: string | null;
+  /** From the live-location migration; absent until it has been applied. */
+  live_distance_m?: number | null;
 };
 
 function str(value: unknown): string {
@@ -40,7 +42,7 @@ const PAGE_SIZE = 1000;
 const MAX_PAGES = 20;
 
 async function fetchSubmissionRows(ids: string[]): Promise<SubmissionRow[]> {
-  const optional = ["last_seen_at", "gps_distance_m", "gps_radius_m"];
+  const optional = ["last_seen_at", "gps_distance_m", "gps_radius_m", "live_distance_m"];
   const base = [
     "id",
     "exam_id",
@@ -87,12 +89,44 @@ async function fetchSubmissionRows(ids: string[]): Promise<SubmissionRow[]> {
   return all;
 }
 
+/**
+ * The exam list, with the fence columns when the database has them.
+ *
+ * Two attempts rather than one: the fence is a convenience for the panel (it
+ * colours a student red), while the list of live exams is the point. Losing the
+ * whole panel because a migration is behind is the worse trade.
+ */
+async function loadExamRows(): Promise<
+  Array<{
+    id: string;
+    title: string;
+    duration_minutes: number | null;
+    area_radius_m?: number | null;
+    area_mode?: string | null;
+  }>
+> {
+  const withFence = await supabase
+    .from("exams")
+    .select("id, title, duration_minutes, area_radius_m, area_mode")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (!withFence.error) return (withFence.data ?? []) as never;
+
+  const plain = await supabase
+    .from("exams")
+    .select("id, title, duration_minutes")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  return (plain.data ?? []) as never;
+}
+
 /** True when a PostgREST error names this column as unknown. */
 function namesColumn(error: unknown, column: string): boolean {
   const e = error as { code?: string; message?: string } | null;
   if (!e) return false;
   return (
-    e.code === "42703" || new RegExp(`['"\`]?${column}['"\`]?\\s+does not exist`, "i").test(e.message || "")
+    e.code === "42703" ||
+    new RegExp(`['"\`]?${column}['"\`]?\\s+does not exist`, "i").test(e.message || "")
   );
 }
 
@@ -125,15 +159,16 @@ async function fetchStudentNames(studentIds: string[]): Promise<Map<string, stri
  * is writing, it just cannot say who has gone quiet.
  */
 export async function loadLiveExams(): Promise<LiveExam[]> {
-  const { data: examRows } = await supabase
-    .from("exams")
-    .select("id, title, duration_minutes")
-    .order("created_at", { ascending: false })
-    .limit(50);
+  // The per-paper fence columns arrive with a migration production may not have
+  // applied. Asking for them in the same query would make PostgREST reject the
+  // whole select, so they are requested separately and silently skipped.
+  const examRows = await loadExamRows();
   const exams = (examRows ?? []) as Array<{
     id: string;
     title: string;
     duration_minutes: number | null;
+    area_radius_m?: number | null;
+    area_mode?: string | null;
   }>;
   if (exams.length === 0) return [];
 
@@ -190,5 +225,38 @@ export async function touchSubmission(submissionId: string): Promise<void> {
       .is("submitted_at", null);
   } catch {
     /* heartbeat is optional */
+  }
+}
+
+/**
+ * Publishes the student's current point for the teacher's live panel.
+ *
+ * Separate from `touchSubmission` because the two answer different questions:
+ * the heartbeat says "the page is still open", this says "he is still inside".
+ * Both are best-effort — a dropped write must never interrupt a paper — but the
+ * optional columns of the live-location migration are dropped on demand, so a
+ * database that has not run it still takes the update instead of failing the
+ * whole request.
+ */
+export async function writeLiveLocation(
+  submissionId: string,
+  fix: { lat: number; lng: number },
+  distanceM: number | null,
+): Promise<void> {
+  const payload: Record<string, number> = { live_lat: fix.lat, live_lng: fix.lng };
+  if (distanceM != null) payload.live_distance_m = Math.round(distanceM);
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { error } = await supabase
+      .from("submissions")
+      .update(payload as never)
+      .eq("id", submissionId)
+      .is("submitted_at", null);
+
+    if (!error) return;
+    const missing = Object.keys(payload).find((c) => namesColumn(error, c));
+    if (!missing) return;
+    delete payload[missing];
+    if (Object.keys(payload).length === 0) return;
   }
 }

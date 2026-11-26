@@ -801,6 +801,63 @@ The lesson generalises: **a missing column must degrade a feature, never disable
 user depends on.** Prefer `retryRowsWithoutMissingColumns` over sending a column that may not
 exist, and give every optional column a fallback read.
 
+### Per-exam areas: the paper's own switch beats the school's
+
+`app_settings` is one centre for the whole school, which is wrong the moment a teacher wants
+Test 1 fenced to a classroom and Test 2 sat anywhere. `exams.area_mode` / `area_lat` / `area_lng` /
+`area_radius_m` (migration `20261127100000_per_exam_area_and_live_location.sql`) let each paper
+carry its own. `area_mode` is three words, not a boolean:
+
+| `area_mode`   | meaning                                                               |
+| ------------- | --------------------------------------------------------------------- |
+| `NULL`        | follow `app_settings` — the old behaviour, so no existing paper changes |
+| `'off'`       | sat anywhere, no fix requested and nothing enforced                    |
+| `'classroom'` | fenced to `area_lat` / `area_lng` at `area_radius_m`                   |
+
+`src/lib/examFence.ts` is the only place that resolves them (`resolveExamFence`). Two rules it
+enforces, and they are easy to lose in an edit:
+
+- **The paper's switch wins, both directions.** `'off'` returns `null` even when the school has a
+  centre _and_ even when the school `requireGps` says yes; a `NULL` paper mode falls back to the
+  school row.
+- **`null` fence means "no fence", not "settings missing".** The start gate, the live watch and
+  the submission payload all key off `fence === null`. Do not re-derive it from `area` or
+  `exam.require_gps` at the call site — that is exactly the bug described below.
+
+**A `null`-read inside a `try {} catch {}` hid the fence from every paper.** `resolveExamFence`
+was called with `exam.require_gps` while `exam` state was still `null`, so the property read
+threw, the bare `catch {}` swallowed it, and `setFence` never ran — every exam was silently
+unfenced and a student 1.1 km away could start it. Pass the row just loaded (`e`), and let the
+catch log rather than swallow. This is the general trap in this codebase: `catch {}` around
+load-time derivation turns a typo into a security hole that looks like a working feature.
+
+**The live lock needs a timer, not just incoming fixes.** `watchPosition` only reports when the
+position _changes_, so a student who walks out and then stands still sends nothing and would
+never lock. The effect keeps the last verdict in a ref and ages it on a 4-second interval through
+`advanceGate`, which is what makes a stationary breach lock after `LOCK_GRACE_MS` (12 s).
+
+**A lost fix is not a breach.** Only an explicit `PERMISSION_DENIED` (`err.code === 1`) is
+something the student chose, so it is flagged (`GPS imezimwa`) for the teacher. A timeout or a
+dead spot keeps the last known gate state instead of counting as "outside" — a tunnel must not
+fail a paper. Do not "simplify" the error handler into `advanceGate(prev, "unknown")`; that locks
+a student whose signal merely dropped.
+
+**Nothing may touch geolocation when `fence === null`.** With the paper opened up, the checklist
+step, the start fix and the live watch are all skipped, so the browser never shows a permission
+prompt for data nothing reads. Verified by counting calls: zero.
+
+`submissions.live_lat` / `live_lng` / `live_distance_m` hold the _last_ position, written every
+~7 s while the paper is open, so the teacher's live panel can show who is drifting. It is one
+point, deliberately not a trail. Until the migration is applied those writes degrade to a no-op
+through `retryWithoutMissingColumns`-style retries and nothing breaks.
+
+Verify a fence change in a real browser, not just in unit tests — the unit tests pass with a fence
+that the page never loads. `Page.addScriptToEvaluateOnNewDocument` is the only way to mock
+`navigator.geolocation` reliably, because a mock injected with `Runtime.evaluate` is wiped by the
+next navigation; patch `getCurrentPosition`, `watchPosition` and `clearWatch` together and keep
+the position in a `window` global so the test can move it mid-exam.
+
+
 ### A token with `repo` scope still cannot push a workflow change
 
 GitHub refuses **any** push that adds or modifies a file under `.github/workflows/` unless the
